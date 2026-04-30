@@ -1,16 +1,18 @@
 ---
-name: Browser Skills — Self-Healing Site Knowhow
-description: How to use site-specific knowhow when driving the browser, and how to feed learnings back so the next agent does better. Loaded automatically when the user mentions browser tasks, scraping, web automation, or specific site work.
+name: Browser Learning — Observation
+description: How to use site-specific knowhow when driving the browser, and how to record learnings so the nightly reflection pass can fold them back into the site files. Loaded automatically when the user mentions browser tasks, scraping, web automation, or specific site work.
 ---
 
-# Browser Skills
+# Browser Learning — Observation
 
-Site-specific knowhow lives at `knowhow/sites/<domain>/`. Use it before you act, repair it when it's wrong, write it down when you discover something new.
+Site-specific knowhow lives at `knowhow/sites/<domain>/`. Use it before you act, repair it when it's wrong, record it when you discover something new. The reflection pass (separate trigger, runs on a schedule) folds your records into the site files.
 
 ## The loop
 
 ```
-load → act → repair → record
+load → act → repair → record  (you, in-thread)
+                          ↓
+                 reflect → write  (reflection trigger, batched)
 ```
 
 ### 1. Load (before the first browser_open on a site)
@@ -51,9 +53,7 @@ emit_event("BrowserLearningObserved", {
 })
 ```
 
-The `Browser Knowhow Reflection` trigger picks these up, reviews them against the existing site knowhow, and writes the update (or no-ops if it's already covered, or files it differently if your suggestion was off-base).
-
-**You don't need to edit the knowhow yourself in-thread.** That's the trigger's job — it has time to think, you have a task to finish.
+Records accumulate. The reflection trigger (default: nightly) reads the batch, deduplicates, and writes one good knowhow update per cluster of related observations. **You don't edit the knowhow yourself in-thread** — you'd be racing other threads doing the same thing, and you don't see the patterns the batch sees.
 
 ## What's worth recording (and what isn't)
 
@@ -71,11 +71,11 @@ The `Browser Knowhow Reflection` trigger picks these up, reviews them against th
 
 ## Conventions
 
-- One observation per event. Don't batch.
+- One observation per event. Don't batch in-thread; batching is the reflection trigger's job.
 - Keep `observation` factual ("the export button is now in the kebab menu, not the toolbar"), not interpretive ("the UI got worse").
-- If you have a concrete suggested edit, include it as `suggested_update` — saves the reflection trigger a step.
+- If you have a concrete suggested edit, include it as `suggested_update` — saves the reflection pass a step.
 - Site knowhow files use the same frontmatter as any other knowhow (`name:` required, `description:` recommended).
 
-## Why a trigger and not in-thread edits
+## Why batched reflection and not in-thread edits
 
-In-thread you're optimizing for the user's task. The reflection trigger is optimizing for the *next* agent who visits the same site. Different goals, different time budget, different pair of eyes. The trigger is also where deduplication happens — same observation from three different threads should produce one knowhow update, not three competing edits.
+In-thread you're optimizing for the user's task. Reflection is optimizing for the *next* agent who visits the same site — different goals, different time budget, different pair of eyes. Batching is also where deduplication happens: same observation from three different threads should produce one knowhow update, not three competing edits, and a pattern across threads ("everyone reports the composer button moved") is a stronger signal than any single sighting.
