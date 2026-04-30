@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Super Slides</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="remote-mode.css">
+</head>
+<body>
+
+<!-- Bottom bar: menu + nav hint -->
+<div class="bottom-bar">
+  <div class="menu-wrapper">
+    <button class="menu-btn" id="menuBtn" title="Choose presentation">▦</button>
+    <div class="menu-dropdown" id="menuDropdown">
+      <div class="menu-label">Presentations</div>
+      <div class="menu-items" id="menuItems"></div>
+    </div>
+  </div>
+  <span class="nav-hint">↑↓ slides · ←→ cards · click to navigate</span>
+</div>
+
+<!-- Presentation renders here -->
+<div id="app">
+  <div class="ss-loading">
+    <div class="ss-loading-spinner"></div>
+    <p>Loading presentations…</p>
+  </div>
+</div>
+
+<script src="/api/v1/sdk.js"></script>
+<script>
+// Force full reload when restored from bfcache (Safari/iOS PWA)
+window.addEventListener('pageshow', function(e) {
+  if (e.persisted) location.reload();
+});
+</script>
+<script src="components.js"></script>
+<script src="editing.js"></script>
+<script src="engine.js"></script>
+<script src="remote-mode.js"></script>
+<script src="init.js"></script>
+
+</body>
+</html>

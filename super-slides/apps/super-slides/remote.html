@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Super Slides — Remote</title>
+<link rel="stylesheet" href="/api/v1/sdk-iframe.css">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="remote.css">
+<script src="/api/v1/sdk.js"></script>
+<script>
+  lucidos.ui.applyPreferences && lucidos.ui.applyPreferences();
+  lucidos.ui.watchPreferences && lucidos.ui.watchPreferences();
+</script>
+</head>
+<body class="remote-body">
+
+<header class="remote-header">
+  <div class="remote-meta">
+    <span class="remote-pres-title" id="presTitle">—</span>
+    <span class="remote-status" id="connStatus">connecting…</span>
+  </div>
+  <div class="remote-counter" id="counter">0 / 0</div>
+</header>
+
+<main class="remote-main">
+
+  <section class="remote-slide-info">
+    <div class="remote-section-pill" id="sectionPill" hidden></div>
+    <h1 class="remote-slide-title" id="slideTitle">No presenter</h1>
+    <p class="remote-next-up" id="nextUp"></p>
+  </section>
+
+  <section class="remote-notes-card">
+    <div class="remote-notes-label">Speaker notes</div>
+    <div class="remote-notes-body" id="notesBody">
+      <em class="remote-notes-empty">No notes for this slide.</em>
+    </div>
+  </section>
+
+</main>
+
+<nav class="remote-nav">
+  <button class="remote-nav-btn" id="prevBtn" title="Previous (←)">‹</button>
+  <button class="remote-nav-btn remote-nav-picker" id="pickerBtn" title="Jump to slide">≡ Slides</button>
+  <button class="remote-nav-btn remote-nav-btn-primary" id="nextBtn" title="Next (→ / Space)">Next ›</button>
+</nav>
+
+<!-- Slide picker overlay -->
+<div class="remote-picker-overlay" id="pickerOverlay" hidden>
+  <div class="remote-picker-panel">
+    <header class="remote-picker-header">
+      <h2>Jump to slide</h2>
+      <button class="remote-picker-close" id="pickerCloseBtn">✕</button>
+    </header>
+    <div class="remote-picker-list" id="pickerList"></div>
+  </div>
+</div>
+
+<script src="components.js"></script>
+<script src="remote.js"></script>
+</body>
+</html>

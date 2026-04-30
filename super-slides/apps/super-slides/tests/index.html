@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Super Slides — Tests</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: #0e0e12; color: #e4e4e7; padding: 2rem; }
+  h1 { font-size: 1.3rem; margin-bottom: .3rem; color: #a5b4fc; }
+  .meta { font-size: .8rem; color: #52525b; margin-bottom: 1.5rem; }
+  .suite { margin-bottom: 2rem; }
+  .suite h2 { font-size: 1rem; color: #818cf8; margin-bottom: .5rem; }
+  .test { padding: .4rem 0; display: flex; gap: .5rem; font-size: .9rem; }
+  .test .icon { width: 1.2rem; text-align: center; }
+  .pass .icon { color: #4ade80; }
+  .fail .icon { color: #f87171; }
+  .fail .detail { color: #fca5a5; font-size: .8rem; margin-left: 1.7rem; }
+  .summary { margin-top: 1.5rem; padding: 1rem; border-radius: .5rem; font-weight: 600; }
+  .summary.all-pass { background: #064e3b; color: #6ee7b7; }
+  .summary.has-fail { background: #7f1d1d; color: #fca5a5; }
+</style>
+</head>
+<body>
+<h1>🧪 Super Slides — Tests</h1>
+<p class="meta">Modular test suites — add new files to the list below</p>
+<div id="results"></div>
+
+<!--
+  Test system:
+  1. harness.js  — suite(), assert*, renderResults()
+  2. models.js   — mock event bus, presenter, remote (mirror actual code)
+  3. test-*.js   — individual suites, one per concern
+
+  To add a new suite: create tests/test-foo.js and add a <script> tag here.
+-->
+<script src="harness.js"></script>
+<script src="models.js"></script>
+
+<!-- Test suites -->
+<script src="test-sync.js"></script>
+<script src="test-commands.js"></script>
+<script src="test-switching.js"></script>
+<script src="test-cards.js"></script>
+<script src="test-recovery.js"></script>
+<script src="test-desync.js"></script>
+<script src="test-protocol.js"></script>
+
+<script>
+  renderResults('results');
+</script>
+</body>
+</html>
