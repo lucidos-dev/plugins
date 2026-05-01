@@ -77,6 +77,9 @@
 
 .rm-exit svg {
   display: block;
+  /* Nudge X down so its visual centre aligns with the baseline of the
+     chevron glyphs (‹ › « ») in the neighbouring nav buttons. */
+  transform: translateY(3px);
 }
 
 /* ── Navigation bar ────────────────────────────────── */
