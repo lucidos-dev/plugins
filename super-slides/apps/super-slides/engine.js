@@ -100,13 +100,39 @@ SS.initEngine = function() {
     });
   }
 
-  menuBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    menuDropdown.classList.toggle('open');
-    if (slidePicker) slidePicker.classList.remove('open');
-  });
+  // Counter (slide-picker) virker perfekt med ÉN click-handler via
+  // document-delegering: toggle-på-knapp + close-on-outside i samme
+  // listener, med `return` mellom for å hindre at de slår hverandre ut.
+  // Speil det mønsteret her — ikke to separate listeners (stopPropagation
+  // stopper bare bubbling, ikke andre handlere på samme element, så en
+  // close-listener etter en toggle-listener vil alltid vinne).
+  // Direct listener on the wrapper itself — iOS Safari sometimes swallows
+  // synthetic click events that bubble to document when the original tap
+  // lands on padding (halo) rather than a clickable element. Attaching
+  // directly to the wrapper bypasses that quirk completely.
+  const menuWrapper = document.querySelector('.menu-wrapper');
+  if (menuWrapper) {
+    // Use pointerup so we react on touch-release without waiting for the
+    // synthetic click. Fall back to click for browsers without pointer
+    // events. Dedupe via a 400ms guard so both don't fire the toggle.
+    let lastToggle = 0;
+    function toggleMenu(e) {
+      if (e.target.closest('#menuDropdown')) return; // let menu-item handler decide
+      const now = Date.now();
+      if (now - lastToggle < 400) { e.preventDefault(); return; }
+      lastToggle = now;
+      e.preventDefault();
+      e.stopPropagation();
+      menuDropdown.classList.toggle('open');
+      if (slidePicker) slidePicker.classList.remove('open');
+    }
+    menuWrapper.addEventListener('pointerup', toggleMenu);
+    menuWrapper.addEventListener('click', toggleMenu);
+  }
 
-  document.addEventListener('click', () => {
+  // Outside-click closer (separate from the toggle so they can't race).
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#menuBtn, .menu-wrapper, #menuDropdown')) return;
     menuDropdown.classList.remove('open');
   });
 
@@ -247,10 +273,24 @@ SS.initEngine = function() {
 
     app.addEventListener('touchmove', () => { touchMoved = true; }, { passive: true });
 
+    // True if a picker / menu overlay is currently open. A tap-outside in this
+    // state must ONLY dismiss the overlay — it must not navigate slides.
+    function overlayOpen() {
+      return (slidePicker && slidePicker.classList.contains('open')) ||
+             (menuDropdown && menuDropdown.classList.contains('open'));
+    }
+
+    function closeOverlays() {
+      if (slidePicker) slidePicker.classList.remove('open');
+      if (menuDropdown) menuDropdown.classList.remove('open');
+    }
+
     app.addEventListener('touchend', (e) => {
       if (isInteractive(e)) return;
       if (SS.isEditing && SS.isEditing()) return;
       touchHandled = true;
+      // If an overlay (picker / menu) is open, a tap outside it just closes it.
+      if (overlayOpen()) { closeOverlays(); return; }
       const dx = e.changedTouches[0].clientX - touchStartX;
       const dy = e.changedTouches[0].clientY - touchStartY;
       const holdDuration = Date.now() - touchStartTime;
@@ -272,6 +312,8 @@ SS.initEngine = function() {
       if (touchHandled) { touchHandled = false; return; }
       if (isInteractive(e)) return;
       if (SS.isEditing && SS.isEditing()) return;
+      // If an overlay (picker / menu) is open, a click outside it just closes it.
+      if (overlayOpen()) { closeOverlays(); return; }
       // Don't navigate when clicking editable text on desktop —
       // single click activates the editor instead.
       // In fullscreen (ss-editing-disabled) editing is off, so navigate normally.

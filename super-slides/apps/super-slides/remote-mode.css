@@ -75,24 +75,9 @@
 
 /* ── Exit button (inline, end of nav bar) ──────────── */
 
-.rm-exit {
-  background: none;
-  border: none;
-  color: #fafafa;
-  font-size: 56px;
-  width: 52px; height: 52px;
-  cursor: pointer;
-  line-height: 1;
-  border-radius: 12px;
-  transition: background 0.12s;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: inherit;
-  -webkit-tap-highlight-color: transparent;
+.rm-exit svg {
+  display: block;
 }
-.rm-exit:active { background: rgba(255,255,255,0.06); }
 
 /* ── Navigation bar ────────────────────────────────── */
 
@@ -139,10 +124,10 @@
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.08);
   color: #fafafa;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
   height: 52px;
-  padding: 0 20px;
+  padding: 0 18px;
   border-radius: 14px;
   cursor: pointer;
   font-variant-numeric: tabular-nums;
@@ -477,8 +462,7 @@
   .rm-nav-btn { width: 52px; height: 52px; font-size: 48px; }
   .rm-card-btn { font-size: 48px; width: 52px; height: 52px; }
   .rm-slide-btn { font-size: 48px; }
-  .rm-exit { width: 52px; height: 52px; font-size: 48px; }
-  .rm-counter { height: 44px; line-height: 44px; padding: 0 10px; font-size: 13px; width: 90px; }
+  .rm-counter { height: 44px; line-height: 44px; padding: 0 10px; font-size: 17px; width: 90px; }
   .rm-title { font-size: 22px; }
   .rm-body { padding: 6px 16px 16px; }
 }

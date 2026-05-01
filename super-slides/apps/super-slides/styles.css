@@ -1233,15 +1233,63 @@ body.ss-editing-disabled .deck {
   .pip-dot { width: 5px; height: 5px; }
   .pip-label { font-size: 8px; letter-spacing: 0; }
 
-  /* Bottom bar */
-  .bottom-bar { bottom: 8px; left: 8px; gap: 6px; }
-  .nav-hint { font-size: 9px; }
-  .menu-btn { font-size: 13px; }
+  /* Bottom bar — promote menu to a visible FAB on mobile.
+     Lift well above iOS home-indicator swipe zone, and pad the wrapper so
+     near-misses still hit the button (eliminates "ghost" taps that fall
+     through to the slide and navigate instead). */
+  .bottom-bar {
+    /* iOS Safari reserves the leftmost ~20px of the screen for back-swipe
+       gestures — taps that land there are eaten by the system. Push the FAB
+       in far enough that the entire visible button + halo sits clear of that
+       zone. (This is why "only the right side of the button" worked before.) */
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    left: calc(28px + env(safe-area-inset-left, 0px));
+    gap: 6px;
+    padding: 12px;            /* invisible halo around FAB grows hit area */
+    margin: -12px;            /* keep visual position unchanged */
+  }
+  .nav-hint { display: none; }
+  .menu-wrapper {
+    /* Wrapper itself is a tap target larger than the visible circle.
+       cursor:pointer is REQUIRED on iOS — without it Safari drops the
+       synthetic click event for taps that land on the padding (halo)
+       rather than on the actual <button>. */
+    padding: 6px;
+    margin: -6px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .menu-btn {
+    font-size: 24px;
+    padding: 0;
+    width: 56px; height: 56px;        /* bigger visible target */
+    border-radius: 50%;
+    opacity: 1;
+    background: var(--accent);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.15);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.2);
+    display: flex; align-items: center; justify-content: center;
+    touch-action: manipulation;       /* kill 300ms tap delay on iOS */
+    -webkit-tap-highlight-color: rgba(255,255,255,0.25);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .menu-btn:hover, .menu-btn:active {
+    opacity: 1;
+    background: var(--accent);
+    border-color: rgba(255,255,255,0.35);
+    transform: scale(0.96);            /* visible feedback on press */
+  }
+  /* Lift counter & picker above the bigger FAB */
+  .counter { bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important; }
+  .slide-picker { bottom: calc(70px + env(safe-area-inset-bottom, 0px)) !important; }
 
   /* Counter & picker */
-  .counter { bottom: 8px; right: 8px; font-size: 10px; padding: 2px 6px; }
-  .slide-picker { bottom: 36px; right: 8px; min-width: 170px; max-height: 50vh; }
-  .slide-picker-item { padding: 5px 10px; font-size: 11px; }
+  .counter { bottom: 14px; right: 14px; font-size: 12px; padding: 6px 10px; opacity: 0.85; }
+  .slide-picker { bottom: 56px; right: 14px; min-width: 200px; max-height: 60vh; }
+  .slide-picker-item { padding: 10px 14px; font-size: 13px; }
 
   /* Progress */
   .progress { height: 2px; }
@@ -1315,9 +1363,9 @@ body.ss-editing-disabled .deck {
   .slide-header { min-height: 90px; }
 
   /* Menu dropdown */
-  .menu-dropdown { min-width: 190px; }
-  .menu-item { font-size: 11px; padding: 7px 10px; }
-  .menu-label { font-size: 8px; }
+  .menu-dropdown { min-width: 220px; }
+  .menu-item { font-size: 13px; padding: 12px 14px; }
+  .menu-label { font-size: 9px; }
 
   /* VS label */
   .vs-label { font-size: 12px; letter-spacing: 1.5px; }
@@ -1363,10 +1411,18 @@ body.ss-editing-disabled .deck {
   .pip-dot { width: 5px; height: 5px; }
   .pip-label { font-size: 9px; }
 
-  /* Bottom bar */
-  .bottom-bar { bottom: 4px; left: 10px; gap: 6px; }
-  .nav-hint { font-size: 9px; }
-  .counter { bottom: 4px; right: 10px; font-size: 10px; }
+  /* Bottom bar — visible FAB in landscape too */
+  .bottom-bar { bottom: 10px; left: 10px; gap: 6px; }
+  .nav-hint { display: none; }
+  .menu-btn {
+    font-size: 18px; width: 40px; height: 40px;
+    padding: 0; border-radius: 50%; opacity: 1;
+    background: var(--accent); color: #fff;
+    border: 1px solid rgba(255,255,255,0.15);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .counter { bottom: 10px; right: 10px; font-size: 11px; padding: 4px 8px; opacity: 0.85; }
 
   /* Cards */
   .card { padding: 12px; border-radius: 10px; }

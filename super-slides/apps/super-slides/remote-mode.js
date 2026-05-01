@@ -28,7 +28,7 @@
         <button class="rm-counter" id="rmCounter" title="Jump to slide">—</button>
         <button class="rm-nav-btn rm-card-btn" id="rmCardNext" title="Next card">›</button>
         <button class="rm-nav-btn rm-slide-btn" id="rmSlideNext" title="Next slide">»</button>
-        <button class="rm-exit" id="rmExit" title="Exit">✕</button>
+        <button class="rm-nav-btn rm-exit" id="rmExit" title="Exit" aria-label="Exit"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg></button>
       </nav>
 
       <div class="rm-timer" id="rmTimer">

@@ -5,6 +5,19 @@ description: Reference for the .slides JSON format, semantic component types, an
 
 # .slides File Format
 
+## Styling — intentional deviation from SDK theme
+
+**Super Slides deliberately ships its own visual identity** and does **not** load
+`/api/v1/sdk-prefs.js` or `/api/v1/sdk-iframe.css` in `index.html`. Slides have a
+fixed dark presentation aesthetic (custom palette, typography, spacing) that must
+look the same on every device regardless of the user's Lucidos theme/font/scale
+prefs — a presentation tool is not a theme-able dashboard.
+
+Audits that flag this as "missing SDK boilerplate" should be ignored for this
+app. Do not add the prefs/iframe-css tags to `index.html`. The companion
+`remote.html` *does* load them — it's a normal control UI and should respect the
+user's prefs.
+
 ## Core Rules
 
 1. **Always confirm which presentation the user is talking about** before making any edits. There are multiple `.slides` files — never assume. Check the app UI to see which presentation is currently open, or ask the user. Editing the wrong file means a revert and wasted time.
@@ -141,7 +154,7 @@ Custom components are checked before built-in types in `renderNode`.
 ### Use json_path for surgical edits
 
 ```
-edit_file(path="artifacts/presentations/cognos.slides",
+edit_file(path="artifacts/presentations/lucidos.slides",
           json_path="sections[2].slides[0].content[1].children[0].children[1]",
           new_value={"type": "heading", "level": 3, "text": "New Title", "color": "cyan"})
 ```
