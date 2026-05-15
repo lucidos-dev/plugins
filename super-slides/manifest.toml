@@ -1,5 +1,13 @@
 id = "super-slides"
-version = "0.2.1"
+version = "0.3.0"
 name = "Super Slides"
 description = "Presentation engine with semantic .slides JSON, themed components, sectioned decks, slide picker, embedded speaker-remote mode, and a separate phone remote. Auto-discovers any .slides file under artifacts/presentations/. Ships the app + a slides-format knowhow that teaches Lucidos how to author and edit presentations."
 source = "https://github.com/lucidos-dev/plugins/tree/main/super-slides"
+setup = """
+This plugin auto-discovers `.slides` files under `artifacts/presentations/`. To make the app actually show something on first open, create a starter presentation:
+
+- Ask the user what the presentation should be about (title + 2-3 bullets is enough). If they have no topic in mind, offer a "Welcome to Super Slides" placeholder so the app isn't empty.
+- Load `super-slides/slides-format` knowhow before writing — it documents the JSON schema, component types, and editing rules.
+- Write the file to `artifacts/presentations/<slug>.slides` (kebab-case slug derived from the title). The auto-discover picks it up on the next app open; no further wiring needed.
+- Don't fabricate content. If the user wants a real deck, ask for the rough outline first; if they just want to see the engine work, the placeholder is fine and they can edit it later.
+"""
