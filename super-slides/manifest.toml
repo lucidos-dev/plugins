@@ -1,5 +1,5 @@
 id = "super-slides"
-version = "0.3.0"
+version = "0.3.1"
 name = "Super Slides"
 description = "Presentation engine with semantic .slides JSON, themed components, sectioned decks, slide picker, embedded speaker-remote mode, and a separate phone remote. Auto-discovers any .slides file under artifacts/presentations/. Ships the app + a slides-format knowhow that teaches Lucidos how to author and edit presentations."
 source = "https://github.com/lucidos-dev/plugins/tree/main/super-slides"

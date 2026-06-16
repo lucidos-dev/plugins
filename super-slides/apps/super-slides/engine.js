@@ -203,11 +203,7 @@ SS.initEngine = function() {
         ${pres.subtitle ? `<p class="persistent-subtitle ss-editable" data-ss-path="" data-ss-prop="subtitle">${pres.subtitle}</p>` : ''}
         <div class="title-viewport">
           ${ts.titles.map((t, i) => {
-            // Wrap the trailing dot of the first title (e.g. "lucidos.") so it can pulse like a "ready for input" indicator.
-            const display = (i === 0 && /\.$/.test(t.text))
-              ? t.text.slice(0, -1) + '<span class="lucidos-dot">.</span>'
-              : t.text;
-            return `<div class="title-item ss-editable" data-title="${i}" data-ss-path="titleScroller.titles[${i}]" data-ss-prop="text">${display}</div>`;
+            return `<div class="title-item ss-editable" data-title="${i}" data-ss-path="titleScroller.titles[${i}]" data-ss-prop="text">${t.text}</div>`;
           }).join('')}
         </div>
         ${ts.asterisk ? '<div class="floating-asterisk" id="ssFloatingAsterisk">*</div>' : ''}
