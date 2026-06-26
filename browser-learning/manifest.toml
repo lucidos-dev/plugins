@@ -1,8 +1,9 @@
 id = "browser-learning"
-version = "0.3.0"
+version = "0.3.1"
 name = "Browser Learning"
 description = "Self-healing site knowhow for browser automation. Ships two knowhow files: observation (loaded by agents during browser tasks, records BrowserLearningObserved events) and reflection (loaded by a periodic pass that folds those observations into per-domain site knowhow)."
 source = "https://github.com/lucidos-dev/plugins/tree/main/browser-learning"
+categories = ["automation", "developer-tools"]
 setup = """
 This plugin is knowhow-only. To make the self-healing loop actually run, set up a periodic reflection trigger:
 
