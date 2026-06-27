@@ -13,6 +13,7 @@ install_plugin("https://github.com/lucidos-dev/plugins/tree/main/browser-learnin
 | Plugin | Description |
 |---|---|
 | [`browser-learning`](./browser-learning/) | Self-healing site knowhow for browser automation. Agents emit observations during browser tasks; a reflection trigger folds them into per-domain knowhow so the next agent visits with better priors. |
+| [`ouroboros`](./ouroboros/) | Classic Snake game with a polished highscore board, replays, and custom victory audio. Plays fully local out of the box; optionally syncs a shared family/friends scoreboard through a Lucidos proxy you configure. |
 | [`super-slides`](./super-slides/) | Presentation engine with semantic `.slides` JSON, themed components, sectioned decks, slide picker, embedded speaker-remote mode, and a phone remote. Auto-discovers any `.slides` file under `artifacts/presentations/`. |
 
 ## Authoring

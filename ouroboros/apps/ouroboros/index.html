@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ouroboros</title>
+  <script src="/api/v1/sdk-prefs.js"></script>
+  <script>
+    // Ouroboros is permanently dark — pin data-theme=dark and re-pin if the
+    // SDK's applyPreferences (runs on init + on PreferencesChanged) flips it.
+    (function() {
+      var d = document.documentElement;
+      function forceDark() {
+        if (d.getAttribute('data-theme') !== 'dark') {
+          d.setAttribute('data-theme', 'dark');
+        }
+        d.style.setProperty('--bg-primary', '#0d1117');
+        d.style.background = '#0d1117';
+      }
+      forceDark();
+      new MutationObserver(forceDark).observe(d, {
+        attributes: true,
+        attributeFilter: ['data-theme', 'style']
+      });
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css">
+  <script src="/api/v1/sdk-iframe-audio.js"></script>
+  <script src="/api/v1/sdk.js"></script>
+</head>
+<body>
+  <div class="game-container">
+    <div class="game-layout">
+      <div class="daily-panel side-panel">
+        <h3>Dagens beste</h3>
+        <div class="highscores-list" id="daily-list">
+          <div class="empty-state">Ingen runder i dag</div>
+        </div>
+      </div>
+
+      <div class="game-main">
+        <div class="header">
+          <div class="header-left">
+            <h1>Ouroboros</h1>
+          </div>
+          <div class="header-right">
+            <div class="player-badge hidden" id="player-badge" title="Klikk for å bytte spiller">
+              <span class="player-name" id="player-display"></span>
+            </div>
+            <span class="header-replay-badge hidden" id="header-replay-badge">▶ REPLAY</span>
+            <div class="audio-toggles">
+              <button class="audio-toggle active" id="toggle-music" title="Musikk">🎵</button>
+              <button class="audio-toggle active" id="toggle-sfx" title="Lydeffekter">🔊</button>
+              <button class="audio-toggle" id="btn-storage" title="Lagring">💾</button>
+            </div>
+            <div class="score-display">
+              <span class="score-label">Score</span>
+              <span class="score-value" id="current-score">0</span>
+            </div>
+          </div>
+        </div>
+        <div class="canvas-area">
+        <div class="canvas-wrapper">
+          <canvas id="game-canvas"></canvas>
+          <div class="screen-flash" id="screen-flash"></div>
+          <canvas id="dissolution-canvas" class="dissolution-canvas hidden"></canvas>
+          <div class="overlay" id="overlay">
+            <div class="overlay-content">
+              <div class="screen" id="name-screen">
+                <div class="screen-title-area">
+                  <h2 id="name-screen-title">Ouroboros</h2>
+                  <p id="name-screen-prompt">Hva heter du?</p>
+                </div>
+                <div class="screen-actions">
+                  <div class="known-players hidden" id="known-players"></div>
+                  <div class="name-divider hidden" id="name-divider"><span>eller nytt navn</span></div>
+                  <div class="name-input-group">
+                    <input type="text" id="name-input" placeholder="NY SPILLER" maxlength="10" autocomplete="off">
+                    <button class="btn-play" id="btn-name-ok">Start</button>
+                  </div>
+                </div>
+              </div>
+              <div class="screen hidden" id="start-screen">
+                <div class="screen-title-area">
+                  <h2 class="venom-title" id="start-title">ER DU KLAR?</h2>
+                </div>
+                <div class="screen-actions">
+                  <button class="btn-play" id="btn-start">START SOM KENNETH</button>
+                  <button class="btn-switch" id="btn-switch">BYTT SPILLER</button>
+                </div>
+              </div>
+              <div class="screen hidden" id="storage-screen">
+                <div class="screen-title-area">
+                  <h2>Topplister</h2>
+                </div>
+                <div class="screen-actions">
+                  <ul class="board-list" id="board-list"></ul>
+
+                  <div class="storage-status-area">
+                    <div class="firebase-status" id="storage-status"></div>
+                  </div>
+
+                  <button class="btn-play" id="btn-add-board" type="button">+ Legg til delt liste</button>
+
+                  <div class="storage-buttons">
+                    <button class="btn-switch" id="btn-storage-close" type="button">Ferdig</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+          <svg class="game-over-svg" id="game-over-svg" viewBox="0 0 300 225" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="go-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#fca5a5"/>
+                <stop offset="35%" stop-color="#ef4444"/>
+                <stop offset="100%" stop-color="#dc2626"/>
+              </linearGradient>
+            </defs>
+            <text x="150" y="78" text-anchor="middle" dominant-baseline="middle"
+                  font-size="70" font-weight="900" font-family="system-ui, -apple-system, sans-serif"
+                  fill="url(#go-fill)" stroke="#000" stroke-width="4" stroke-linejoin="round"
+                  paint-order="stroke fill" letter-spacing="-2">GAME</text>
+            <text x="150" y="142" text-anchor="middle" dominant-baseline="middle"
+                  font-size="70" font-weight="900" font-family="system-ui, -apple-system, sans-serif"
+                  fill="url(#go-fill)" stroke="#000" stroke-width="4" stroke-linejoin="round"
+                  paint-order="stroke fill" letter-spacing="-2">OVER</text>
+          </svg>
+          <div class="go-highscore" id="go-highscore"></div>
+        </div>
+
+        <div class="mobile-controls" id="mobile-controls">
+          <div class="controls-row">
+            <button class="ctrl-btn" data-dir="up">▲</button>
+          </div>
+          <div class="controls-row">
+            <button class="ctrl-btn" data-dir="left">◀</button>
+            <button class="ctrl-btn" data-dir="down">▼</button>
+            <button class="ctrl-btn" data-dir="right">▶</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="highscores-panel side-panel">
+        <h3>Legender</h3>
+        <div class="highscores-list" id="highscores-list">
+          <div class="empty-state">Ingen scores ennå</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="audio.js"></script>
+  <script src="replay.js"></script>
+  <script src="renderer.js"></script>
+  <script src="store.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

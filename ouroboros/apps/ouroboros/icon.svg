@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="snakeBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4ade80"/>
+      <stop offset="100%" style="stop-color:#22c55e"/>
+    </linearGradient>
+    <linearGradient id="snakeHead" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#86efac"/>
+      <stop offset="100%" style="stop-color:#4ade80"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <!-- Grid dots for retro feel -->
+  <g opacity="0.08" fill="#fff">
+    <circle cx="20" cy="20" r="1.5"/><circle cx="36" cy="20" r="1.5"/><circle cx="52" cy="20" r="1.5"/><circle cx="68" cy="20" r="1.5"/><circle cx="84" cy="20" r="1.5"/><circle cx="100" cy="20" r="1.5"/>
+    <circle cx="20" cy="36" r="1.5"/><circle cx="36" cy="36" r="1.5"/><circle cx="52" cy="36" r="1.5"/><circle cx="68" cy="36" r="1.5"/><circle cx="84" cy="36" r="1.5"/><circle cx="100" cy="36" r="1.5"/>
+    <circle cx="20" cy="52" r="1.5"/><circle cx="36" cy="52" r="1.5"/><circle cx="52" cy="52" r="1.5"/><circle cx="68" cy="52" r="1.5"/><circle cx="84" cy="52" r="1.5"/><circle cx="100" cy="52" r="1.5"/>
+    <circle cx="20" cy="68" r="1.5"/><circle cx="36" cy="68" r="1.5"/><circle cx="52" cy="68" r="1.5"/><circle cx="68" cy="68" r="1.5"/><circle cx="84" cy="68" r="1.5"/><circle cx="100" cy="68" r="1.5"/>
+    <circle cx="20" cy="84" r="1.5"/><circle cx="36" cy="84" r="1.5"/><circle cx="52" cy="84" r="1.5"/><circle cx="68" cy="84" r="1.5"/><circle cx="84" cy="84" r="1.5"/><circle cx="100" cy="84" r="1.5"/>
+    <circle cx="20" cy="100" r="1.5"/><circle cx="36" cy="100" r="1.5"/><circle cx="52" cy="100" r="1.5"/><circle cx="68" cy="100" r="1.5"/><circle cx="84" cy="100" r="1.5"/><circle cx="100" cy="100" r="1.5"/>
+  </g>
+  <!-- Snake body - S-curve -->
+  <path d="M 30 95 Q 30 75, 50 75 Q 70 75, 70 55 Q 70 35, 50 35 Q 35 35, 35 50 Q 35 60, 45 60 Q 55 60, 55 50 Q 55 42, 62 38" 
+        stroke="url(#snakeBody)" stroke-width="11" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Snake body highlight -->
+  <path d="M 30 95 Q 30 75, 50 75 Q 70 75, 70 55 Q 70 35, 50 35 Q 35 35, 35 50 Q 35 60, 45 60 Q 55 60, 55 50 Q 55 42, 62 38" 
+        stroke="rgba(255,255,255,0.15)" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Snake head -->
+  <circle cx="68" cy="34" r="10" fill="url(#snakeHead)"/>
+  <circle cx="68" cy="34" r="10" fill="rgba(255,255,255,0.1)"/>
+  <!-- Eyes -->
+  <circle cx="64" cy="31" r="3" fill="#1a1a2e"/>
+  <circle cx="73" cy="31" r="3" fill="#1a1a2e"/>
+  <circle cx="65" cy="30" r="1.2" fill="#fff"/>
+  <circle cx="74" cy="30" r="1.2" fill="#fff"/>
+  <!-- Tongue -->
+  <path d="M 75 37 L 82 40 M 75 37 L 82 34" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+  <!-- Tail end -->
+  <circle cx="30" cy="95" r="4" fill="#22c55e" opacity="0.6"/>
+  <!-- Apple/food -->
+  <circle cx="95" cy="88" r="8" fill="#ef4444"/>
+  <circle cx="95" cy="88" r="8" fill="rgba(255,255,255,0.1)"/>
+  <ellipse cx="93" cy="85" rx="3" ry="2" fill="rgba(255,255,255,0.3)"/>
+  <path d="M 95 80 Q 98 76, 101 78" stroke="#22c55e" stroke-width="2" fill="none" stroke-linecap="round"/>
+</svg>

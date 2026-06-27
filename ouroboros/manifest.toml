@@ -1,0 +1,16 @@
+id = "ouroboros"
+version = "0.1.0"
+name = "Ouroboros"
+description = "Classic Snake game with a polished highscore board, replays, and custom victory audio. Plays fully local out of the box; optionally syncs a shared family/friends scoreboard through a Lucidos proxy you configure. Ask Lucidos to wire up a shared board after install if you want one."
+source = "https://github.com/lucidos-dev/plugins/tree/main/ouroboros"
+categories = ["fun"]
+setup = """
+Ouroboros works immediately as a single-player game — highscores save to the local workspace and the bundled fanfare/trombone audio plays on its own. No setup is required to start playing.
+
+Optional — shared scoreboard. The game can sync a highscore board across several people (family, friends, work) through a Lucidos proxy pointing at a Firebase Realtime Database. Only set this up if the user actually wants a shared board:
+
+- Ask the user whether they want a private local game (default — do nothing) or a shared scoreboard.
+- If shared: load the `apps/ouroboros/knowhow/storage-backends.md` knowhow shipped with this plugin. It documents the exact `data/config/apis.json` proxy snippet, the RTDB layout (`/snake/highscores.json`, `/snake/players.json`), and the recommended Firebase security rules.
+- Add the proxy entry to `data/config/apis.json` and register the credential, then tell the user to open Ouroboros → 💾 → "Legg til delt liste" and enter the proxy name to activate the board.
+- Do not invent a Firebase URL or token — ask the user for their own backend, or leave the game local if they don't have one.
+"""
