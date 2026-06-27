@@ -15,7 +15,7 @@ So the app keeps a *list of boards*. One is always "Lokalt" (private, lucidos.da
 ## File layout
 
 ```
-apps/snake-game/
+apps/ouroboros/
   store.js              ← backend abstraction (this contract)
   knowhow/
     storage-backends.md ← this doc
@@ -152,7 +152,7 @@ For a multi-user setup with per-user auth, switch the proxy to use a Google ID t
 ## When packaging as a plugin
 
 The plugin ships:
-- `apps/snake-game/` (UI, store.js, knowhow)
+- `apps/ouroboros/` (UI, store.js, knowhow)
 - `knowhow/snake/storage-backends.md` (optional, if you want it discoverable workspace-wide)
 
 It does **not** ship:

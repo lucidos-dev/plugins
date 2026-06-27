@@ -133,8 +133,8 @@
     snake = [];
     food = null;
     hideAllScreens();
-    $('start-title').textContent = 'ER DU KLAR?';
-    $('btn-start').textContent = `START SOM ${currentPlayer.toUpperCase()}`;
+    $('start-title').textContent = 'ARE YOU READY?';
+    $('btn-start').textContent = `START AS ${currentPlayer.toUpperCase()}`;
     startScreen.classList.remove('hidden');
     overlay.classList.remove('hidden');
     overlay.classList.add('dissolve-fade-in');
@@ -209,24 +209,24 @@
     resetState();
     hideAllScreens();
     const titleEl = $('name-screen-title');
-    titleEl.textContent = isSwitch ? 'BYTT SPILLER' : 'Ouroboros';
+    titleEl.textContent = isSwitch ? 'SWITCH PLAYER' : 'Ouroboros';
     titleEl.classList.toggle('venom-title', isSwitch);
     const prompt = $('name-screen-prompt');
-    prompt.textContent = isSwitch ? '' : 'Hva heter du?';
+    prompt.textContent = isSwitch ? '' : 'What\'s your name?';
     prompt.classList.toggle('hidden', isSwitch);
-    $('btn-name-ok').textContent = isSwitch ? 'Bytt' : 'Start';
+    $('btn-name-ok').textContent = isSwitch ? 'Switch' : 'Start';
     nameScreen.classList.remove('hidden');
     overlay.classList.remove('hidden');
     renderKnownPlayers();
     nameInput.value = '';
-    nameInput.placeholder = 'DITT NAVN';
+    nameInput.placeholder = 'YOUR NAME';
     setTimeout(() => nameInput.focus(), 100);
   }
 
   function showStartScreen() {
     hideAllScreens();
-    $('start-title').textContent = 'ER DU KLAR?';
-    $('btn-start').textContent = `START SOM ${currentPlayer.toUpperCase()}`;
+    $('start-title').textContent = 'ARE YOU READY?';
+    $('btn-start').textContent = `START AS ${currentPlayer.toUpperCase()}`;
     startScreen.classList.remove('hidden');
     overlay.classList.remove('hidden');
   }
@@ -294,7 +294,7 @@
 
   function renderScoreList(container, scores, hl, listName) {
     if (!scores.length) {
-      container.innerHTML = `<div class="empty-state">${listName === 'daily' ? 'Ingen runder i dag' : 'HAR IKKE SETT NOEN'}</div>`;
+      container.innerHTML = `<div class="empty-state">${listName === 'daily' ? 'No rounds today' : 'NOTHING HERE YET'}</div>`;
       return;
     }
     const ranks = [];
@@ -309,7 +309,7 @@
         ? `<span class="hs-medal hs-medal-${rank}">${rank}</span>`
         : `<span class="hs-rank">${rank}</span>`;
       const replayBtn = hs.replay
-        ? `<button class="hs-replay${isReplaying ? ' hs-stop' : ''}" data-idx="${i}" data-list="${listName}" title="${isReplaying ? 'Stopp' : 'Se replay'}">${isReplaying ? '■' : '▶'}</button>`
+        ? `<button class="hs-replay${isReplaying ? ' hs-stop' : ''}" data-idx="${i}" data-list="${listName}" title="${isReplaying ? 'Stop' : 'Watch replay'}">${isReplaying ? '■' : '▶'}</button>`
         : '<span class="hs-replay-spacer"></span>';
       const timeLabel = listName === 'daily' ? (hs.time || '') : (() => {
         const p = (hs.date || '').split('-');
@@ -545,8 +545,8 @@
     if (!btn) return;
     btn.textContent = Store.isShared() ? '☁' : '💾';
     btn.title = Store.isShared()
-      ? `Toppliste: ${Store.getActiveLabel()} (proxy: ${Store.getActiveProxy()})`
-      : 'Toppliste: Lokalt';
+      ? `Leaderboard: ${Store.getActiveLabel()} (proxy: ${Store.getActiveProxy()})`
+      : 'Leaderboard: Local';
   }
 
   function setStatus(msg, kind) {
@@ -569,7 +569,7 @@
       <button class="board-pick" type="button" data-action="pick-local">
         <span class="board-icon">💾</span>
         <span class="board-meta">
-          <span class="board-label">Lokalt</span>
+          <span class="board-label">Local</span>
           <span class="board-proxy">privat — kun deg</span>
         </span>
         <span class="board-active-mark">${isLocal ? '✓' : ''}</span>
@@ -596,7 +596,7 @@
         </button>
         <div class="board-actions">
           <button class="board-action-btn" type="button" data-action="test" data-proxy="${safeProxy}" title="Test tilkobling">⚡</button>
-          <button class="board-action-btn danger" type="button" data-action="remove" data-proxy="${safeProxy}" title="Fjern">✕</button>
+          <button class="board-action-btn danger" type="button" data-action="remove" data-proxy="${safeProxy}" title="Remove">✕</button>
         </div>
       `;
       boardListEl.appendChild(li);
@@ -625,10 +625,10 @@
   $('btn-storage-close').addEventListener('click', returnFromStorageScreen);
 
   $('btn-add-board').addEventListener('click', async () => {
-    const prompt = `Sett opp en ny delt highscore-liste for Ouroboros.\n\n1. Spør meg om navnet på lista (f.eks. "Familien") og om Firebase Realtime Database-URL.\n2. Legg til et proxy-entry i data/config/apis.json med navn snake-storage-<slug>.\n3. Hvis databasen krever auth-token: be om token via request_credential og legg til query_param-auth-laget i proxyen.\n4. Test proxyen med en GET mot /snake/highscores.json.\n5. Si fra hva proxy-navnet ble — så åpner jeg Ouroboros → 💾 og legger den til.\n\nSe apps/snake-game/knowhow/storage-backends.md for detaljene.`;
+    const prompt = `Set up a new shared highscore board for Ouroboros.\n\n1. Ask me for the board's name (e.g. "Family") and the Firebase Realtime Database URL.\n2. Add a proxy entry to data/config/apis.json named snake-storage-<slug>.\n3. If the database requires an auth token: ask for the token via request_credential and add the query_param auth layer to the proxy.\n4. Test the proxy with a GET against /snake/highscores.json.\n5. Tell me what the proxy name ended up being — then I'll open Ouroboros and add it under the storage menu.\n\nSee apps/ouroboros/knowhow/storage-backends.md for the details.`;
     try {
       await navigator.clipboard.writeText(prompt);
-      setStatus('✓ Prompt kopiert. Lim inn i en ny Lucidos-chat så setter Lucidos opp proxyen.', 'ok');
+      setStatus('✓ Prompt copied. Paste it into a new Lucidos chat and Lucidos will set up the proxy.', 'ok');
     } catch (e) {
       setStatus(`Kunne ikke kopiere: ${e.message || e}\n\nKopier manuelt:\n\n${prompt}`, 'error');
     }
@@ -682,7 +682,7 @@
     }
 
     if (action === 'remove') {
-      const ok = confirm(`Fjern toppliste "${proxy}"? Dataene i Firebase rør vi ikke — bare valget her i appen.`);
+      const ok = confirm(`Remove leaderboard "${proxy}"? We won't touch the data in Firebase — only the choice here in the app.`);
       if (!ok) return;
       Store.removeBoard(proxy);
       setStatus('');

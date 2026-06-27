@@ -32,9 +32,9 @@
   <div class="game-container">
     <div class="game-layout">
       <div class="daily-panel side-panel">
-        <h3>Dagens beste</h3>
+        <h3>Today's best</h3>
         <div class="highscores-list" id="daily-list">
-          <div class="empty-state">Ingen runder i dag</div>
+          <div class="empty-state">No rounds today</div>
         </div>
       </div>
 
@@ -44,14 +44,14 @@
             <h1>Ouroboros</h1>
           </div>
           <div class="header-right">
-            <div class="player-badge hidden" id="player-badge" title="Klikk for å bytte spiller">
+            <div class="player-badge hidden" id="player-badge" title="Click to switch player">
               <span class="player-name" id="player-display"></span>
             </div>
             <span class="header-replay-badge hidden" id="header-replay-badge">▶ REPLAY</span>
             <div class="audio-toggles">
-              <button class="audio-toggle active" id="toggle-music" title="Musikk">🎵</button>
-              <button class="audio-toggle active" id="toggle-sfx" title="Lydeffekter">🔊</button>
-              <button class="audio-toggle" id="btn-storage" title="Lagring">💾</button>
+              <button class="audio-toggle active" id="toggle-music" title="Music">🎵</button>
+              <button class="audio-toggle active" id="toggle-sfx" title="Sound effects">🔊</button>
+              <button class="audio-toggle" id="btn-storage" title="Storage">💾</button>
             </div>
             <div class="score-display">
               <span class="score-label">Score</span>
@@ -69,29 +69,29 @@
               <div class="screen" id="name-screen">
                 <div class="screen-title-area">
                   <h2 id="name-screen-title">Ouroboros</h2>
-                  <p id="name-screen-prompt">Hva heter du?</p>
+                  <p id="name-screen-prompt">What's your name?</p>
                 </div>
                 <div class="screen-actions">
                   <div class="known-players hidden" id="known-players"></div>
-                  <div class="name-divider hidden" id="name-divider"><span>eller nytt navn</span></div>
+                  <div class="name-divider hidden" id="name-divider"><span>or new name</span></div>
                   <div class="name-input-group">
-                    <input type="text" id="name-input" placeholder="NY SPILLER" maxlength="10" autocomplete="off">
+                    <input type="text" id="name-input" placeholder="NEW PLAYER" maxlength="10" autocomplete="off">
                     <button class="btn-play" id="btn-name-ok">Start</button>
                   </div>
                 </div>
               </div>
               <div class="screen hidden" id="start-screen">
                 <div class="screen-title-area">
-                  <h2 class="venom-title" id="start-title">ER DU KLAR?</h2>
+                  <h2 class="venom-title" id="start-title">ARE YOU READY?</h2>
                 </div>
                 <div class="screen-actions">
-                  <button class="btn-play" id="btn-start">START SOM KENNETH</button>
-                  <button class="btn-switch" id="btn-switch">BYTT SPILLER</button>
+                  <button class="btn-play" id="btn-start">START</button>
+                  <button class="btn-switch" id="btn-switch">SWITCH PLAYER</button>
                 </div>
               </div>
               <div class="screen hidden" id="storage-screen">
                 <div class="screen-title-area">
-                  <h2>Topplister</h2>
+                  <h2>Leaderboards</h2>
                 </div>
                 <div class="screen-actions">
                   <ul class="board-list" id="board-list"></ul>
@@ -100,10 +100,10 @@
                     <div class="firebase-status" id="storage-status"></div>
                   </div>
 
-                  <button class="btn-play" id="btn-add-board" type="button">+ Legg til delt liste</button>
+                  <button class="btn-play" id="btn-add-board" type="button">+ Add shared board</button>
 
                   <div class="storage-buttons">
-                    <button class="btn-switch" id="btn-storage-close" type="button">Ferdig</button>
+                    <button class="btn-switch" id="btn-storage-close" type="button">Done</button>
                   </div>
                 </div>
               </div>
@@ -143,9 +143,9 @@
       </div>
 
       <div class="highscores-panel side-panel">
-        <h3>Legender</h3>
+        <h3>Legends</h3>
         <div class="highscores-list" id="highscores-list">
-          <div class="empty-state">Ingen scores ennå</div>
+          <div class="empty-state">No scores yet</div>
         </div>
       </div>
     </div>

@@ -268,7 +268,7 @@ window.SnakeAudio = (function () {
     if (!ctx || !sfxEnabled) return 0;
     const t = ctx.currentTime;
 
-    // 1) Slafs — kort våt munnlyd (bredere filter, mer kropp)
+    // 1) Chomp — short wet mouth sound (wider filter, more body)
     const slurp = ctx.createBufferSource(); slurp.buffer = noiseBuf(0.15);
     const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
     bp.frequency.setValueAtTime(1200, t);

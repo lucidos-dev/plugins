@@ -1,5 +1,5 @@
 id = "ouroboros"
-version = "0.1.0"
+version = "0.2.0"
 name = "Ouroboros"
 description = "Classic Snake game with a polished highscore board, replays, and custom victory audio. Plays fully local out of the box; optionally syncs a shared family/friends scoreboard through a Lucidos proxy you configure. Ask Lucidos to wire up a shared board after install if you want one."
 source = "https://github.com/lucidos-dev/plugins/tree/main/ouroboros"

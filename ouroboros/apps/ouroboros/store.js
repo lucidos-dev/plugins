@@ -41,7 +41,7 @@
   const localBackend = {
     name: 'local',
     proxy: null,
-    label: 'Lokalt',
+    label: 'Local',
     async readHighscores() {
       try {
         const data = await window.lucidos.data.read(HIGHSCORES_PATH);
@@ -73,7 +73,7 @@
         const hint = (res.status === 404 || res.status === 502)
           ? ` (proxy \`${proxyName}\` not configured — be Lucidos legge den til i data/config/apis.json)`
           : '';
-        throw new Error(`Delt lager (${label}) ${method} /${path}: ${res.status}${hint} ${text}`.trim());
+        throw new Error(`Shared store (${label}) ${method} /${path}: ${res.status}${hint} ${text}`.trim());
       }
       const text = await res.text();
       if (!text || text === 'null') return method === 'GET' ? null : undefined;
@@ -132,7 +132,7 @@
     getMode()        { return this._mode; },
     isShared()       { return this._mode === 'shared'; },
     getActiveProxy() { return this._activeProxy; },
-    getActiveLabel() { return this._backend ? this._backend.label : 'Lokalt'; },
+    getActiveLabel() { return this._backend ? this._backend.label : 'Local'; },
     listBoards()     { return this._boards.slice(); },
 
     // Activate local mode.
@@ -147,7 +147,7 @@
     // Activate one of the registered shared boards by proxy name.
     setActiveBoard(proxyName) {
       const board = this._boards.find(b => b.proxy === proxyName);
-      if (!board) throw new Error(`Ukjent toppliste: ${proxyName}`);
+      if (!board) throw new Error(`Unknown leaderboard: ${proxyName}`);
       localStorage.setItem(LS_MODE, 'shared');
       localStorage.setItem(LS_ACTIVE, proxyName);
       this._mode = 'shared';
@@ -159,13 +159,13 @@
     addBoard({ label, proxy }) {
       const cleanLabel = (label || '').trim();
       const cleanProxy = (proxy || '').trim();
-      if (!cleanLabel) throw new Error('Etikett kreves');
-      if (!cleanProxy) throw new Error('Proxy-navn kreves');
+      if (!cleanLabel) throw new Error('Label required');
+      if (!cleanProxy) throw new Error('Proxy name required');
       if (!/^[a-z0-9_-]+$/i.test(cleanProxy)) {
-        throw new Error('Proxy-navn kan bare ha bokstaver, tall, _ og -');
+        throw new Error('Proxy name may only contain letters, numbers, _ and -');
       }
       if (this._boards.some(b => b.proxy === cleanProxy)) {
-        throw new Error(`Toppliste \`${cleanProxy}\` finnes allerede`);
+        throw new Error(`Leaderboard \`${cleanProxy}\` already exists`);
       }
       this._boards.push({ label: cleanLabel, proxy: cleanProxy });
       saveBoards(this._boards);

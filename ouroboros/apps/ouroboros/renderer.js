@@ -657,9 +657,9 @@ window.SnakeRenderer = (function () {
       // Set placement text
       if (!goHighscore.dataset.set) {
         if (currentPlacement.type === 'legend') {
-          goHighscore.textContent = `NR ${currentPlacement.rank}, DU ER EN LEGENDE!`;
+          goHighscore.textContent = `NO ${currentPlacement.rank}, YOU'RE A LEGEND!`;
         } else {
-          goHighscore.textContent = `DAGENS ${currentPlacement.rank}. BESTE!`;
+          goHighscore.textContent = `TODAY'S #${currentPlacement.rank} BEST!`;
         }
         goHighscore.dataset.set = '1';
       }
