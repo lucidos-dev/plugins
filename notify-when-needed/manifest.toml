@@ -1,0 +1,6 @@
+id = "notify-when-needed"
+version = "0.1.0"
+name = "Notify When Needed"
+description = "Pushes a deep-linking notification whenever Lucidos (or a coding agent) is blocked waiting on you — a question, a permission prompt, a credential request, or an MCP consent. Tapping the push lands on the exact card you need to act on. Event-driven; ships its own trigger that auto-registers on install."
+source = "https://github.com/lucidos-dev/plugins/tree/main/notify-when-needed"
+categories = ["automation", "productivity"]
