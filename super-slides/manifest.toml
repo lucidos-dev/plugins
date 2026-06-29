@@ -1,7 +1,7 @@
 id = "super-slides"
-version = "0.3.3"
+version = "0.4.0"
 name = "Super Slides"
-description = "Presentation engine with semantic .slides JSON, themed components, sectioned decks, slide picker, embedded speaker-remote mode, and a separate phone remote. Auto-discovers any .slides file under artifacts/presentations/. Ships the app + a slides-format knowhow that teaches Lucidos how to author and edit presentations."
+description = "Presentation engine with semantic .slides JSON, themed components, sectioned decks, slide picker, embedded speaker-remote mode, and a separate phone remote. Auto-discovers any .slides file under artifacts/presentations/. Optional Google Drive integration to save, open, and share decks across My Drive, Shared with me, and shared drives. Ships the app + a slides-format knowhow that teaches Lucidos how to author and edit presentations."
 source = "https://github.com/lucidos-dev/plugins/tree/main/super-slides"
 categories = ["productivity", "communication"]
 setup = """
@@ -11,4 +11,12 @@ This plugin auto-discovers `.slides` files under `artifacts/presentations/`. To 
 - Load `super-slides/slides-format` knowhow before writing — it documents the JSON schema, component types, and editing rules.
 - Write the file to `artifacts/presentations/<slug>.slides` (kebab-case slug derived from the title). The auto-discover picks it up on the next app open; no further wiring needed.
 - Don't fabricate content. If the user wants a real deck, ask for the rough outline first; if they just want to see the engine work, the placeholder is fine and they can edit it later.
+
+Optional — Google Drive (save / open / share decks). The app's ▦ menu has "Save to Drive" and "Open from Drive", which browse My Drive, Shared with me, and shared drives, save a deck into a chosen folder (with a copy-or-move prompt when relocating), and share a deck by view-link or by inviting an email. This is entirely optional — the app works fully without it. Only set it up if the user wants Drive:
+
+- The app calls `lucidos.oauth.getAccessToken('google')` and talks to the Google Drive REST API directly from the browser — there is NO `apis.json` proxy entry and NO stored credential to add. It simply rides whatever Google account the workspace has connected.
+- It needs a connected Google account with **full Drive scope** (`https://www.googleapis.com/auth/drive`). The folder browser lists arbitrary folders (My Drive, Shared with me, shared drives), which the narrow `drive.file` scope cannot enumerate — `drive.file` only sees files this app itself created. So to browse and save into existing folders, the connection must carry the full `drive` scope.
+- If no Google account is connected, connect one with: `connect_oauth_account(provider="google", scopes="https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid")`. (Pass Google's endpoints from the oauth-providers knowhow so the credential modal pre-fills them.) A browser window opens for the user to approve the "See, edit, create and delete all your Google Drive files" permission.
+- If a Google account is already connected but only with `drive.file`, re-run `connect_oauth_account` with the full `drive` scope added to broaden it — the folder browser stays empty until the token carries full Drive scope.
+- OAuth credentials are workspace state and never ship inside a plugin, which is why this connection is a setup-time step rather than bundled config.
 """

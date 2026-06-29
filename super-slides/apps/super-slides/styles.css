@@ -1072,7 +1072,8 @@ body.ss-editing-disabled .deck {
    Remote Modal
    ══════════════════════════════════════ */
 
-#ssRemoteModal {
+#ssRemoteModal,
+#ssDriveModal {
   position: fixed;
   inset: 0;
   z-index: 10000;
@@ -1160,6 +1161,149 @@ body.ss-editing-disabled .deck {
 
 .remote-modal-btn-icon {
   font-size: 16px;
+}
+
+/* ── Google Drive modals ── */
+.ss-drive-card { max-width: 440px; }
+
+.ss-drive-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.ss-drive-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.12s;
+}
+.ss-drive-item:last-child { border-bottom: none; }
+.ss-drive-item:hover { background: rgba(255, 255, 255, 0.05); }
+
+.ss-drive-item-name {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ss-drive-item-time {
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.ss-drive-loading, .ss-drive-empty {
+  padding: 22px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.ss-drive-err { color: #e0a0a0; white-space: pre-wrap; line-height: 1.5; }
+
+.ss-drive-or {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  text-align: center;
+  margin: 6px 0 12px;
+  opacity: 0.7;
+}
+
+.ss-drive-linkrow { display: flex; gap: 8px; }
+
+.ss-drive-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.ss-drive-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.ss-drive-input::placeholder { color: var(--text-dim); opacity: 0.7; }
+
+.ss-drive-go { flex: 0 0 auto; }
+
+.ss-drive-sharebtns { margin-bottom: 14px; }
+.ss-drive-sharebtns .remote-modal-btn { width: 100%; }
+
+/* ── Drive folder browser ── */
+.ss-drive-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+.ss-drive-crumb,
+.ss-crumb {
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 5px;
+  color: var(--accent);
+}
+.ss-drive-crumb:hover,
+.ss-crumb:hover { background: rgba(255, 255, 255, 0.06); }
+.ss-drive-crumb-sep,
+.ss-crumb-sep { opacity: 0.5; }
+
+.ss-drive-browser {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.ss-drive-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.ss-drive-row:last-child { border-bottom: none; }
+.ss-drive-row:hover { background: rgba(255, 255, 255, 0.05); }
+.ss-drive-row-icon { flex: 0 0 auto; font-size: 15px; }
+.ss-drive-row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ss-drive-row-chev { flex: 0 0 auto; color: var(--text-dim); opacity: 0.7; }
+.ss-drive-row-time { flex: 0 0 auto; font-size: 11px; color: var(--text-dim); }
+.ss-drive-file .ss-drive-row-name { color: var(--text); }
+
+.ss-drive-actionsbar { margin-top: 12px; }
+.ss-drive-savehere { width: 100%; }
+.ss-drive-savehere strong { font-weight: 600; }
+.ss-drive-hint-inline {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 4px 0;
+  opacity: 0.8;
 }
 
 /* ══════════════════════════════════════

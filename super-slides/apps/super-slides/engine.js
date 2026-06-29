@@ -45,6 +45,15 @@ SS.initEngine = function() {
     ).join('');
     menuItems.innerHTML = items + `
       <div class="menu-separator"></div>
+      <div class="menu-item menu-item-action" data-action="drive-save">
+        <span class="menu-dot menu-dot-remote">⬆</span>
+        Save to Drive
+      </div>
+      <div class="menu-item menu-item-action" data-action="drive-open">
+        <span class="menu-dot menu-dot-remote">📂</span>
+        Open from Drive
+      </div>
+      <div class="menu-separator"></div>
       <div class="menu-item menu-item-action" data-action="remote-mode">
         <span class="menu-dot menu-dot-remote">📱</span>
         Remote mode
@@ -54,6 +63,20 @@ SS.initEngine = function() {
         Open speaker remote
       </div>`;
   }
+
+  // Rebuild the presentation list (after a Drive import adds a deck) and
+  // switch to the given presentation id. Exposed for SS.drive.importDeck.
+  SS._rebuildMenuAndShow = function (presId) {
+    buildMenu();
+    const idx = registry.findIndex(p => p.id === presId);
+    if (idx >= 0) {
+      loadPresentation(registry[idx]);
+      menuItems.querySelectorAll('.menu-item').forEach((el, i) => {
+        if (el.dataset.action) return;
+        el.classList.toggle('active', i === idx);
+      });
+    }
+  };
 
   function showRemoteModal(url) {
     // Remove existing modal if any
@@ -139,6 +162,16 @@ SS.initEngine = function() {
   menuItems.addEventListener('click', (e) => {
     const item = e.target.closest('.menu-item');
     if (!item) return;
+    if (item.dataset.action === 'drive-save') {
+      if (SS.driveUI) SS.driveUI.saveCurrent();
+      menuDropdown.classList.remove('open');
+      return;
+    }
+    if (item.dataset.action === 'drive-open') {
+      if (SS.driveUI) SS.driveUI.openPicker();
+      menuDropdown.classList.remove('open');
+      return;
+    }
     if (item.dataset.action === 'remote-mode') {
       if (SS.toggleRemoteMode) SS.toggleRemoteMode();
       menuDropdown.classList.remove('open');
