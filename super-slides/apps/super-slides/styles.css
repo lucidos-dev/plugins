@@ -1080,6 +1080,12 @@ body.ss-editing-disabled .deck {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* When the visible viewport shrinks (iOS keyboard up), the JS pins this
+     container to visualViewport and the card may be taller than the remaining
+     space. Allow it to scroll, and center via auto-margins so the top is never
+     clipped (a known flexbox issue with align-items:center + overflow). */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 24px;
 }
 
@@ -1098,6 +1104,7 @@ body.ss-editing-disabled .deck {
   padding: 28px 32px;
   max-width: 400px;
   width: 100%;
+  margin: auto;
   box-shadow: 0 8px 48px rgba(0, 0, 0, 0.5);
 }
 
@@ -1295,9 +1302,30 @@ body.ss-editing-disabled .deck {
 .ss-drive-row-time { flex: 0 0 auto; font-size: 11px; color: var(--text-dim); }
 .ss-drive-file .ss-drive-row-name { color: var(--text); }
 
-.ss-drive-actionsbar { margin-top: 12px; }
+.ss-drive-actionsbar { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .ss-drive-savehere { width: 100%; }
 .ss-drive-savehere strong { font-weight: 600; }
+/* Default (pin) + New folder side by side */
+.ss-drive-folderactions { display: flex; gap: 8px; }
+.ss-drive-folderactions .ss-drive-pin,
+.ss-drive-folderactions .ss-drive-newfolder { flex: 1 1 0; }
+/* Inline new-folder form (replaces the actions row while typing) */
+.ss-drive-newfolderform { display: flex; flex-direction: column; gap: 10px; }
+.ss-drive-naming-label { font-size: 13px; color: var(--text-dim); }
+.ss-drive-naming-row { display: flex; gap: 8px; align-items: center; }
+.ss-drive-newfolderform .ss-drive-input { flex: 1 1 auto; }
+.ss-drive-newfolderform .remote-modal-btn { flex: 0 0 auto; }
+
+/* While naming a new folder: collapse the tall body (folder list, crumbs, the
+   trailing Cancel footer) and pin the card to the top of the screen, so the
+   input sits high above the on-screen keyboard. The app is in an iframe where
+   the keyboard does NOT shrink visualViewport, so reflow-around-keyboard is
+   impossible — collapse + top-anchor is the robust fix and avoids scroll jank. */
+.ss-drive-card.ss-drive-naming { margin-top: 0; align-self: flex-start; }
+.ss-drive-card.ss-drive-naming .ss-drive-crumbs,
+.ss-drive-card.ss-drive-naming .ss-drive-browser,
+.ss-drive-card.ss-drive-naming > .remote-modal-actions { display: none; }
+
 .ss-drive-hint-inline {
   font-size: 12px;
   color: var(--text-dim);
@@ -1326,6 +1354,11 @@ body.ss-editing-disabled .deck {
     -webkit-overflow-scrolling: touch;
     justify-content: flex-start !important;
   }
+
+  /* Shrink the Drive folder list on phones so the modal's foot (incl. the
+     inline "new folder" input) stays within the keyboard-reduced viewport. */
+  .ss-drive-browser { max-height: 40vh; }
+  .remote-modal-card { padding: 20px; }
 
   /* Typography — aggressive scaling for ~393px screens */
   h1 { font-size: 22px; letter-spacing: -0.5px; margin-bottom: 8px; }

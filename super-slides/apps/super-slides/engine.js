@@ -679,8 +679,14 @@ SS.initEngine = function() {
 
   document.addEventListener('keydown', (e) => {
     if (!currentPres) return;
-    // Don't navigate while editing text
+    // Don't navigate while editing text (inline slide edit)…
     if (SS.isEditing && SS.isEditing()) return;
+    // …or while typing in any form field (e.g. the Drive "new folder" input).
+    // Otherwise Space/Backspace/Enter/arrows get hijacked for slide nav and the
+    // keystroke is swallowed by preventDefault().
+    const t = e.target;
+    if (t && (t.isContentEditable ||
+              t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
 
     if (e.key === 'ArrowUp' || e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();

@@ -138,6 +138,23 @@ SS.drive = (function () {
     await driveFetch(url, { method: 'PATCH' });
   }
 
+  // Create a subfolder inside parentId (a real folder id, a shared-drive id, or
+  // 'root' for My Drive). Returns the new folder { id, name, driveId, parents }.
+  async function createFolder(parentId, name) {
+    const metadata = {
+      name: name,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentId],
+    };
+    const url = `${DRIVE}/files?supportsAllDrives=true&fields=id,name,driveId,parents`;
+    const res = await driveFetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(metadata),
+    });
+    return res.json();
+  }
+
   // List .slides decks this app created in Drive.
   async function list() {
     const q = encodeURIComponent(
@@ -199,6 +216,58 @@ SS.drive = (function () {
     return (await res.json()).files || [];
   }
 
+  /* ── folder ancestry (for an honest breadcrumb) ──
+     Given a folder id, walk the Drive parents chain up to its top-level root
+     (My Drive or a shared drive) and return the path as
+     [{id,name}, …] outermost-first, INCLUDING the folder itself. Used to seed
+     the browser's breadcrumb so a deep pinned/last folder shows its real path
+     (e.g. "Jobs - P&T › 04 Area - Job Seekers › 03 User Acquisition") instead
+     of looking like it sits directly under Drive. */
+  let _rootId = null;
+  async function myDriveRootId() {
+    if (_rootId) return _rootId;
+    try {
+      const r = await driveFetch(`${DRIVE}/files/root?fields=id`);
+      _rootId = (await r.json()).id || null;
+    } catch (e) { _rootId = null; }
+    return _rootId;
+  }
+  async function folderMeta(fileId) {
+    const res = await driveFetch(
+      `${DRIVE}/files/${fileId}?fields=id,name,parents,driveId&supportsAllDrives=true`
+    );
+    return res.json();
+  }
+  async function sharedDriveName(driveId) {
+    try {
+      const res = await driveFetch(`${DRIVE}/drives/${driveId}?fields=id,name`);
+      return (await res.json()).name || 'Shared drive';
+    } catch (e) { return 'Shared drive'; }
+  }
+  async function ancestry(folderId) {
+    const rootId = await myDriveRootId();
+    const chain = [];
+    let cur = folderId;
+    let driveId = null;
+    const seen = new Set();
+    for (let i = 0; i < 25 && cur && !seen.has(cur); i++) {
+      seen.add(cur);
+      let md;
+      try { md = await folderMeta(cur); } catch (e) { break; }
+      chain.unshift({ id: md.id, name: md.name });
+      if (md.driveId) driveId = md.driveId;
+      const parent = md.parents && md.parents[0];
+      if (!parent) break;                       // top of My Drive
+      if (rootId && parent === rootId) break;    // parent is My Drive root
+      if (driveId && parent === driveId) break;  // parent is shared-drive root
+      cur = parent;
+    }
+    // Prepend the container root so the breadcrumb is navigable.
+    if (driveId) chain.unshift({ id: driveId, name: await sharedDriveName(driveId) });
+    else chain.unshift({ id: 'root', name: 'My Drive' });
+    return chain;
+  }
+
   /* ── last-used folder memory ── */
   const LAST_FOLDER_KEY = 'ss-drive-last-folder'; // { id, name }
   function rememberFolder(id, name) {
@@ -206,6 +275,33 @@ SS.drive = (function () {
   }
   function lastFolder() {
     try { return JSON.parse(localStorage.getItem(LAST_FOLDER_KEY)) || null; } catch (e) { return null; }
+  }
+
+  /* ── pinned default folder (workspace config) ──
+     Stored in artifacts/super-slides/drive-config.json so it persists across
+     devices/sessions (unlike the per-browser last-used folder). When set, the
+     folder browser opens here by default. */
+  const PINNED_PATH = 'artifacts/super-slides/drive-config.json';
+  let _pinned;        // cached value: { id, name } | null
+  let _pinnedLoaded = false;
+
+  async function loadPinned() {
+    if (_pinnedLoaded) return _pinned;
+    try {
+      const raw = await lucidos.data.read(PINNED_PATH);
+      const cfg = JSON.parse(raw);
+      _pinned = (cfg && cfg.pinnedFolder && cfg.pinnedFolder.id) ? cfg.pinnedFolder : null;
+    } catch (e) { _pinned = null; }
+    _pinnedLoaded = true;
+    return _pinned;
+  }
+  function pinnedFolder() { return _pinned || null; }
+  async function setPinned(id, name) {
+    _pinned = (id ? { id, name: name || id } : null);
+    _pinnedLoaded = true;
+    try { await lucidos.data.write(PINNED_PATH, JSON.stringify({ pinnedFolder: _pinned }, null, 2)); }
+    catch (e) { /* best-effort */ }
+    return _pinned;
   }
 
   // Download a file's JSON content by Drive file id.
@@ -276,8 +372,8 @@ SS.drive = (function () {
   return {
     save, list, download, meta, share, parseFileId, importDeck,
     knownFileId, token, toast,
-    getParents, moveFile, listFolders, listSharedDrives, listInFolder,
-    rememberFolder, lastFolder,
+    getParents, moveFile, createFolder, listFolders, listSharedDrives, listInFolder, ancestry,
+    rememberFolder, lastFolder, loadPinned, pinnedFolder, setPinned,
   };
 })();
 
@@ -286,9 +382,42 @@ SS.drive = (function () {
    ══════════════════════════════════════════════════════ */
 
 SS.driveUI = (function () {
+  // Keep the modal inside the region NOT covered by the on-screen keyboard.
+  // On iOS Safari a position:fixed element is sized to the LAYOUT viewport, so
+  // a centered modal stays put while the keyboard overlays the bottom — hiding
+  // any input near the foot of the card (e.g. the inline "new folder" field).
+  // The visualViewport API reports the actually-visible area; we pin the modal
+  // container to it so its contents reflow above the keyboard.
+  let _vvSync = null;
+  function unbindViewport() {
+    const vv = window.visualViewport;
+    if (_vvSync && vv) {
+      vv.removeEventListener('resize', _vvSync);
+      vv.removeEventListener('scroll', _vvSync);
+    }
+    _vvSync = null;
+  }
+  function bindViewport(m) {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const sync = () => {
+      m.style.top = vv.offsetTop + 'px';
+      m.style.left = vv.offsetLeft + 'px';
+      m.style.width = vv.width + 'px';
+      m.style.height = vv.height + 'px';
+      m.style.right = 'auto';
+      m.style.bottom = 'auto';
+    };
+    _vvSync = sync;
+    vv.addEventListener('resize', sync);
+    vv.addEventListener('scroll', sync);
+    sync();
+  }
+
   function closeModal() {
     const ex = document.getElementById('ssDriveModal');
     if (ex) ex.remove();
+    unbindViewport();
   }
 
   function modal(innerHtml) {
@@ -300,6 +429,7 @@ SS.driveUI = (function () {
        <div class="remote-modal-card ss-drive-card">${innerHtml}</div>`;
     document.body.appendChild(m);
     m.querySelector('.remote-modal-backdrop').addEventListener('click', closeModal);
+    bindViewport(m);
     return m;
   }
 
@@ -332,8 +462,13 @@ SS.driveUI = (function () {
 
   // stack entries: { id, name }. The first entry is a virtual root.
   function folderBrowser(mode) {
-    // Start at the last-used folder when we have one (default: roots list).
-    const last = SS.drive.lastFolder();
+    // Open at the pinned default folder when set; else the last-used folder;
+    // else the roots list. Seed with a single-entry stack for an immediate
+    // render, then asynchronously expand to the folder's true ancestry so the
+    // breadcrumb shows the real path (e.g. "Jobs - P&T › 04 Area … › 03 UA")
+    // instead of making a deep folder look like it sits directly under Drive.
+    const pinned = SS.drive.pinnedFolder();
+    const last = pinned || SS.drive.lastFolder();
     let stack = last ? [{ id: last.id, name: last.name }] : [{ id: '__roots__', name: 'Drive' }];
 
     const m = modal(
@@ -341,23 +476,11 @@ SS.driveUI = (function () {
        <div class="ss-drive-crumbs" id="ssCrumbs"></div>
        <div class="ss-drive-browser" id="ssBrowser"><div class="ss-drive-loading">Loading…</div></div>
        <div class="ss-drive-actionsbar" id="ssActionsBar"></div>
-       ${mode === 'open' ? `
-       <div class="ss-drive-or">or open any deck you have access to</div>
-       <div class="ss-drive-linkrow">
-         <input class="ss-drive-input" id="ssDriveLink" placeholder="Paste a Drive share link or file ID" />
-         <button class="remote-modal-btn ss-drive-go" id="ssDriveOpenLink">Open</button>
-       </div>` : ''}
        <div class="remote-modal-actions" style="margin-top:16px">
          <button class="remote-modal-btn" data-action="close">Cancel</button>
        </div>`
     );
     m.querySelector('[data-action="close"]').addEventListener('click', closeModal);
-    if (mode === 'open') {
-      m.querySelector('#ssDriveOpenLink').addEventListener('click', openByLink);
-      m.querySelector('#ssDriveLink').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') openByLink();
-      });
-    }
 
     const browserEl = m.querySelector('#ssBrowser');
     const crumbsEl = m.querySelector('#ssCrumbs');
@@ -383,19 +506,100 @@ SS.driveUI = (function () {
     function here() { return stack[stack.length - 1]; }
 
     function renderActions() {
+      const card = actionsEl.closest('.ss-drive-card');
+      if (card) card.classList.remove('ss-drive-naming');
       const loc = here();
-      const canSaveHere = mode === 'save' && loc.id !== '__roots__' &&
+      const inRealFolder = loc.id !== '__roots__' &&
         loc.id !== '__drives__' && loc.id !== 'sharedWithMe';
-      actionsEl.innerHTML = canSaveHere
+      const canSaveHere = mode === 'save' && inRealFolder;
+
+      const pinned = SS.drive.pinnedFolder();
+      const isPinned = pinned && pinned.id === loc.id;
+      const pinBtn = inRealFolder
+        ? `<button class="remote-modal-btn ss-drive-pin" id="ssPinHere" title="${isPinned
+              ? 'This is your default folder — click to unpin'
+              : 'Open the browser here by default'}">${isPinned ? 'Default ✓' : 'Pin as default'}</button>`
+        : '';
+
+      const newFolderBtn = inRealFolder
+        ? `<button class="remote-modal-btn ss-drive-newfolder" id="ssNewFolder" title="Create a folder here">
+             <span class="remote-modal-btn-icon">＋</span> New folder
+           </button>`
+        : '';
+
+      const saveBtn = canSaveHere
         ? `<button class="remote-modal-btn ss-drive-savehere" id="ssSaveHere">
              <span class="remote-modal-btn-icon">⬆</span> Save here: <strong>${escapeHtml(loc.name)}</strong>
            </button>`
         : (mode === 'save'
             ? `<div class="ss-drive-hint-inline">Open a folder to save into it.</div>`
             : '');
+
+      const folderRow = (pinBtn || newFolderBtn)
+        ? `<div class="ss-drive-folderactions">${pinBtn}${newFolderBtn}</div>`
+        : '';
+
+      actionsEl.innerHTML = saveBtn + folderRow;
+
       if (canSaveHere) {
         actionsEl.querySelector('#ssSaveHere').addEventListener('click', () => doSave(loc));
       }
+      if (inRealFolder) {
+        actionsEl.querySelector('#ssPinHere').addEventListener('click', async () => {
+          if (isPinned) {
+            await SS.drive.setPinned(null);
+            SS.drive.toast('Default folder cleared', 'info');
+          } else {
+            await SS.drive.setPinned(loc.id, loc.name);
+            SS.drive.toast(`“${loc.name}” pinned as default`, 'success');
+          }
+          renderActions();
+        });
+        actionsEl.querySelector('#ssNewFolder').addEventListener('click', () => newFolderPrompt(loc));
+      }
+    }
+
+    // Inline "new folder" form rendered into the actions bar. Creating a folder
+    // pushes it onto the stack and navigates in; cancel restores the actions.
+    function newFolderPrompt(parent) {
+      // The app lives in an iframe, where the on-screen keyboard does NOT shrink
+      // visualViewport — so we can't reflow around it. Instead, collapse the card
+      // (the tall folder list is hidden via .ss-drive-naming) and anchor it to the
+      // top of the screen, so the input sits high above the keyboard. No scroll
+      // tricks needed → no jank.
+      const card = actionsEl.closest('.ss-drive-card');
+      if (card) card.classList.add('ss-drive-naming');
+      actionsEl.innerHTML =
+        `<div class="ss-drive-newfolderform">
+           <div class="ss-drive-naming-label">New folder in “${escapeHtml(parent.name)}”</div>
+           <div class="ss-drive-naming-row">
+             <input class="ss-drive-input" id="ssNewFolderName" placeholder="Folder name" autocomplete="off" autocapitalize="words" />
+             <button class="remote-modal-btn ss-drive-go" id="ssNewFolderCreate">Create</button>
+             <button class="remote-modal-btn" id="ssNewFolderCancel">Cancel</button>
+           </div>
+         </div>`;
+      const input = actionsEl.querySelector('#ssNewFolderName');
+      // focus() runs synchronously inside this click handler (a user gesture),
+      // so iOS reliably opens the keyboard.
+      input.focus();
+      actionsEl.querySelector('#ssNewFolderCancel').addEventListener('click', renderActions);
+      const create = async () => {
+        const name = (input.value || '').trim();
+        if (!name) { SS.drive.toast('Enter a folder name', 'warning'); return; }
+        const btn = actionsEl.querySelector('#ssNewFolderCreate');
+        btn.disabled = true; btn.textContent = 'Creating…';
+        try {
+          const folder = await SS.drive.createFolder(parent.id, name);
+          SS.drive.toast(`Created “${folder.name}”`, 'success');
+          stack.push({ id: folder.id, name: folder.name });
+          render(); // navigate into the new (empty) folder
+        } catch (err) {
+          btn.disabled = false; btn.textContent = 'Create';
+          SS.drive.toast(err.message, 'error');
+        }
+      };
+      actionsEl.querySelector('#ssNewFolderCreate').addEventListener('click', create);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') create(); });
     }
 
     async function render() {
@@ -460,6 +664,26 @@ SS.driveUI = (function () {
     }
 
     render();
+
+    // Expand a deep starting folder to its true ancestry so the breadcrumb is
+    // honest and every parent is clickable. Only meaningful when we opened
+    // inside a real folder (not the roots list).
+    (async () => {
+      if (last && last.id) {
+        try {
+          const path = await SS.drive.ancestry(last.id);
+          if (path && path.length) {
+            // Only adopt it if we're still showing that same starting folder
+            // (user hasn't navigated away during the async fetch).
+            if (stack.length === 1 && stack[0].id === last.id) {
+              stack = path;
+              render();
+            }
+          }
+        } catch (e) { /* keep the single-entry stack on failure */ }
+      }
+    })();
+
     return m;
   }
 
@@ -527,13 +751,15 @@ SS.driveUI = (function () {
   }
 
   /* ── Save / Open entry points ── */
-  function saveCurrent() {
+  async function saveCurrent() {
     const pres = SS._currentPres;
     if (!pres) { SS.drive.toast('No presentation open', 'warning'); return; }
+    await SS.drive.loadPinned();
     folderBrowser('save');
   }
 
-  function openPicker() {
+  async function openPicker() {
+    await SS.drive.loadPinned();
     folderBrowser('open');
   }
 
@@ -546,23 +772,6 @@ SS.driveUI = (function () {
       SS.drive.toast(`Opened “${pres.title || name}”`, 'success');
     } catch (err) {
       errorCard('Open failed', err.message);
-    }
-  }
-
-  async function openByLink() {
-    const input = document.getElementById('ssDriveLink');
-    const id = SS.drive.parseFileId(input && input.value);
-    if (!id) { SS.drive.toast('That doesn’t look like a Drive link or file ID', 'warning'); return; }
-    SS.drive.toast('Opening from Drive…');
-    closeModal();
-    try {
-      let name = 'imported';
-      try { const md = await SS.drive.meta(id); name = md.name || name; } catch (e) { /* metadata optional */ }
-      const raw = await SS.drive.download(id);
-      const pres = await SS.drive.importDeck(raw, name);
-      SS.drive.toast(`Opened “${pres.title || name}”`, 'success');
-    } catch (err) {
-      errorCard('Open failed', err.message + '\n\nIf this is a colleague’s deck, the connected Google account may need access to it (drive.file only sees files this app created).');
     }
   }
 
