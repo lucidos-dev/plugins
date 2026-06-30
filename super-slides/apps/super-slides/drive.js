@@ -270,8 +270,12 @@ SS.drive = (function () {
 
   /* ── last-used folder memory ── */
   const LAST_FOLDER_KEY = 'ss-drive-last-folder'; // { id, name }
-  function rememberFolder(id, name) {
-    try { localStorage.setItem(LAST_FOLDER_KEY, JSON.stringify({ id, name })); } catch (e) {}
+  function rememberFolder(id, name, path) {
+    try {
+      const entry = { id, name };
+      if (Array.isArray(path) && path.length) entry.path = path;
+      localStorage.setItem(LAST_FOLDER_KEY, JSON.stringify(entry));
+    } catch (e) {}
   }
   function lastFolder() {
     try { return JSON.parse(localStorage.getItem(LAST_FOLDER_KEY)) || null; } catch (e) { return null; }
@@ -296,8 +300,13 @@ SS.drive = (function () {
     return _pinned;
   }
   function pinnedFolder() { return _pinned || null; }
-  async function setPinned(id, name) {
-    _pinned = (id ? { id, name: name || id } : null);
+  async function setPinned(id, name, path) {
+    if (id) {
+      _pinned = { id, name: name || id };
+      if (Array.isArray(path) && path.length) _pinned.path = path;
+    } else {
+      _pinned = null;
+    }
     _pinnedLoaded = true;
     try { await lucidos.data.write(PINNED_PATH, JSON.stringify({ pinnedFolder: _pinned }, null, 2)); }
     catch (e) { /* best-effort */ }
@@ -468,8 +477,17 @@ SS.driveUI = (function () {
     // breadcrumb shows the real path (e.g. "Jobs - P&T › 04 Area … › 03 UA")
     // instead of making a deep folder look like it sits directly under Drive.
     const pinned = SS.drive.pinnedFolder();
+    const fromPinned = !!pinned;
     const last = pinned || SS.drive.lastFolder();
-    let stack = last ? [{ id: last.id, name: last.name }] : [{ id: '__roots__', name: 'Drive' }];
+    // When this folder was pinned/saved we stored its FULL path, so we already
+    // know the breadcrumb — seed the stack with it and render once (complete
+    // crumbs + folder list together, no async ancestry walk, no second render).
+    // Legacy entries that only saved {id,name} fall back to a single-entry stack
+    // whose ancestry is derived lazily below and then persisted for next time.
+    const knownPath = last && Array.isArray(last.path) && last.path.length ? last.path : null;
+    let stack = knownPath
+      ? knownPath.map(s => ({ id: s.id, name: s.name }))
+      : (last ? [{ id: last.id, name: last.name }] : [{ id: '__roots__', name: 'Drive' }]);
 
     const m = modal(
       `<h3>${mode === 'save' ? 'Save to Google Drive' : 'Open from Google Drive'}</h3>
@@ -504,6 +522,12 @@ SS.driveUI = (function () {
     }
 
     function here() { return stack[stack.length - 1]; }
+    // The full navigable path to the current folder, for persisting as a known
+    // breadcrumb (drops the virtual roots entry). Reused on next open so we
+    // skip the ancestry walk entirely.
+    function pathHere() {
+      return stack.filter(s => s.id !== '__roots__').map(s => ({ id: s.id, name: s.name }));
+    }
 
     function renderActions() {
       const card = actionsEl.closest('.ss-drive-card');
@@ -542,7 +566,7 @@ SS.driveUI = (function () {
       actionsEl.innerHTML = saveBtn + folderRow;
 
       if (canSaveHere) {
-        actionsEl.querySelector('#ssSaveHere').addEventListener('click', () => doSave(loc));
+        actionsEl.querySelector('#ssSaveHere').addEventListener('click', () => doSave(loc, pathHere()));
       }
       if (inRealFolder) {
         actionsEl.querySelector('#ssPinHere').addEventListener('click', async () => {
@@ -550,7 +574,7 @@ SS.driveUI = (function () {
             await SS.drive.setPinned(null);
             SS.drive.toast('Default folder cleared', 'info');
           } else {
-            await SS.drive.setPinned(loc.id, loc.name);
+            await SS.drive.setPinned(loc.id, loc.name, pathHere());
             SS.drive.toast(`“${loc.name}” pinned as default`, 'success');
           }
           renderActions();
@@ -665,34 +689,39 @@ SS.driveUI = (function () {
 
     render();
 
-    // Expand a deep starting folder to its true ancestry so the breadcrumb is
-    // honest and every parent is clickable. Only meaningful when we opened
-    // inside a real folder (not the roots list).
-    (async () => {
-      if (last && last.id) {
+    // Legacy fallback only: we opened at a folder but only knew its id+name (no
+    // stored path). Derive the true ancestry so the breadcrumb is honest and
+    // every parent is clickable, refresh just the crumbs (the folder itself is
+    // unchanged — a full render() here would re-fetch the same list = double
+    // load), then persist the resolved path so the next open is instant.
+    if (!knownPath) {
+      (async () => {
+        if (!last || !last.id) return;
         try {
           const path = await SS.drive.ancestry(last.id);
-          if (path && path.length) {
-            // Only adopt it if we're still showing that same starting folder
-            // (user hasn't navigated away during the async fetch).
-            if (stack.length === 1 && stack[0].id === last.id) {
-              stack = path;
-              render();
-            }
+          if (!path || !path.length) return;
+          // Only adopt it if we're still showing that same starting folder
+          // (user hasn't navigated away during the async fetch).
+          if (stack.length === 1 && stack[0].id === last.id) {
+            stack = path.map(s => ({ id: s.id, name: s.name }));
+            renderCrumbs();
+            const persistPath = stack.filter(s => s.id !== '__roots__');
+            if (fromPinned) SS.drive.setPinned(last.id, last.name, persistPath);
+            else SS.drive.rememberFolder(last.id, last.name, persistPath);
           }
         } catch (e) { /* keep the single-entry stack on failure */ }
-      }
-    })();
+      })();
+    }
 
     return m;
   }
 
   // Save the current deck into the chosen folder, prompting copy/move when the
   // deck already lives in a different Drive folder.
-  async function doSave(folder) {
+  async function doSave(folder, path) {
     const pres = SS._currentPres;
     if (!pres) { SS.drive.toast('No presentation open', 'warning'); return; }
-    SS.drive.rememberFolder(folder.id, folder.name);
+    SS.drive.rememberFolder(folder.id, folder.name, path);
 
     const existingId = SS.drive.knownFileId(pres.id);
     // If this deck is already a Drive file, find out whether it's elsewhere.
