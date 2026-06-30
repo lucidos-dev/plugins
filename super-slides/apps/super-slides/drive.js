@@ -77,9 +77,34 @@ SS.drive = (function () {
 
   /* ── core operations ── */
 
-  // Upload (create or update) a deck. `pres` is a registry entry; we save
-  // its original .slides JSON (rawData), pretty-printed for diff-friendliness.
-  // Upload (create or update) a deck's .slides JSON.
+  // Resolve the exact bytes to upload for `pres`. The SOURCE OF TRUTH is the
+  // on-disk .slides file: inline text edits (editing.js) and notes/card-note
+  // edits (remote-mode.js) patch the file via lucidos.data.edit() but do NOT
+  // mutate pres.rawData. Uploading rawData would therefore ship the snapshot
+  // captured at load time, missing every edit made since — the "Drive has my
+  // pre-edit content even though it said it saved" bug. So we re-read the file,
+  // keep pres.rawData in sync (it's the only in-memory consumer), and return
+  // both the parsed object and its pretty-printed JSON. Falls back to the
+  // in-memory rawData snapshot when there's no sourceFile or the disk
+  // read/parse fails, so saving never hard-breaks.
+  async function resolveSaveContent(pres) {
+    if (!pres) throw new Error('No presentation data to save');
+    let data = pres.rawData;
+    if (pres.sourceFile && window.lucidos && lucidos.data && lucidos.data.read) {
+      try {
+        data = JSON.parse(await lucidos.data.read(pres.sourceFile));
+        pres.rawData = data; // keep the in-memory snapshot consistent
+      } catch (e) {
+        data = pres.rawData; // disk read/parse failed — fall back to memory
+      }
+    }
+    if (!data) throw new Error('No presentation data to save');
+    return { data, content: JSON.stringify(data, null, 2) };
+  }
+
+  // Upload (create or update) a deck's .slides JSON. `pres` is a registry entry;
+  // the content uploaded is the CURRENT on-disk file (see resolveSaveContent),
+  // not the load-time rawData snapshot.
   //   opts.fileId    — explicit target file. If the key is PRESENT (even null),
   //                    it overrides the remembered map: pass `null` to force a
   //                    fresh CREATE (this is how "Save a copy" makes a new file).
@@ -88,9 +113,8 @@ SS.drive = (function () {
   // land on the same file.
   async function save(pres, opts) {
     opts = opts || {};
-    if (!pres || !pres.rawData) throw new Error('No presentation data to save');
-    const presId = pres.id || pres.rawData.id || 'untitled';
-    const content = JSON.stringify(pres.rawData, null, 2);
+    const { data, content } = await resolveSaveContent(pres);
+    const presId = pres.id || data.id || 'untitled';
     const targetId = ('fileId' in opts) ? opts.fileId : knownFileId(presId);
 
     const metadata = {
@@ -166,6 +190,26 @@ SS.drive = (function () {
     );
     const j = await res.json();
     return j.files || [];
+  }
+
+  // Find the Drive file id for a deck by its durable presId tag (appProperties.presId),
+  // which save() writes on every upload. This survives across browsers/devices where
+  // the local deck→file map (localStorage) was never populated — preventing duplicate
+  // same-named files. Returns the most-recently-modified match, or null.
+  async function findByPresId(presId) {
+    // Drive query values are single-quoted; only search for query-safe ids.
+    if (!presId || /['\\]/.test(presId)) return null;
+    const q = encodeURIComponent(
+      `appProperties has { key='presId' and value='${presId}' } and ` +
+      "appProperties has { key='superSlides' and value='1' } and trashed = false"
+    );
+    const fields = encodeURIComponent('files(id,modifiedTime)');
+    const res = await driveFetch(
+      `${DRIVE}/files?q=${q}&fields=${fields}&orderBy=modifiedTime desc&pageSize=1` +
+      '&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives'
+    );
+    const files = (await res.json()).files || [];
+    return files.length ? files[0].id : null;
   }
 
   /* ── folder browsing (full drive scope) ── */
@@ -357,12 +401,15 @@ SS.drive = (function () {
   }
 
   // Import downloaded deck JSON into the workspace, register + show it.
-  async function importDeck(rawJson, fallbackName) {
+  async function importDeck(rawJson, fallbackName, sourceFileId) {
     let data;
     try { data = JSON.parse(rawJson); }
     catch (e) { throw new Error('That Drive file is not a valid .slides JSON document.'); }
     const id = data.id || (fallbackName || 'imported').replace(/\.slides$/, '');
     data.id = id;
+    // Remember which Drive file this deck came from so a later Save updates it
+    // in place (PATCH) instead of creating a same-named duplicate (POST).
+    if (sourceFileId) rememberFile(id, sourceFileId);
     const path = `artifacts/presentations/${id}.slides`;
     await lucidos.data.write(path, JSON.stringify(data, null, 2));
     // If already registered, drop the stale copy so we re-load fresh.
@@ -374,12 +421,12 @@ SS.drive = (function () {
     return pres;
   }
 
-  function toast(msg, type) {
-    if (window.lucidos && lucidos.ui && lucidos.ui.toast) lucidos.ui.toast(msg, type || 'info');
+  function toast(msg, type, opts) {
+    if (window.lucidos && lucidos.ui && lucidos.ui.toast) lucidos.ui.toast(msg, type || 'info', opts);
   }
 
   return {
-    save, list, download, meta, share, parseFileId, importDeck,
+    save, resolveSaveContent, list, download, meta, share, parseFileId, importDeck, findByPresId,
     knownFileId, token, toast,
     getParents, moveFile, createFolder, listFolders, listSharedDrives, listInFolder, ancestry,
     rememberFolder, lastFolder, loadPinned, pinnedFolder, setPinned,
@@ -723,7 +770,15 @@ SS.driveUI = (function () {
     if (!pres) { SS.drive.toast('No presentation open', 'warning'); return; }
     SS.drive.rememberFolder(folder.id, folder.name, path);
 
-    const existingId = SS.drive.knownFileId(pres.id);
+    let existingId = SS.drive.knownFileId(pres.id);
+    // No local mapping (e.g. a different browser/device, or never saved here):
+    // fall back to the durable presId tag in Drive so we update the real file
+    // in place instead of creating a same-named duplicate.
+    if (!existingId) {
+      try {
+        existingId = await SS.drive.findByPresId(pres.id);
+      } catch (e) { /* network/permission issue — treat as not found */ }
+    }
     // If this deck is already a Drive file, find out whether it's elsewhere.
     if (existingId) {
       let parents = [];
@@ -736,7 +791,7 @@ SS.driveUI = (function () {
         try {
           if (choice === 'move') {
             await SS.drive.moveFile(existingId, folder.id);
-            const file = await SS.drive.save(pres); // update content in place
+            const file = await SS.drive.save(pres, { fileId: existingId }); // update content in place
             return finishSave(pres, file, `Moved to “${folder.name}” and saved`);
           }
           // copy → force a brand-new file in the target folder
@@ -748,7 +803,7 @@ SS.driveUI = (function () {
 
     busyCard('Saving to Google Drive…');
     try {
-      const file = await SS.drive.save(pres, existingId ? {} : { folderId: folder.id });
+      const file = await SS.drive.save(pres, existingId ? { fileId: existingId } : { folderId: folder.id });
       finishSave(pres, file, `“${pres.title || file.name}” saved to “${folder.name}”`);
     } catch (err) {
       errorCard('Save failed', err.message);
@@ -793,13 +848,15 @@ SS.driveUI = (function () {
   }
 
   async function pickFile(fileId, name) {
-    SS.drive.toast('Opening from Drive…');
+    const openKey = 'ss-drive-open';
+    SS.drive.toast('Opening from Drive…', 'info', { key: openKey, dismissable: false });
     closeModal();
     try {
       const raw = await SS.drive.download(fileId);
-      const pres = await SS.drive.importDeck(raw, name);
-      SS.drive.toast(`Opened “${pres.title || name}”`, 'success');
+      const pres = await SS.drive.importDeck(raw, name, fileId);
+      SS.drive.toast(`Opened “${pres.title || name}”`, 'success', { key: openKey, durationMs: 2500, dismissable: true });
     } catch (err) {
+      SS.drive.toast(`Couldn’t open “${name}”`, 'error', { key: openKey, dismissable: true });
       errorCard('Open failed', err.message);
     }
   }

@@ -13,6 +13,7 @@
    ══════════════════════════════════════════════════════ */
 
 const _testResults = [];
+const _pendingSuites = [];
 let _currentSuite = null;
 
 function suite(name, fn) {
@@ -39,6 +40,52 @@ function suite(name, fn) {
     }
   }
   _currentSuite = null;
+}
+
+/* ── Async suites ──────────────────────────────────
+   Same shape as suite(), but test/beforeEach/afterEach fns may be async.
+   asuite() kicks off immediately and registers its promise on
+   _pendingSuites; bootstrap() (see index.html) awaits all of them before
+   rendering, so async results land in _testResults before renderResults runs. */
+function asuite(name, fn) {
+  const s = { name, tests: [], beforeEach: null, afterEach: null };
+  const t = {
+    beforeEach(fn) { s.beforeEach = fn; },
+    afterEach(fn) { s.afterEach = fn; },
+    test(name, fn) { s.tests.push({ name, fn }); },
+  };
+  const p = (async () => {
+    await fn(t);
+    _testResults.push({ suite: name });
+    for (const test of s.tests) {
+      try {
+        if (s.beforeEach) await s.beforeEach();
+        await test.fn();
+        if (s.afterEach) await s.afterEach();
+        _testResults.push({ name: test.name, pass: true });
+      } catch (e) {
+        _testResults.push({ name: test.name, pass: false, error: e.message });
+      }
+    }
+  })();
+  _pendingSuites.push(p);
+  return p;
+}
+
+/* Await every registered async suite, then render. Call once after all
+   <script> test files have loaded (replaces a bare renderResults call). */
+async function bootstrap(containerId) {
+  try { await Promise.all(_pendingSuites); }
+  catch (e) { /* individual failures are already captured per-test */ }
+  return renderResults(containerId);
+}
+
+/* ── Async assertions ──────────────────────────────── */
+
+async function assertThrowsAsync(fn, label) {
+  let threw = false;
+  try { await fn(); } catch (e) { threw = true; }
+  if (!threw) throw new Error(`${label || 'assertThrowsAsync'}: expected the call to throw`);
 }
 
 /* ── Assertions ──────────────────────────────────── */

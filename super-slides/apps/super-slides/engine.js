@@ -696,33 +696,59 @@ SS.initEngine = function() {
       goTo(current - 1);
     } else if (e.key === 'ArrowRight') {
       e.preventDefault();
-      if (isMultiCardSlide()) {
-        const items = getFocusables(slides[current]);
-        if (focusedCardIndex === -1) {
-          focusCard(0); broadcastState();
-        } else if (focusedCardIndex < items.length - 1) {
-          focusCard(focusedCardIndex + 1); broadcastState();
-        } else {
-          goTo(current + 1);
-        }
-      } else {
-        goTo(current + 1);
-      }
+      dispatchArrowNav('right');
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      if (isMultiCardSlide()) {
-        if (focusedCardIndex > 0) {
-          focusCard(focusedCardIndex - 1); broadcastState();
-        } else if (focusedCardIndex === 0) {
-          clearCardFocus(); broadcastState();
-        } else {
-          goTo(current - 1);
-        }
-      } else {
-        goTo(current - 1);
-      }
+      dispatchArrowNav('left');
     }
   });
+
+  // Dispatch a pure nav action (from SS.navLogic.arrowNav) against the live
+  // DOM/state. Keeping the decision in the pure helper and the side effects
+  // here means engine.js and the test suite share one traversal source.
+  function dispatchArrowNav(direction) {
+    const cardCount = getFocusables(slides[current]).length;
+    const prevSlideCardCount = current > 0
+      ? getFocusables(slides[current - 1]).length
+      : 0;
+    const action = SS.navLogic.arrowNav(
+      { current, slideCount: slides.length, focusedCardIndex, cardCount, prevSlideCardCount },
+      direction
+    );
+
+    switch (action.type) {
+      case 'focusCard':
+        focusCard(action.index); broadcastState();
+        break;
+      case 'clearCardFocus':
+        clearCardFocus(); broadcastState();
+        break;
+      case 'goTo':
+        goTo(action.index);
+        break;
+      case 'goToFocusLast': {
+        // Navigate back a slide, then enter it at its last card — but DEFER the
+        // focus until the slide's fade-in (opacity 0.4s) completes. Focusing the
+        // last card immediately would re-fire the insight pulse mid-transition
+        // (the flash-through bug). Guard on `current` so a rapid second Left that
+        // navigates away cancels this stale focus.
+        const before = current;
+        goTo(action.index);
+        if (current !== before) {
+          const target = current;
+          setTimeout(() => {
+            if (current === target && focusedCardIndex === -1) {
+              focusCard(action.lastCard); broadcastState();
+            }
+          }, 450);
+        }
+        break;
+      }
+      case 'none':
+      default:
+        break;
+    }
+  }
 
   window.addEventListener('resize', () => {
     if (currentPres) updateTitleScroller(current);

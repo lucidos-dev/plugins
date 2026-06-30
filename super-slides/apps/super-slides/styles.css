@@ -382,10 +382,32 @@ h3 { font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 600; let
   animation: insight-pop 0.55s cubic-bezier(0.33, 0, 0.2, 1);
 }
 
+/* The "wave" — when the insight lands as the focused (last) card it grows past
+   its resting focus size and springs back to settle. A pronounced overshoot so
+   it reads as a deliberate pulse, not just a scale-in. Transform-only, one shot.
+   Resting focus size is scale(1.06), so the animation ends there. */
 @keyframes insight-pop {
   0%   { transform: scale(0.97); opacity: 0.3; }
-  60%  { transform: scale(1.075); }
+  45%  { transform: scale(1.14); }
+  72%  { transform: scale(1.03); }
   100% { transform: scale(1.06); }
+}
+
+/* The insight only pulses when it BECOMES the focused card — i.e. when you
+   arrow → onto it as the last highlighted thing on the slide. That pulse is the
+   `insight-pop` animation above, which is keyed to `.insight.card-focused`, so
+   it fires on focus and only on focus. Arrowing ← back to the second-last card
+   removes `.card-focused`, so the insight drops to its dimmed/hidden state and
+   stays perfectly still — no entrance pulse, no flash-through.
+
+   There is deliberately NO slide-entrance pulse (`.slide.active .insight`): a
+   pulse tied to the slide appearing fired on every visit, including going back,
+   which is exactly the "it waves at me while it's supposed to be quiet" bug. */
+
+@media (prefers-reduced-motion: reduce) {
+  .slide.has-card-focus .insight.card-focused {
+    animation: none;
+  }
 }
 
 .slide.has-card-focus .pipeline {

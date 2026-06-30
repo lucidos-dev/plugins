@@ -135,19 +135,25 @@ SS.initEditing = function () {
     // Close any existing editor first
     if (activeEditor) commitEdit(activeEditor);
 
-    let path = el.dataset.ssPath;
+    let path = el.dataset.ssPath;   // may be "" for root-level fields (e.g. subtitle)
     let prop = el.dataset.ssProp;
 
     // Check if this is a fragment inside a composite element
     const compositeParent = findRootComposite(el);
 
-    if (!path || !prop) {
-      // No path on this element — must be a fragment child of a composite
+    // An element is directly editable if it carries its own prop. The path may
+    // be an empty string for root-level fields (e.g. subtitle), so test the
+    // attribute's PRESENCE — not truthiness — to avoid misrouting an empty path
+    // into the composite-fragment branch (which bails when no composite exists).
+    const hasOwnTarget = prop !== undefined && path !== undefined;
+
+    if (!hasOwnTarget) {
+      // No target on this element — must be a fragment child of a composite
       if (compositeParent) {
         path = compositeParent.dataset.ssPath;
         prop = compositeParent.dataset.ssProp;
       } else {
-        return; // No path and no composite parent — can't edit
+        return; // No target and no composite parent — can't edit
       }
     } else if (hasComplexHtml(el)) {
       // Element has its own path but contains complex HTML —
@@ -261,13 +267,9 @@ SS.initEditing = function () {
       }
     }
 
-    // Build the full JSON path
-    let fullPath;
-    if (prop.includes('[')) {
-      fullPath = `${path}.${prop}`;
-    } else {
-      fullPath = `${path}.${prop}`;
-    }
+    // Build the full JSON path. Root-level fields (e.g. subtitle) carry an
+    // empty path, so the prop alone is the full path.
+    const fullPath = path ? `${path}.${prop}` : prop;
 
     // Determine the value to save
     let newValue;
@@ -295,11 +297,24 @@ SS.initEditing = function () {
     const pres = SS._currentPres;
     if (!pres || !pres.sourceFile) {
       console.warn('No source file for current presentation');
+      if (window.lucidos && lucidos.ui && lucidos.ui.toast) {
+        lucidos.ui.toast('Couldn’t save — no source file for this deck', 'error', { key: 'ss-edit-save' });
+      }
       return;
     }
 
     // Save via Lucidos events API
     saveEdit(pres.sourceFile, fullPath, newValue);
+  }
+
+  // Toast helper — guarded so editing still works if the SDK toast is absent.
+  // A stable key collapses rapid successive edits into one in-place toast
+  // instead of a stack of "Saved" banners.
+  const SAVE_TOAST_KEY = 'ss-edit-save';
+  function editToast(msg, type, opts) {
+    if (window.lucidos && lucidos.ui && lucidos.ui.toast) {
+      lucidos.ui.toast(msg, type || 'info', opts);
+    }
   }
 
   async function saveEdit(sourceFile, jsonPath, newValue) {
@@ -308,8 +323,11 @@ SS.initEditing = function () {
         { json_path: jsonPath, json_value: newValue }
       ]);
       console.log(`[SS Edit] Saved: ${jsonPath} = "${String(newValue).substring(0, 50)}..."`);
+      editToast('Saved', 'success', { key: SAVE_TOAST_KEY, durationMs: 1500 });
     } catch (err) {
       console.error('[SS Edit] Failed to save:', err);
+      const detail = (err && (err.message || err)) || 'unknown error';
+      editToast(`Couldn’t save edit: ${detail}`, 'error', { key: SAVE_TOAST_KEY });
     }
   }
 

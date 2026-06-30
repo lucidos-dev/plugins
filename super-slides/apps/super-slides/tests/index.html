@@ -36,6 +36,15 @@
 <script src="harness.js"></script>
 <script src="models.js"></script>
 
+<!-- Minimal global the real drive.js attaches to (the app defines this in
+     components.js; the test page only needs the namespace object). -->
+<script>var SS = window.SS || {}; window.SS = SS;</script>
+<!-- Real production module under test (defines SS.drive / SS.driveUI; no
+     top-level DOM side effects, safe to load here). -->
+<script src="../drive.js"></script>
+<!-- Pure nav-logic module under test (defines SS.navLogic; no side effects). -->
+<script src="../nav-logic.js"></script>
+
 <!-- Test suites -->
 <script src="test-sync.js"></script>
 <script src="test-commands.js"></script>
@@ -45,9 +54,11 @@
 <script src="test-desync.js"></script>
 <script src="test-protocol.js"></script>
 <script src="test-menu-toggle.js"></script>
+<script src="test-drive-save.js"></script>
+<script src="test-nav.js"></script>
 
 <script>
-  renderResults('results');
+  bootstrap('results');
 </script>
 </body>
 </html>
