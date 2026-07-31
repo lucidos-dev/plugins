@@ -32,14 +32,24 @@ Highscores are stored in your own workspace at
 
 ## Install
 
-From a Lucidos workspace, ask the assistant to install it, or call the tool
-directly:
+From a Lucidos workspace, just point the assistant at this URL:
 
 ```
-install_plugin("https://github.com/lucidos-dev/plugins/tree/main/ouroboros")
+Install https://github.com/lucidos-dev/plugins/tree/main/ouroboros
 ```
 
-No setup, no credentials, no configuration. It works as soon as it lands.
+Or set the whole collection up as a marketplace once, and pick plugins from the
+UI whenever you want one:
+
+```
+Set up https://github.com/lucidos-dev/plugins as a plugin marketplace
+```
+
+Then open the **Plugins** panel, uncheck "Installed only", and install Ouroboros
+from the list.
+
+Either way you get a confirmation panel before anything lands. No setup, no
+credentials, no configuration: it works as soon as it is installed.
 
 ## Optional: a shared scoreboard
 

@@ -2,11 +2,21 @@
 
 Curated plugins for [Lucidos](https://lucidos.dev) workspaces.
 
-Each subdirectory is an installable plugin. To install one, copy its GitHub tree URL and pass it to `install_plugin` in your Lucidos workspace, e.g.:
+Each subdirectory is an installable plugin. There are two ways to get one into a workspace.
+
+**Point Lucidos at a plugin URL.** Copy the plugin's GitHub tree URL and tell your assistant to install it:
 
 ```
-install_plugin("https://github.com/lucidos-dev/plugins/tree/main/super-slides")
+Install https://github.com/lucidos-dev/plugins/tree/main/super-slides
 ```
+
+**Or register this repo as a marketplace, once.** Then every plugin here shows up in the UI:
+
+```
+Set up https://github.com/lucidos-dev/plugins as a plugin marketplace
+```
+
+Open the **Plugins** panel, uncheck "Installed only", and install what you want from the list. Lucidos always shows a confirmation panel before a plugin lands.
 
 ## Available plugins
 
