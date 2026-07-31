@@ -18,4 +18,4 @@ install_plugin("https://github.com/lucidos-dev/plugins/tree/main/super-slides")
 
 ## Authoring
 
-See [`system-knowhow/building-a-plugin.md`](https://github.com/lucidos-dev/lucidos) in the Lucidos engine for the manifest schema and validation rules.
+See [`system-knowhow/building-a-plugin.md`](https://github.com/lucidos-dev/lucidos/blob/main/system-knowhow/building-a-plugin.md) in the Lucidos engine for the manifest schema and validation rules.
