@@ -10,7 +10,7 @@ Ouroboros started as a single-user app reading/writing JSON in the local Lucidos
 - **No URLs or auth tokens may live in the iframe.** Plugin recipients install the app and immediately see somebody else's Firebase URL and token unless we keep both server-side. Same reason the heatpump app talks to Comfort Cloud through a proxy entry — the iframe never sees credentials.
 - **A user can play in several scoreboards.** Family list, work-friends list, public list — all different Firebase backends, all simultaneously available, the user picks which one is "active" right now.
 
-So the app keeps a *list of boards*. One is always "Lokalt" (private, lucidos.data). Each additional board is a **named pointer to a Lucidos proxy entry** — the proxy holds the real URL + auth, the app just calls `lucidos.proxy(<name>).fetch(...)`.
+So the app keeps a *list of boards*. One is always "Local" (private, lucidos.data). Each additional board is a **named pointer to a Lucidos proxy entry** — the proxy holds the real URL + auth, the app just calls `lucidos.proxy(<name>).fetch(...)`.
 
 ## File layout
 
@@ -29,8 +29,8 @@ apps/ouroboros/
 ```
 SnakeStore.getMode()          → 'local' | 'shared'
 SnakeStore.isShared()         → boolean
-SnakeStore.getActiveProxy()   → string | null  (e.g. 'snake-storage-familien')
-SnakeStore.getActiveLabel()   → string         (e.g. 'Familien' or 'Lokalt')
+SnakeStore.getActiveProxy()   → string | null  (e.g. 'snake-storage-family')
+SnakeStore.getActiveLabel()   → string         (e.g. 'Family' or 'Local')
 
 SnakeStore.listBoards()       → [{ label, proxy }]   shared boards only
 SnakeStore.addBoard({label, proxy})
@@ -95,25 +95,25 @@ Players doc shape:
 
 ## Proxy contract (data/config/apis.json)
 
-A shared board is just a Lucidos proxy entry. Suggested naming: `snake-storage-<group>` (e.g. `snake-storage-familien`). The user enters that name in the app's "Add board" form; the proxy entry must already exist in `apis.json`.
+A shared board is just a Lucidos proxy entry. Suggested naming: `snake-storage-<group>` (e.g. `snake-storage-family`). The user enters that name in the app's "Add board" form; the proxy entry must already exist in `apis.json`.
 
 Minimal, no auth (open RTDB rules — fine for low-stakes lists):
 ```json
-"snake-storage-familien": {
-  "base_url": "https://snake-familien-default-rtdb.firebaseio.com"
+"snake-storage-family": {
+  "base_url": "https://snake-family-default-rtdb.firebaseio.com"
 }
 ```
 
 With a Firebase database secret as RTDB query-param auth:
 ```json
-"snake-storage-familien": {
-  "base_url": "https://snake-familien-default-rtdb.firebaseio.com",
+"snake-storage-family": {
+  "base_url": "https://snake-family-default-rtdb.firebaseio.com",
   "auth": {
     "pipeline": [
       { "type": "static_credential",
         "kind": "query_param",
         "param_name": "auth",
-        "credential": "snake-storage-familien-token" }
+        "credential": "snake-storage-family-token" }
     ]
   }
 }
@@ -162,7 +162,7 @@ It does **not** ship:
 The plugin manifest's `setup` field should walk the installer LLM through:
 1. Asking whether they want only-local, want to join an existing scoreboard (paste proxy name), or want to set up a new one.
 2. If new: ask for the Firebase RTDB URL, write a `snake-storage-<group>` entry to `data/config/apis.json`, optionally request the database secret via `request_credential` and wire the `query_param` auth layer.
-3. Tell the user to open Ouroboros → 💾 → "Legg til delt liste" and enter the proxy name.
+3. Tell the user to open Ouroboros → 💾 → "+ Add shared board" and enter the proxy name.
 
 That keeps the plugin install ceremony explicit — every recipient picks their own backend instead of inheriting the author's.
 

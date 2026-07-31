@@ -526,7 +526,7 @@ body {
 }
 
 /*
- * ALIGNMENT CONTRACT — ER DU KLAR? and BYTT SPILLER screens:
+ * ALIGNMENT CONTRACT: ARE YOU READY? and SWITCH PLAYER screens
  * Both .screen use the same structure: .screen-title-area + .screen-actions.
  * .screen-title-area has a FIXED height so titles land on the same Y position.
  * .screen-actions has a FIXED margin-top so buttons start at the same Y position.
