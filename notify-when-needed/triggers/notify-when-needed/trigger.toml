@@ -1,4 +1,4 @@
-name = "Notify when Claude or Lucidos needs me"
+name = "Notify when Lucidos needs me"
 slug = "notify-when-needed"
 
 [[on]]
