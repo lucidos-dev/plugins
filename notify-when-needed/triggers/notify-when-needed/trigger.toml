@@ -13,6 +13,9 @@ event_type = "CredentialRequested"
 [[on]]
 event_type = "McpConsentRequested"
 
+[[on]]
+event_type = "ResponseFailed"
+
 [run]
 type = "script"
 path = "triggers/notify-when-needed/scripts/run.py"
