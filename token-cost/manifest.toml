@@ -1,0 +1,29 @@
+id = "token-cost"
+version = "0.1.0"
+name = "Token Cost"
+description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, cache-hit share, context-size distribution, and per-model/per-producer cost from a pricing table you edit in the app's own Settings tab. Ships an incremental rollup script; ask Lucidos to set up an hourly rollup trigger after install."
+source = "https://github.com/lucidos-dev/plugins/tree/main/token-cost"
+categories = ["developer-tools", "data"]
+
+setup = """
+This plugin needs one thing wired up: a schedule for its rollup script.
+
+1. Ask the user how often they want the rollup to run. Hourly at five past
+   (`0 5 * * * *`) is a good default: the dashboard folds live SSE calls on top
+   of the last rollup, so a longer gap costs nothing but a slower cold start.
+2. Create a **script** trigger with that cron, `app_id = "token-cost"`, running
+   `apps/token-cost/scripts/rollup.py`. Leave `go_to_review` off, it is silent
+   housekeeping. The script prints one line and notifies nothing.
+3. Run it once so the dashboard has history immediately, then tell the user it
+   is done and link the app. The first run reads every `ContextCaptured` row in
+   the store and can take a few seconds; later runs resume from the recorded
+   sequence.
+
+The script talks to the workspace Postgres through `psql` with no connection
+arguments, relying on the `PG*` environment the engine gives every spawned
+script. It writes `artifacts/token-cost/daily.json`.
+
+No credentials, no API keys, nothing to connect. Pricing rates are built into
+the app and editable under its Settings tab, which writes
+`artifacts/token-cost/pricing.json` on first save.
+"""

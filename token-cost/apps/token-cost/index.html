@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Token Cost</title>
+    <script src="/api/v1/sdk-prefs.js"></script>
+    <link rel="stylesheet" href="/api/v1/sdk-iframe.css" />
+    <script src="/api/v1/sdk.js"></script>
+    <style>
+      body { margin: 0; padding: var(--space-xl); }
+      .wrap { max-width: 68rem; margin: 0 auto; }
+
+      header.top {
+        display: flex; align-items: baseline; justify-content: space-between;
+        gap: var(--space-lg); flex-wrap: wrap; margin-bottom: var(--space-xl);
+      }
+      .top-meta { color: var(--text-muted); font-size: var(--font-size-xs); }
+
+      /* Hero: the one focal point */
+      .hero {
+        background: var(--bg-secondary); border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg); padding: var(--space-xl);
+        box-shadow: var(--shadow-sm); margin-bottom: var(--space-xl);
+      }
+      .hero-row { display: flex; align-items: flex-end; gap: var(--space-xl); flex-wrap: wrap; }
+      .hero-main { flex: 1 1 18rem; }
+      .hero-label {
+        text-transform: uppercase; letter-spacing: 0.06em;
+        color: var(--text-muted); font-size: var(--font-size-2xs); margin-bottom: var(--space-sm);
+      }
+      .hero-value {
+        font-size: var(--font-size-display); font-family: var(--font-mono);
+        color: var(--text-primary); line-height: 1.05;
+        font-variant-numeric: tabular-nums;
+      }
+      .hero-value .live { color: var(--accent); }
+      .hero-sub { color: var(--text-secondary); font-size: var(--font-size-sm); margin-top: var(--space-sm); }
+      .pulse {
+        display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%;
+        background: var(--accent-green); margin-right: var(--space-xs);
+        vertical-align: middle; opacity: 0.35;
+      }
+      .pulse.on { animation: blip var(--duration-emphasis) ease-out; opacity: 1; }
+      @keyframes blip { from { transform: scale(2.2); opacity: 1; } to { transform: scale(1); opacity: 1; } }
+
+      .stat-strip { display: flex; gap: var(--space-xl); flex-wrap: wrap; }
+      .stat { min-width: 7rem; }
+      .stat-v {
+        font-family: var(--font-mono); font-size: var(--font-size-2xl);
+        color: var(--text-primary); font-variant-numeric: tabular-nums;
+      }
+      .stat-l { color: var(--text-muted); font-size: var(--font-size-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+
+      .controls {
+        display: flex; gap: var(--space-md); align-items: center;
+        flex-wrap: wrap; margin-bottom: var(--space-xl);
+      }
+
+      section.block { margin-bottom: var(--space-xl); }
+      h2.sec {
+        font-size: var(--font-size-xl); margin: 0 0 var(--space-md) 0; font-weight: 600;
+      }
+      .sec-note { color: var(--text-muted); font-size: var(--font-size-xs); margin: 0 0 var(--space-md) 0; }
+
+      .card {
+        background: var(--bg-secondary); border: 1px solid var(--border-color);
+        border-radius: var(--radius-md); padding: var(--space-lg);
+      }
+
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      th, td { text-align: right; padding: var(--space-sm) var(--space-sm); font-size: var(--font-size-md); }
+      th:first-child, td:first-child { text-align: left; }
+      th:first-child, td:first-child { width: 26%; }
+      th:nth-child(2), td:nth-child(2) { width: 17%; }
+      td:first-child, td:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      th {
+        color: var(--text-muted); font-size: var(--font-size-2xs); font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border-color);
+      }
+      tbody tr { border-bottom: 1px solid var(--border-color); }
+      tbody tr:last-child { border-bottom: none; }
+      tfoot td { border-top: 1px solid var(--border-color); color: var(--text-secondary); }
+      td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+      td.money { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-primary); }
+      .muted { color: var(--text-muted); }
+
+      /* Daily bars */
+      .bars { display: flex; align-items: stretch; gap: 0.1875rem; height: 9rem; }
+      .bar-col { flex: 1 1 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; cursor: default; }
+      .bar-seg { width: 100%; flex: none; }
+      .bar-seg.read   { background: var(--accent); opacity: 0.35; }
+      .bar-seg.write  { background: var(--accent); opacity: 0.7; }
+      .bar-seg.fresh  { background: var(--accent-yellow); }
+      .bar-seg.out    { background: var(--accent-green); }
+      .bar-col:hover .bar-seg { filter: brightness(1.25); }
+      .bar-col:first-child .bar-seg:last-child { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+      .bar-seg:first-child { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+      .axis { display: flex; justify-content: space-between; color: var(--text-muted); font-size: var(--font-size-2xs); margin-top: var(--space-sm); }
+      .legend { display: flex; gap: var(--space-lg); flex-wrap: wrap; margin-top: var(--space-md); font-size: var(--font-size-xs); color: var(--text-secondary); }
+      .swatch { display: inline-block; width: 0.625rem; height: 0.625rem; border-radius: var(--radius-sm); margin-right: var(--space-xs); vertical-align: baseline; }
+
+      /* Context histogram */
+      .hist-row { display: flex; align-items: center; gap: var(--space-md); margin-bottom: var(--space-sm); }
+      .hist-label { width: 7rem; flex: none; color: var(--text-secondary); font-size: var(--font-size-xs); font-family: var(--font-mono); }
+      .hist-track { flex: 1; background: var(--bg-tertiary); border-radius: var(--radius-sm); height: 1.125rem; overflow: hidden; }
+      .hist-fill { height: 100%; background: var(--accent); opacity: 0.75; }
+      .hist-fill.hot { background: var(--accent-yellow); opacity: 0.9; }
+      .hist-n { width: 8rem; flex: none; text-align: right; color: var(--text-muted); font-size: var(--font-size-xs); font-family: var(--font-mono); }
+
+      .feed { max-height: 16rem; overflow-y: auto; }
+      .feed-row {
+        display: flex; gap: var(--space-md); align-items: baseline;
+        padding: var(--space-sm) 0; border-bottom: 1px solid var(--border-color);
+        font-size: var(--font-size-xs);
+      }
+      .feed-row:last-child { border-bottom: none; }
+      .feed-time { color: var(--text-muted); font-family: var(--font-mono); flex: none; width: 4.5rem; }
+      .feed-model { color: var(--text-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .feed-tok { color: var(--text-muted); font-family: var(--font-mono); flex: none; }
+      .feed-cost { color: var(--text-primary); font-family: var(--font-mono); flex: none; width: 5rem; text-align: right; }
+      .feed-row.fresh-row { animation: slidein var(--duration-normal) ease-out; }
+      @keyframes slidein { from { opacity: 0; transform: translateY(-0.25rem); } to { opacity: 1; transform: none; } }
+
+      /* Settings */
+      table.price-table { table-layout: auto; }
+      table.price-table th:first-child, table.price-table td:first-child { width: auto; min-width: 10rem; }
+      table.price-table th:nth-child(2), table.price-table td:nth-child(2) { width: auto; text-align: right; }
+      table.price-table td:first-child, table.price-table td:nth-child(2) { overflow: visible; white-space: normal; }
+      table.price-table td { padding: var(--space-xs) var(--space-sm); }
+      table.price-table th:last-child, table.price-table td:last-child { width: 2.5rem; }
+      table.price-table input {
+        width: 100%; box-sizing: border-box; text-align: right;
+        font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+        padding: var(--space-xs) var(--space-sm);
+      }
+      table.price-table input.model-id { text-align: left; }
+      table.price-table tr.locked input.model-id { color: var(--text-muted); }
+      .field-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+        gap: var(--space-lg);
+      }
+      .field label { display: block; color: var(--text-muted); font-size: var(--font-size-2xs);
+        text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: var(--space-xs); }
+      .field input { width: 100%; box-sizing: border-box; font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums; padding: var(--space-xs) var(--space-sm); }
+      .field .hint { color: var(--text-muted); font-size: var(--font-size-2xs); margin-top: var(--space-xs); }
+      .save-bar { display: flex; align-items: center; gap: var(--space-lg); flex-wrap: wrap; }
+      .dirty-dot { color: var(--accent-yellow); font-size: var(--font-size-xs); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <div>
+          <div class="title" style="font-size: var(--font-size-3xl)">Token Cost</div>
+          <div class="top-meta" id="meta">loading…</div>
+        </div>
+        <div class="button-group" style="justify-content: flex-end">
+          <div class="segmented-control">
+            <button class="segmented-btn active" id="tab-dashboard">Dashboard</button>
+            <button class="segmented-btn" id="tab-settings">Settings</button>
+          </div>
+          <button class="action-btn action-btn-secondary" id="btn-refresh">Refresh</button>
+        </div>
+      </header>
+
+      <div id="view-dashboard">
+      <div class="hero">
+        <div class="hero-row">
+          <div class="hero-main">
+            <div class="hero-label"><span class="pulse" id="pulse"></span><span id="hero-label-text">Spend today</span></div>
+            <div class="hero-value" id="hero-cost">$0.00</div>
+            <div class="hero-sub" id="hero-sub">&nbsp;</div>
+          </div>
+          <div class="stat-strip">
+            <div class="stat"><div class="stat-v" id="s-calls">0</div><div class="stat-l">Calls</div></div>
+            <div class="stat"><div class="stat-v" id="s-tok">0</div><div class="stat-l">Tokens in</div></div>
+            <div class="stat"><div class="stat-v" id="s-cache">0%</div><div class="stat-l">From cache</div></div>
+            <div class="stat"><div class="stat-v" id="s-out">0</div><div class="stat-l">Tokens out</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <select class="lucidos-select" id="range">
+          <option value="1">Today</option>
+          <option value="7" selected>Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="0">All time</option>
+        </select>
+        <div id="producer-slot"></div>
+      </div>
+
+      <section class="block">
+        <h2 class="sec">Per day</h2>
+        <div class="card">
+          <div class="bars" id="bars"></div>
+          <div class="axis"><span id="ax-from"></span><span id="ax-to"></span></div>
+          <div class="legend">
+            <span><span class="swatch" style="background: var(--accent-yellow)"></span>Fresh input</span>
+            <span><span class="swatch" style="background: var(--accent); opacity: 0.7"></span>Cache write</span>
+            <span><span class="swatch" style="background: var(--accent); opacity: 0.35"></span>Cache read</span>
+            <span><span class="swatch" style="background: var(--accent-green)"></span>Output</span>
+            <span class="muted" id="bar-hint">hover a bar for its day</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2 class="sec">By model</h2>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>Model</th><th>Producer</th><th>Calls</th>
+                <th>Fresh in</th><th>Cache write</th><th>Cache read</th><th>Out</th><th>Cost</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+            <tfoot id="tfoot"></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2 class="sec">Context size per call</h2>
+        <p class="sec-note">How big the prompt was on each call. The top rows are where a long-context premium bites.</p>
+        <div class="card" id="hist"></div>
+      </section>
+
+      <section class="block">
+        <h2 class="sec">Live calls</h2>
+        <p class="sec-note">Every model call in the workspace as it lands, streamed over SSE. Includes calls from other threads and agents running right now.</p>
+        <div class="card feed" id="feed">
+          <div class="empty-state">Waiting for the next model call…</div>
+        </div>
+      </section>
+      </div><!-- /view-dashboard -->
+
+      <div id="view-settings" style="display: none">
+        <section class="block">
+          <h2 class="sec">Model rates</h2>
+          <p class="sec-note">USD per 1,000,000 tokens. Every cost on the dashboard is computed from these numbers in the browser, so an edit re-prices your whole history the moment you save. A model the engine reports that is not listed here falls back to the <strong>default</strong> row.</p>
+          <div class="card">
+            <table class="price-table">
+              <thead>
+                <tr>
+                  <th>Model</th><th>Fresh in</th><th>Cache write</th><th>Cache read</th><th>Output</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="price-body"></tbody>
+            </table>
+            <div style="margin-top: var(--space-md)">
+              <button type="button" class="list-row-add-card" id="btn-add-model">
+                <span class="list-row-add-icon">+</span>
+                <span class="list-row-add-label">Add model</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="block">
+          <h2 class="sec">Long-context premium</h2>
+          <p class="sec-note">Anthropic bills a premium on the <code>[1m]</code> models once a single prompt crosses the threshold. Only calls over it, on a model whose id ends in <code>[1m]</code>, are multiplied. OpenAI's own long-context tier starts higher (272k) and is not modelled here, so a very large GPT prompt is priced at the flat rate.</p>
+          <div class="card">
+            <div class="field-grid">
+              <div class="field">
+                <label for="lc-threshold">Threshold, tokens</label>
+                <input type="number" id="lc-threshold" min="0" step="1000" />
+                <div class="hint">200000 matches Anthropic today</div>
+              </div>
+              <div class="field">
+                <label for="lc-in">Input multiplier</label>
+                <input type="number" id="lc-in" min="0" step="0.1" />
+                <div class="hint">Applied to fresh input and both cache rates</div>
+              </div>
+              <div class="field">
+                <label for="lc-out">Output multiplier</label>
+                <input type="number" id="lc-out" min="0" step="0.1" />
+                <div class="hint">Applied to output tokens</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="block">
+          <h2 class="sec">Producer labels</h2>
+          <p class="sec-note">How each producer the engine reports is named in the table and the filter. Unlabelled producers show their raw id.</p>
+          <div class="card">
+            <table class="price-table">
+              <thead><tr><th>Producer id</th><th style="text-align: left">Label</th><th></th></tr></thead>
+              <tbody id="producer-body"></tbody>
+            </table>
+            <div style="margin-top: var(--space-md)">
+              <button type="button" class="list-row-add-card" id="btn-add-producer">
+                <span class="list-row-add-icon">+</span>
+                <span class="list-row-add-label">Add producer</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="card save-bar">
+            <div class="button-group">
+              <button class="action-btn" id="btn-save">Save settings</button>
+              <button class="action-btn action-btn-secondary" id="btn-revert">Revert</button>
+              <button class="action-btn action-btn-secondary" id="btn-defaults">Restore defaults</button>
+            </div>
+            <span id="save-state" class="muted" style="font-size: var(--font-size-xs)"></span>
+          </div>
+          <p class="sec-note" style="margin-top: var(--space-md)">
+            Stored as JSON at <code>artifacts/token-cost/pricing.json</code>, so it is version-controlled with the rest of the workspace and you can still edit it by hand.
+          </p>
+        </section>
+      </div><!-- /view-settings -->
+    </div>
+
+    <script>
+      lucidos.ui.applyPreferences();
+      lucidos.ui.watchPreferences();
+      lucidos.ui.enhanceSelects();
+
+      const DAILY = 'artifacts/token-cost/daily.json';
+      const PRICING = 'artifacts/token-cost/pricing.json';
+
+      // Used only until the editable pricing file exists. USD per 1M tokens.
+      const DEFAULT_PRICING = {
+        currency: 'USD',
+        models: {
+          'default': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
+          'claude-opus-5': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
+          'claude-opus-4-8': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
+          'claude-opus-4-7': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
+          'opus': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
+          'claude-sonnet-5': { uncached_in: 3.0, cache_write: 3.75, cache_read: 0.3, out: 15.0 },
+          'claude-sonnet-4-6': { uncached_in: 3.0, cache_write: 3.75, cache_read: 0.3, out: 15.0 },
+          'sonnet': { uncached_in: 3.0, cache_write: 3.75, cache_read: 0.3, out: 15.0 },
+          'claude-fable-5': { uncached_in: 3.0, cache_write: 3.75, cache_read: 0.3, out: 15.0 },
+          'claude-haiku-4-5-20251001': { uncached_in: 0.8, cache_write: 1.0, cache_read: 0.08, out: 4.0 },
+          'haiku': { uncached_in: 0.8, cache_write: 1.0, cache_read: 0.08, out: 4.0 },
+          'gpt-5.5': { uncached_in: 5.0, cache_write: 5.0, cache_read: 0.5, out: 30.0 },
+          'gpt-5.6-sol': { uncached_in: 5.0, cache_write: 5.0, cache_read: 0.5, out: 30.0 },
+          'gemini-3.5-flash': { uncached_in: 0.3, cache_write: 0.3, cache_read: 0.075, out: 2.5 },
+          'gemini-3.1-pro-preview': { uncached_in: 1.25, cache_write: 1.25, cache_read: 0.31, out: 10.0 },
+        },
+        long_context_multiplier: { threshold_tokens: 200000, in_multiplier: 2.0, out_multiplier: 1.5 },
+        producers: {
+          main_llm: 'Chat & triggers',
+          claude_code: 'Claude Code',
+          codex: 'Codex',
+        },
+      };
+
+      let daily = { days: {}, bucket_edges: [0, 32000, 64000, 128000, 200000, 400000] };
+      let pricing = null;
+      // Calls seen live this session, folded into today's numbers on top of the rollup.
+      let live = [];
+      // The producer filter is a managed Select, since its options change with settings.
+      let producerSelect = null;
+
+      const fmtInt = (n) => new Intl.NumberFormat().format(Math.round(n));
+      const fmtTok = (n) => {
+        if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+        if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+        if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+        return String(Math.round(n));
+      };
+      const fmtMoney = (n) => {
+        if (n >= 1000) return '$' + new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n);
+        if (n >= 1) return '$' + n.toFixed(2);
+        if (n >= 0.01) return '$' + n.toFixed(3);
+        return '$' + n.toFixed(4);
+      };
+      const localDay = (d) => {
+        const p = (x) => String(x).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+      };
+
+      // Strip the engine's model decorations: `claude-opus-5@default[1m]` -> `claude-opus-5`.
+      function baseModel(model) {
+        return String(model || '').replace(/\[1m\]$/, '').replace(/@[^[\]]*$/, '');
+      }
+      function isLongCtxModel(model) {
+        return /\[1m\]$/.test(String(model || ''));
+      }
+      function rateFor(model) {
+        const m = pricing?.models || {};
+        return m[baseModel(model)] || m.default || { uncached_in: 0, cache_write: 0, cache_read: 0, out: 0 };
+      }
+
+      /** Cost of one usage bundle. `longShare` splits out the portion of tokens
+       *  that came from calls over the long-context threshold, which Anthropic
+       *  bills at a premium on the [1m] models. */
+      function costOf(model, u, long) {
+        const r = rateFor(model);
+        const lc = pricing?.long_context_multiplier || { in_multiplier: 1, out_multiplier: 1 };
+        const mulIn = isLongCtxModel(model) ? (lc.in_multiplier || 1) : 1;
+        const mulOut = isLongCtxModel(model) ? (lc.out_multiplier || 1) : 1;
+
+        const L = long || { in: 0, out: 0, cache_read: 0, cache_write: 0 };
+        const lFresh = Math.max(0, (L.in || 0) - (L.cache_read || 0) - (L.cache_write || 0));
+        const fresh = Math.max(0, u.in - u.cache_read - u.cache_write);
+
+        const nFresh = Math.max(0, fresh - lFresh);
+        const nRead = Math.max(0, u.cache_read - (L.cache_read || 0));
+        const nWrite = Math.max(0, u.cache_write - (L.cache_write || 0));
+        const nOut = Math.max(0, u.out - (L.out || 0));
+
+        const per = 1e6;
+        return (
+          (nFresh * r.uncached_in + lFresh * r.uncached_in * mulIn) / per +
+          (nWrite * r.cache_write + (L.cache_write || 0) * r.cache_write * mulIn) / per +
+          (nRead * r.cache_read + (L.cache_read || 0) * r.cache_read * mulIn) / per +
+          (nOut * r.out + (L.out || 0) * r.out * mulOut) / per
+        );
+      }
+
+      function selectedDays() {
+        const n = parseInt(document.getElementById('range').value, 10);
+        const all = Object.keys(daily.days).sort();
+        if (!n) return all;
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - (n - 1));
+        const from = localDay(cutoff);
+        return all.filter((d) => d >= from);
+      }
+
+      function producerFilter() {
+        return producerSelect ? (producerSelect.getValue() || 'all') : 'all';
+      }
+
+      const emptyU = () => ({ calls: 0, in: 0, cache_read: 0, cache_write: 0, out: 0,
+                              buckets: [0, 0, 0, 0, 0, 0],
+                              long: { in: 0, out: 0, cache_read: 0, cache_write: 0 } });
+
+      function addU(a, b) {
+        a.calls += b.calls; a.in += b.in; a.cache_read += b.cache_read;
+        a.cache_write += b.cache_write; a.out += b.out;
+        for (let i = 0; i < 6; i++) a.buckets[i] += (b.buckets?.[i] || 0);
+        const L = b.long || {};
+        a.long.in += L.in || 0; a.long.out += L.out || 0;
+        a.long.cache_read += L.cache_read || 0; a.long.cache_write += L.cache_write || 0;
+        return a;
+      }
+
+      /** Merge the persisted rollup with anything seen live this session. */
+      function seriesForDay(day) {
+        const out = {};
+        for (const [key, v] of Object.entries(daily.days[day] || {})) {
+          out[key] = addU(emptyU(), v);
+        }
+        if (day === localDay(new Date())) {
+          for (const c of live) {
+            if (c.seq && c.seq <= daily.last_sequence) continue;
+            const key = `${c.producer}|${c.model}`;
+            const b = out[key] || (out[key] = emptyU());
+            const edges = daily.bucket_edges;
+            let bi = 0;
+            for (let i = edges.length - 1; i >= 0; i--) { if (c.in >= edges[i]) { bi = i; break; } }
+            addU(b, {
+              calls: 1, in: c.in, cache_read: c.cache_read, cache_write: c.cache_write, out: c.out,
+              buckets: [0, 0, 0, 0, 0, 0].map((_, i) => (i === bi ? 1 : 0)),
+              long: c.in >= (pricing?.long_context_multiplier?.threshold_tokens || 200000)
+                ? { in: c.in, out: c.out, cache_read: c.cache_read, cache_write: c.cache_write }
+                : { in: 0, out: 0, cache_read: 0, cache_write: 0 },
+            });
+          }
+        }
+        return out;
+      }
+
+      function render() {
+        if (!pricing) return;
+        const days = selectedDays();
+        const pf = producerFilter();
+
+        const byKey = {};
+        const perDay = [];
+        for (const day of days) {
+          const s = seriesForDay(day);
+          const dayTotal = emptyU();
+          for (const [key, v] of Object.entries(s)) {
+            const [producer] = key.split('|');
+            if (pf !== 'all' && producer !== pf) continue;
+            addU(byKey[key] || (byKey[key] = emptyU()), v);
+            addU(dayTotal, v);
+          }
+          perDay.push({ day, u: dayTotal });
+        }
+
+        const total = emptyU();
+        let totalCost = 0;
+        for (const [key, u] of Object.entries(byKey)) {
+          addU(total, u);
+          totalCost += costOf(key.split('|')[1], u, u.long);
+        }
+
+        // Hero
+        const todayKey = localDay(new Date());
+        const isToday = days.length === 1 && days[0] === todayKey;
+        document.getElementById('hero-label-text').textContent =
+          isToday ? 'Spend today' : `Spend, ${days.length} day${days.length === 1 ? '' : 's'}`;
+        document.getElementById('hero-cost').innerHTML =
+          `<span class="live">${fmtMoney(totalCost)}</span>`;
+        const perCall = total.calls ? totalCost / total.calls : 0;
+        const daysN = Math.max(1, days.length);
+        document.getElementById('hero-sub').textContent =
+          `${fmtMoney(totalCost / daysN)} per day average · ${fmtMoney(perCall)} per call`;
+
+        document.getElementById('s-calls').textContent = fmtInt(total.calls);
+        document.getElementById('s-tok').textContent = fmtTok(total.in);
+        document.getElementById('s-out').textContent = fmtTok(total.out);
+        const cachePct = total.in ? (total.cache_read / total.in) * 100 : 0;
+        document.getElementById('s-cache').textContent = cachePct.toFixed(1) + '%';
+
+        // Bars
+        const maxDay = Math.max(1, ...perDay.map((d) => d.u.in + d.u.out));
+        const bars = document.getElementById('bars');
+        bars.innerHTML = '';
+        for (const { day, u } of perDay) {
+          const fresh = Math.max(0, u.in - u.cache_read - u.cache_write);
+          const col = document.createElement('div');
+          col.className = 'bar-col';
+          col.title = `${day}\n${fmtInt(u.calls)} calls\nfresh in ${fmtTok(fresh)} · cache write ${fmtTok(u.cache_write)} · cache read ${fmtTok(u.cache_read)} · out ${fmtTok(u.out)}`;
+          const segs = [
+            ['out', u.out], ['fresh', fresh], ['write', u.cache_write], ['read', u.cache_read],
+          ];
+          for (const [cls, v] of segs) {
+            if (v <= 0) continue;
+            const s = document.createElement('div');
+            s.className = 'bar-seg ' + cls;
+            s.style.height = ((v / maxDay) * 100).toFixed(3) + '%';
+            col.appendChild(s);
+          }
+          bars.appendChild(col);
+        }
+        document.getElementById('ax-from').textContent = perDay[0]?.day || '';
+        document.getElementById('ax-to').textContent = perDay[perDay.length - 1]?.day || '';
+
+        // Model table
+        const rows = Object.entries(byKey)
+          .map(([key, u]) => {
+            const [producer, model] = key.split('|');
+            return { producer, model, u, cost: costOf(model, u, u.long) };
+          })
+          .sort((a, b) => b.cost - a.cost);
+
+        const tbody = document.getElementById('tbody');
+        tbody.innerHTML = '';
+        const producerLabel = pricing?.producers || DEFAULT_PRICING.producers;
+        for (const r of rows) {
+          const fresh = Math.max(0, r.u.in - r.u.cache_read - r.u.cache_write);
+          const tr = document.createElement('tr');
+          tr.innerHTML =
+            `<td>${lucidos.utils.escapeHtml(r.model)}</td>` +
+            `<td class="muted">${lucidos.utils.escapeHtml(producerLabel[r.producer] || r.producer)}</td>` +
+            `<td class="num">${fmtInt(r.u.calls)}</td>` +
+            `<td class="num">${fmtTok(fresh)}</td>` +
+            `<td class="num">${fmtTok(r.u.cache_write)}</td>` +
+            `<td class="num muted">${fmtTok(r.u.cache_read)}</td>` +
+            `<td class="num">${fmtTok(r.u.out)}</td>` +
+            `<td class="money">${fmtMoney(r.cost)}</td>`;
+          tbody.appendChild(tr);
+        }
+        if (!rows.length) {
+          tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No calls in this range.</div></td></tr>';
+        }
+        const freshTotal = Math.max(0, total.in - total.cache_read - total.cache_write);
+        document.getElementById('tfoot').innerHTML =
+          `<tr><td>Total</td><td></td><td class="num">${fmtInt(total.calls)}</td>` +
+          `<td class="num">${fmtTok(freshTotal)}</td><td class="num">${fmtTok(total.cache_write)}</td>` +
+          `<td class="num">${fmtTok(total.cache_read)}</td><td class="num">${fmtTok(total.out)}</td>` +
+          `<td class="money">${fmtMoney(totalCost)}</td></tr>`;
+
+        // Histogram
+        const edges = daily.bucket_edges;
+        const labels = ['< 32k', '32k – 64k', '64k – 128k', '128k – 200k', '200k – 400k', '400k +'];
+        const maxB = Math.max(1, ...total.buckets);
+        const hist = document.getElementById('hist');
+        hist.innerHTML = '';
+        for (let i = 0; i < labels.length; i++) {
+          const n = total.buckets[i];
+          const pct = total.calls ? (n / total.calls) * 100 : 0;
+          const row = document.createElement('div');
+          row.className = 'hist-row';
+          row.innerHTML =
+            `<div class="hist-label">${labels[i]}</div>` +
+            `<div class="hist-track"><div class="hist-fill${i >= 4 ? ' hot' : ''}" style="width:${((n / maxB) * 100).toFixed(2)}%"></div></div>` +
+            `<div class="hist-n">${fmtInt(n)} · ${pct.toFixed(1)}%</div>`;
+          hist.appendChild(row);
+        }
+
+        const gen = daily.generated ? lucidos.utils.timeAgo(daily.generated) : 'never';
+        document.getElementById('meta').textContent =
+          `${fmtInt(Object.keys(daily.days).length)} days on record · rollup ${gen} · ${live.length} live call${live.length === 1 ? '' : 's'} this session`;
+      }
+
+      function pushLive(ev) {
+        const p = ev?.event;
+        if (!p || p.type !== 'ContextCaptured' || !p.usage) return;
+        const u = p.usage;
+        const call = {
+          seq: ev.seq,
+          at: ev.created || new Date().toISOString(),
+          model: p.model || 'unknown',
+          producer: p.producer || 'unknown',
+          in: u.input_tokens || 0,
+          cache_read: u.cache_read_tokens || 0,
+          cache_write: u.cache_creation_tokens || 0,
+          out: u.output_tokens || 0,
+        };
+        live.push(call);
+        if (live.length > 5000) live = live.slice(-4000);
+
+        const pulse = document.getElementById('pulse');
+        pulse.classList.remove('on');
+        void pulse.offsetWidth;
+        pulse.classList.add('on');
+
+        const feed = document.getElementById('feed');
+        if (feed.querySelector('.empty-state')) feed.innerHTML = '';
+        const fresh = Math.max(0, call.in - call.cache_read - call.cache_write);
+        const row = document.createElement('div');
+        row.className = 'feed-row fresh-row';
+        const t = new Date(call.at);
+        row.innerHTML =
+          `<div class="feed-time">${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}</div>` +
+          `<div class="feed-model">${lucidos.utils.escapeHtml(call.model)}</div>` +
+          `<div class="feed-tok">${fmtTok(fresh)} fresh · ${fmtTok(call.cache_read)} cached · ${fmtTok(call.out)} out</div>` +
+          `<div class="feed-cost">${fmtMoney(costOf(call.model, { in: call.in, cache_read: call.cache_read, cache_write: call.cache_write, out: call.out }, call.in >= (pricing?.long_context_multiplier?.threshold_tokens || 2e5) ? { in: call.in, out: call.out, cache_read: call.cache_read, cache_write: call.cache_write } : null))}</div>`;
+        feed.insertBefore(row, feed.firstChild);
+        while (feed.children.length > 60) feed.removeChild(feed.lastChild);
+
+        render();
+      }
+
+      async function load() {
+        try {
+          pricing = JSON.parse(await lucidos.data.read(PRICING));
+        } catch (e) {
+          pricing = JSON.parse(JSON.stringify(DEFAULT_PRICING));
+          lucidos.ui.toast('No pricing table yet, using built-in defaults. Edit them under Settings.', 'warning');
+        }
+        if (!pricing.models) pricing.models = JSON.parse(JSON.stringify(DEFAULT_PRICING.models));
+        if (!pricing.producers) pricing.producers = JSON.parse(JSON.stringify(DEFAULT_PRICING.producers));
+        if (!pricing.long_context_multiplier) {
+          pricing.long_context_multiplier = { ...DEFAULT_PRICING.long_context_multiplier };
+        }
+        try {
+          daily = JSON.parse(await lucidos.data.read(DAILY));
+        } catch (e) {
+          lucidos.ui.toast('No rollup yet, run the token-cost rollup trigger', 'warning');
+        }
+        syncProducerFilter();
+        renderSettings();
+        render();
+      }
+
+      /** Keep the producer dropdown in step with the configured labels, plus any
+       *  producer the data mentions that has no label yet. */
+      function syncProducerFilter() {
+        const seen = new Set(Object.keys(pricing.producers || {}));
+        for (const day of Object.values(daily.days || {})) {
+          for (const key of Object.keys(day)) seen.add(key.split('|')[0]);
+        }
+        const options = [{ value: 'all', label: 'All producers' }].concat(
+          [...seen].sort().map((pid) => ({ value: pid, label: (pricing.producers || {})[pid] || pid })));
+
+        if (!producerSelect) {
+          producerSelect = lucidos.ui.Select.create({
+            options,
+            value: 'all',
+            onChange: () => render(),
+          });
+          document.getElementById('producer-slot').appendChild(producerSelect.element);
+          return;
+        }
+        const prev = producerSelect.getValue();
+        producerSelect.setOptions(options);
+        producerSelect.setValue(options.some((o) => o.value === prev) ? prev : 'all');
+      }
+
+      /* ---------------- Settings ---------------- */
+
+      // Draft the user is editing. Nothing here reaches the dashboard until Save.
+      let draft = null;
+      let dirty = false;
+
+      const RATE_KEYS = ['uncached_in', 'cache_write', 'cache_read', 'out'];
+
+      function markDirty() {
+        dirty = true;
+        document.getElementById('save-state').textContent = 'Unsaved changes';
+        document.getElementById('save-state').className = 'dirty-dot';
+      }
+
+      function numInput(value, onInput, cls) {
+        const i = document.createElement('input');
+        i.type = 'number';
+        i.min = '0';
+        i.step = '0.01';
+        i.value = String(value ?? 0);
+        if (cls) i.className = cls;
+        i.addEventListener('input', () => { onInput(parseFloat(i.value)); markDirty(); });
+        return i;
+      }
+
+      function textInput(value, onInput, cls, placeholder) {
+        const i = document.createElement('input');
+        i.type = 'text';
+        i.value = value ?? '';
+        if (cls) i.className = cls;
+        if (placeholder) i.placeholder = placeholder;
+        i.addEventListener('input', () => { onInput(i.value); markDirty(); });
+        return i;
+      }
+
+      function removeBtn(onClick, title) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'icon-btn';
+        b.title = title;
+        b.textContent = '\u00d7';
+        b.addEventListener('click', () => { onClick(); markDirty(); renderSettings(); });
+        return b;
+      }
+
+      function renderSettings() {
+        if (!draft) draft = JSON.parse(JSON.stringify(pricing || DEFAULT_PRICING));
+
+        // Model rates. `default` is the fallback row every unlisted model uses,
+        // so its id is fixed and it cannot be removed.
+        const body = document.getElementById('price-body');
+        body.innerHTML = '';
+        const ids = Object.keys(draft.models).sort((a, b) =>
+          a === 'default' ? -1 : b === 'default' ? 1 : a.localeCompare(b));
+        for (const id of ids) {
+          const rate = draft.models[id];
+          const tr = document.createElement('tr');
+          if (id === 'default') tr.className = 'locked';
+
+          const idCell = document.createElement('td');
+          if (id === 'default') {
+            const locked = textInput('default', () => {}, 'model-id');
+            locked.readOnly = true;
+            locked.title = 'Fallback rate for any model not listed here';
+            idCell.appendChild(locked);
+          } else {
+            idCell.appendChild(textInput(id, (v) => {
+              const next = v.trim();
+              if (!next || next === id || draft.models[next]) return;
+              const rebuilt = {};
+              for (const [k, val] of Object.entries(draft.models)) rebuilt[k === id ? next : k] = val;
+              draft.models = rebuilt;
+            }, 'model-id', 'model-id'));
+          }
+          tr.appendChild(idCell);
+
+          for (const key of RATE_KEYS) {
+            const td = document.createElement('td');
+            td.appendChild(numInput(rate[key], (v) => { rate[key] = isNaN(v) ? 0 : v; }));
+            tr.appendChild(td);
+          }
+
+          const actions = document.createElement('td');
+          if (id !== 'default') {
+            actions.appendChild(removeBtn(() => { delete draft.models[id]; }, `Remove ${id}`));
+          }
+          tr.appendChild(actions);
+          body.appendChild(tr);
+        }
+
+        // Long-context premium
+        const lc = draft.long_context_multiplier || (draft.long_context_multiplier = {});
+        const bindLc = (elId, key, step) => {
+          const el = document.getElementById(elId);
+          el.value = String(lc[key] ?? 0);
+          el.step = step;
+          el.oninput = () => { lc[key] = parseFloat(el.value) || 0; markDirty(); };
+        };
+        bindLc('lc-threshold', 'threshold_tokens', '1000');
+        bindLc('lc-in', 'in_multiplier', '0.1');
+        bindLc('lc-out', 'out_multiplier', '0.1');
+
+        // Producer labels
+        const pbody = document.getElementById('producer-body');
+        pbody.innerHTML = '';
+        for (const [pid, label] of Object.entries(draft.producers || {})) {
+          const tr = document.createElement('tr');
+          const idCell = document.createElement('td');
+          idCell.appendChild(textInput(pid, (v) => {
+            const next = v.trim();
+            if (!next || next === pid || draft.producers[next]) return;
+            const rebuilt = {};
+            for (const [k, val] of Object.entries(draft.producers)) rebuilt[k === pid ? next : k] = val;
+            draft.producers = rebuilt;
+          }, 'model-id', 'producer-id'));
+          tr.appendChild(idCell);
+
+          const labelCell = document.createElement('td');
+          labelCell.appendChild(textInput(label, (v) => { draft.producers[pid] = v; }, 'model-id'));
+          tr.appendChild(labelCell);
+
+          const actions = document.createElement('td');
+          actions.appendChild(removeBtn(() => { delete draft.producers[pid]; }, `Remove ${pid}`));
+          tr.appendChild(actions);
+          pbody.appendChild(tr);
+        }
+      }
+
+      function showTab(which) {
+        const settings = which === 'settings';
+        document.getElementById('view-dashboard').style.display = settings ? 'none' : '';
+        document.getElementById('view-settings').style.display = settings ? '' : 'none';
+        document.getElementById('tab-dashboard').classList.toggle('active', !settings);
+        document.getElementById('tab-settings').classList.toggle('active', settings);
+        if (settings) renderSettings();
+      }
+
+      document.getElementById('tab-dashboard').addEventListener('click', () => showTab('dashboard'));
+      document.getElementById('tab-settings').addEventListener('click', () => showTab('settings'));
+
+      document.getElementById('btn-add-model').addEventListener('click', () => {
+        let name = 'new-model';
+        let n = 2;
+        while (draft.models[name]) name = `new-model-${n++}`;
+        draft.models[name] = { uncached_in: 0, cache_write: 0, cache_read: 0, out: 0 };
+        markDirty();
+        renderSettings();
+      });
+
+      document.getElementById('btn-add-producer').addEventListener('click', () => {
+        let name = 'new-producer';
+        let n = 2;
+        while (draft.producers[name]) name = `new-producer-${n++}`;
+        draft.producers[name] = name;
+        markDirty();
+        renderSettings();
+      });
+
+      document.getElementById('btn-save').addEventListener('click', async () => {
+        const payload = {
+          _comment: 'USD per 1,000,000 tokens. Edited from the Token Cost app\u2019s Settings tab, or by hand. A model id not listed here falls back to \u2018default\u2019.',
+          _updated: localDay(new Date()),
+          currency: draft.currency || 'USD',
+          models: draft.models,
+          long_context_multiplier: draft.long_context_multiplier,
+          producers: draft.producers,
+        };
+        try {
+          await lucidos.data.write(PRICING, JSON.stringify(payload, null, 2));
+        } catch (e) {
+          lucidos.ui.toast(`Could not save: ${e.message || e}`, 'error');
+          return;
+        }
+        pricing = JSON.parse(JSON.stringify(payload));
+        dirty = false;
+        document.getElementById('save-state').textContent = 'Saved';
+        document.getElementById('save-state').className = 'muted';
+        lucidos.ui.toast('Pricing saved, dashboard re-priced', 'success');
+        render();
+      });
+
+      document.getElementById('btn-revert').addEventListener('click', () => {
+        draft = JSON.parse(JSON.stringify(pricing));
+        dirty = false;
+        document.getElementById('save-state').textContent = '';
+        renderSettings();
+      });
+
+      document.getElementById('btn-defaults').addEventListener('click', async () => {
+        const ok = await lucidos.ui.confirm({
+          title: 'Restore defaults?',
+          message: 'Replace every rate, multiplier and producer label with the built-in defaults. Nothing is written until you press Save.',
+          okLabel: 'Restore',
+        });
+        if (!ok) return;
+        draft = JSON.parse(JSON.stringify(DEFAULT_PRICING));
+        markDirty();
+        renderSettings();
+      });
+
+      document.getElementById('range').addEventListener('change', render);
+      document.getElementById('btn-refresh').addEventListener('click', async () => {
+        if (dirty) {
+          const ok = await lucidos.ui.confirm({
+            title: 'Discard unsaved settings?',
+            message: 'Reloading pulls the pricing table back off disk and drops your unsaved edits.',
+            okLabel: 'Discard and reload',
+            danger: true,
+          });
+          if (!ok) return;
+        }
+        draft = null;
+        dirty = false;
+        document.getElementById('save-state').textContent = '';
+        await load();
+        lucidos.ui.toast('Reloaded', 'success');
+      });
+
+      lucidos.sse.connect();
+      lucidos.sse.on('ContextCaptured', (data) => pushLive(data));
+      // The rollup trigger rewrites the file, so pick it up without a reload.
+      lucidos.sse.on('DataFileWritten', (d) => {
+        if (String(d?.path || d?.event?.path || '').includes('token-cost/daily.json')) load();
+      });
+
+      load();
+    </script>
+  </body>
+</html>

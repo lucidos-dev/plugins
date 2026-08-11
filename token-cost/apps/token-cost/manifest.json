@@ -1,0 +1,4 @@
+{
+  "name": "Token Cost",
+  "description": "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream, cache-hit share, context-size distribution, and per-model/per-producer cost from an editable pricing table."
+}
