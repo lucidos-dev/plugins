@@ -10,6 +10,34 @@ rows above it, so a run costs the same whether the store holds 500k events or
 5M. Recomputes the touched days in full rather than adding deltas, so a rerun
 is idempotent.
 
+Set TOKEN_COST_REBUILD=1 to ignore the stored cursor and rebuild every day
+from scratch (needed whenever the aggregation itself changes, since the
+incremental path only ever revisits days that gained rows).
+
+DEDUPING REPEATED USAGE FRAMES
+------------------------------
+Claude Code re-delivers the same assistant message several times as it
+streams, and each delivery carries the same `usage` block, so the engine
+emits 2-3 identical `ContextCaptured` rows per real API call. Measured
+2026-08-11: claude_code 521,020 rows for 300,491 real calls (1.73x), while
+codex (1.01x) and main_llm (1.00x) are clean.
+
+So a row is dropped when its `(input, cache_read, cache_write, output)` tuple
+is identical to the PREVIOUS row in the same thread by sequence. Consecutive
+and per-thread both matter: two unrelated calls elsewhere in the workspace
+that happen to match are never collapsed, and a real repeat separated by any
+other call in its own thread survives.
+
+This is a heuristic, unlike the fix the engine needs (key on the CC assistant
+message id, which is not persisted here). It is safe at these magnitudes: the
+5th percentile of surviving rows is ~47k input tokens, so two genuinely
+distinct calls agreeing on all four counts is implausible. It is applied to
+every producer rather than just claude_code, because a true duplicate is
+never worth counting whoever emitted it.
+
+The LAG runs over each thread's FULL history, not just the touched days, so a
+duplicate straddling midnight is still caught on an incremental run.
+
 State path is anchored on LUCIDOS_WORKSPACE, never on __file__ (see
 knowhow/script-state-paths.md).
 """
@@ -27,37 +55,69 @@ OUT = WS / "data" / "artifacts" / "token-cost" / "daily.json"
 BUCKET_EDGES = [0, 32000, 64000, 128000, 200000, 400000]
 LONG_CTX_THRESHOLD = 200000
 
-ROLLUP_SQL = """
+# `usage` tuple, spelled once for the value and once inside the LAG.
+_USAGE_TUPLE = """(
+        (payload->'usage'->>'input_tokens')::bigint,
+        coalesce((payload->'usage'->>'cache_read_tokens')::bigint, 0),
+        coalesce((payload->'usage'->>'cache_creation_tokens')::bigint, 0),
+        (payload->'usage'->>'output_tokens')::bigint
+      )"""
+
+ROLLUP_SQL = (
+    """
 COPY (
   SELECT coalesce(json_agg(row_to_json(t)), '[]'::json) FROM (
     SELECT
       to_char(date_trunc('day', created), 'YYYY-MM-DD') AS day,
-      payload->>'producer' AS producer,
-      payload->>'model' AS model,
+      producer,
+      model,
       count(*) AS calls,
-      sum((payload->'usage'->>'input_tokens')::bigint) AS total_in,
-      sum((payload->'usage'->>'cache_read_tokens')::bigint) AS cache_read,
-      sum((payload->'usage'->>'cache_creation_tokens')::bigint) AS cache_write,
-      sum((payload->'usage'->>'output_tokens')::bigint) AS out_tok,
-      count(*) FILTER (WHERE (payload->'usage'->>'input_tokens')::bigint <  32000) AS b0,
-      count(*) FILTER (WHERE (payload->'usage'->>'input_tokens')::bigint >= 32000  AND (payload->'usage'->>'input_tokens')::bigint < 64000)  AS b1,
-      count(*) FILTER (WHERE (payload->'usage'->>'input_tokens')::bigint >= 64000  AND (payload->'usage'->>'input_tokens')::bigint < 128000) AS b2,
-      count(*) FILTER (WHERE (payload->'usage'->>'input_tokens')::bigint >= 128000 AND (payload->'usage'->>'input_tokens')::bigint < 200000) AS b3,
-      count(*) FILTER (WHERE (payload->'usage'->>'input_tokens')::bigint >= 200000 AND (payload->'usage'->>'input_tokens')::bigint < 400000) AS b4,
-      count(*) FILTER (WHERE (payload->'usage'->>'input_tokens')::bigint >= 400000) AS b5,
-      sum((payload->'usage'->>'input_tokens')::bigint)       FILTER (WHERE (payload->'usage'->>'input_tokens')::bigint >= 200000) AS long_in,
-      sum((payload->'usage'->>'output_tokens')::bigint)      FILTER (WHERE (payload->'usage'->>'input_tokens')::bigint >= 200000) AS long_out,
-      sum((payload->'usage'->>'cache_read_tokens')::bigint)  FILTER (WHERE (payload->'usage'->>'input_tokens')::bigint >= 200000) AS long_cr,
-      sum((payload->'usage'->>'cache_creation_tokens')::bigint) FILTER (WHERE (payload->'usage'->>'input_tokens')::bigint >= 200000) AS long_cw,
-      max((payload->'usage'->>'input_tokens')::bigint) AS max_in
-    FROM events
-    WHERE event_type = 'ContextCaptured'
-      AND payload->'usage' IS NOT NULL
+      sum(in_tok) AS total_in,
+      sum(cr) AS cache_read,
+      sum(cw) AS cache_write,
+      sum(out_tok) AS out_tok,
+      count(*) FILTER (WHERE in_tok <  32000) AS b0,
+      count(*) FILTER (WHERE in_tok >= 32000  AND in_tok < 64000)  AS b1,
+      count(*) FILTER (WHERE in_tok >= 64000  AND in_tok < 128000) AS b2,
+      count(*) FILTER (WHERE in_tok >= 128000 AND in_tok < 200000) AS b3,
+      count(*) FILTER (WHERE in_tok >= 200000 AND in_tok < 400000) AS b4,
+      count(*) FILTER (WHERE in_tok >= 400000) AS b5,
+      sum(in_tok)  FILTER (WHERE in_tok >= 200000) AS long_in,
+      sum(out_tok) FILTER (WHERE in_tok >= 200000) AS long_out,
+      sum(cr)      FILTER (WHERE in_tok >= 200000) AS long_cr,
+      sum(cw)      FILTER (WHERE in_tok >= 200000) AS long_cw,
+      max(in_tok) AS max_in
+    FROM (
+      SELECT
+        created,
+        payload->>'producer' AS producer,
+        payload->>'model' AS model,
+        (payload->'usage'->>'input_tokens')::bigint AS in_tok,
+        coalesce((payload->'usage'->>'cache_read_tokens')::bigint, 0) AS cr,
+        coalesce((payload->'usage'->>'cache_creation_tokens')::bigint, 0) AS cw,
+        (payload->'usage'->>'output_tokens')::bigint AS out_tok,
+        """
+    + _USAGE_TUPLE
+    + """ IS NOT DISTINCT FROM LAG("""
+    + _USAGE_TUPLE
+    + """)
+          OVER (PARTITION BY thread_id ORDER BY sequence) AS dup
+      FROM events
+      WHERE event_type = 'ContextCaptured'
+        AND payload->'usage' IS NOT NULL
+        AND thread_id IN (
+          SELECT DISTINCT thread_id FROM events
+          WHERE event_type = 'ContextCaptured'
+            AND date_trunc('day', created)::date = ANY (%(days)s)
+        )
+    ) s
+    WHERE NOT dup
       AND date_trunc('day', created)::date = ANY (%(days)s)
     GROUP BY 1, 2, 3
   ) t
 ) TO STDOUT;
 """
+)
 
 
 def psql(sql: str) -> str:
@@ -68,7 +128,9 @@ def psql(sql: str) -> str:
 
 
 def main() -> None:
-    if OUT.exists():
+    rebuild = os.environ.get("TOKEN_COST_REBUILD") == "1"
+
+    if OUT.exists() and not rebuild:
         state = json.loads(OUT.read_text())
     else:
         state = {"last_sequence": 0, "days": {}}
@@ -83,7 +145,7 @@ def main() -> None:
     )
     max_seq_s, _, day_list = head.partition("|")
     max_seq = int(max_seq_s or 0)
-    touched = [d for d in day_list.split(",") if d]
+    touched = sorted(d for d in day_list.split(",") if d)
 
     if not touched:
         print(f"no new ContextCaptured rows above sequence {since}")
@@ -92,10 +154,22 @@ def main() -> None:
     day_array = "ARRAY[" + ",".join(f"'{d}'::date" for d in touched) + "]"
     rows = json.loads(psql(ROLLUP_SQL.replace("%(days)s", day_array)))
 
+    # Diagnostic only, and counted separately: the rollup query filters the
+    # duplicates out inside the same subquery, so it cannot also count them.
+    raw_rows = int(
+        psql(
+            "SELECT count(*) FROM events WHERE event_type = 'ContextCaptured' "
+            f"AND payload->'usage' IS NOT NULL AND date_trunc('day', created)::date = ANY ({day_array});"
+        )
+        or 0
+    )
+
     days = state.get("days", {})
     for d in touched:
         days[d] = {}
+    kept = 0
     for x in rows:
+        kept += int(x["calls"])
         days[x["day"]][f"{x['producer']}|{x['model']}"] = {
             "calls": int(x["calls"]),
             "in": int(x["total_in"]),
@@ -119,14 +193,20 @@ def main() -> None:
         "note": (
             "'in' is TOTAL prompt size (uncached + cache_read + cache_write). "
             "uncached = in - cache_read - cache_write. 'long' is the subset of rows "
-            f"whose prompt exceeded {LONG_CTX_THRESHOLD}, for the long-context price tier."
+            f"whose prompt exceeded {LONG_CTX_THRESHOLD}, for the long-context price tier. "
+            "A row whose usage tuple repeats the previous row in the same thread is "
+            "dropped as a re-delivered streaming frame, not counted as a second call."
         ),
         "days": days,
     }
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, separators=(",", ":")))
-    print(f"rolled up {len(touched)} day(s) {touched[0]}..{touched[-1]}, seq {since} -> {max_seq}")
+    print(
+        f"rolled up {len(touched)} day(s) {touched[0]}..{touched[-1]}, "
+        f"seq {since} -> {max_seq}, kept {kept} of {raw_rows} rows "
+        f"({max(0, raw_rows - kept)} re-delivered frame(s) dropped)"
+    )
 
 
 if __name__ == "__main__":
