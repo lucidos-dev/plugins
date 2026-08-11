@@ -356,6 +356,9 @@
       let pricing = null;
       // Calls seen live this session, folded into today's numbers on top of the rollup.
       let live = [];
+      // Last usage tuple seen per thread, so a re-delivered streaming frame is
+      // not counted as a second call. See pushLive.
+      const lastUsageByThread = new Map();
       // The producer filter is a managed Select, since its options change with settings.
       let producerSelect = null;
 
@@ -610,6 +613,19 @@
           cache_write: u.cache_creation_tokens || 0,
           out: u.output_tokens || 0,
         };
+
+        // Claude Code re-delivers the same assistant message while it streams,
+        // each delivery carrying the same usage block, so one API call arrives
+        // as 2-3 identical events (measured 1.73x on claude_code; codex and the
+        // chat loop are clean). Drop a frame whose usage repeats the previous
+        // one from the SAME thread, which is exactly what the rollup does to
+        // the stored rows. Per thread matters: two unrelated calls elsewhere
+        // that happen to agree on all four counts are still counted twice.
+        const tid = ev.thread_id || '';
+        const key = `${call.in}/${call.cache_read}/${call.cache_write}/${call.out}`;
+        if (lastUsageByThread.get(tid) === key) return;
+        lastUsageByThread.set(tid, key);
+
         live.push(call);
         if (live.length > 5000) live = live.slice(-4000);
 
