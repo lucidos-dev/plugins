@@ -261,13 +261,13 @@
 
         <section class="block">
           <h2 class="sec">Long-context premium</h2>
-          <p class="sec-note">Anthropic bills a premium on the <code>[1m]</code> models once a single prompt crosses the threshold. Only calls over it, on a model whose id ends in <code>[1m]</code>, are multiplied. OpenAI's own long-context tier starts higher (272k) and is not modelled here, so a very large GPT prompt is priced at the flat rate.</p>
+          <p class="sec-note">A premium some providers charge once a single prompt crosses the threshold, applied only to models whose id ends in <code>[1m]</code>. <strong>Anthropic removed this surcharge for Opus 4.6 and later</strong>, so both multipliers ship at 1.0 and every call here is priced at the flat rate. Raise them only for a model that still bills a long-context tier. OpenAI's own tier starts at 272k, above this bucket's edge, and is not modelled.</p>
           <div class="card">
             <div class="field-grid">
               <div class="field">
                 <label for="lc-threshold">Threshold, tokens</label>
                 <input type="number" id="lc-threshold" min="0" step="1000" />
-                <div class="hint">200000 matches Anthropic today</div>
+                <div class="hint">Only used when a multiplier is above 1.0</div>
               </div>
               <div class="field">
                 <label for="lc-in">Input multiplier</label>
@@ -344,7 +344,7 @@
           'gemini-3.5-flash': { uncached_in: 0.3, cache_write: 0.3, cache_read: 0.075, out: 2.5 },
           'gemini-3.1-pro-preview': { uncached_in: 1.25, cache_write: 1.25, cache_read: 0.31, out: 10.0 },
         },
-        long_context_multiplier: { threshold_tokens: 200000, in_multiplier: 2.0, out_multiplier: 1.5 },
+        long_context_multiplier: { threshold_tokens: 200000, in_multiplier: 1.0, out_multiplier: 1.0 },
         producers: {
           main_llm: 'Chat & triggers',
           claude_code: 'Claude Code',
