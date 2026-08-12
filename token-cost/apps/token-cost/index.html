@@ -17,6 +17,32 @@
       }
       .top-meta { color: var(--text-muted); font-size: var(--font-size-xs); }
 
+      /* Sound toggle. Off is the resting state, so the speaker is muted-looking
+         by default: waves hidden, slash drawn, muted colour. On drops the slash
+         and brings the waves in, and the button takes the accent like any other
+         pressed control. */
+      #btn-sound { color: var(--text-muted); }
+      #btn-sound.sound-on { color: var(--accent); }
+      #btn-sound svg {
+        width: var(--icon-size-lg);
+        height: var(--icon-size-lg);
+      }
+      #btn-sound #wave-1,
+      #btn-sound #wave-2 {
+        opacity: 0;
+        transition: opacity var(--duration-normal) ease;
+      }
+      #btn-sound.sound-on #wave-1,
+      #btn-sound.sound-on #wave-2 { opacity: 1; }
+      /* The slash is drawn on with a dash offset rather than toggled, so
+         muting reads as a stroke being struck through the speaker. */
+      #btn-sound #sound-slash {
+        stroke-dasharray: 27;
+        stroke-dashoffset: 0;
+        transition: stroke-dashoffset var(--duration-normal) ease;
+      }
+      #btn-sound.sound-on #sound-slash { stroke-dashoffset: 27; }
+
       /* Hero: the one focal point */
       .hero {
         background: var(--bg-secondary); border: 1px solid var(--border-color);
@@ -206,7 +232,15 @@
             <button class="segmented-btn active" id="tab-dashboard">Dashboard</button>
             <button class="segmented-btn" id="tab-settings">Settings</button>
           </div>
-          <button class="action-btn action-btn-secondary" id="btn-sound" aria-pressed="false">Sound off</button>
+          <button class="icon-btn" id="btn-sound" aria-pressed="false" aria-label="Sound off" data-tip="Sound off">
+            <svg id="ico-sound" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11 5 6 9H2v6h4l5 4z"></path>
+              <path id="wave-1" d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+              <path id="wave-2" d="M18.5 5.5a9 9 0 0 1 0 13"></path>
+              <line id="sound-slash" x1="2.5" y1="21.5" x2="21.5" y2="2.5"></line>
+            </svg>
+          </button>
           <button class="action-btn action-btn-secondary" id="btn-refresh">Refresh</button>
         </div>
       </header>
@@ -420,7 +454,10 @@
       let soundOn = false;
       try { soundOn = localStorage.getItem(SOUND_KEY) === '1'; } catch (e) { /* private mode */ }
       let audioCtx = null;
-      let noiseBuf = null;
+      // The decoded sample, and the in-flight fetch so a burst of calls during
+      // load waits on one request rather than firing several.
+      let caChingBuf = null;
+      let caChingLoad = null;
       // Rate limit: a busy agent lands several calls a second and the register
       // rings for most of a second. Extra ones are dropped, not queued.
       let lastCoinAt = 0;
@@ -433,23 +470,32 @@
         return audioCtx;
       }
 
-      /** Half a second of white noise, built once. The mechanical half of the
-       *  register: without it a bell is just a beep. */
-      function noiseSource(ac) {
-        if (!noiseBuf) {
-          noiseBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.5), ac.sampleRate);
-          const d = noiseBuf.getChannelData(0);
-          for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-        }
-        const s = ac.createBufferSource();
-        s.buffer = noiseBuf;
-        return s;
+      /** Fetch and decode the register once, then hold the AudioBuffer.
+       *  lucidos.data.url resolves the app's own bundled asset, which is what
+       *  keeps it working under the WIP-preview route as well as live. */
+      function loadCaChing(ac) {
+        if (caChingBuf) return Promise.resolve(caChingBuf);
+        if (caChingLoad) return caChingLoad;
+        const url = (window.lucidos && lucidos.data && lucidos.data.url)
+          ? lucidos.data.url('apps/token-cost/caching.m4a')
+          : 'caching.m4a';
+        caChingLoad = fetch(url)
+          .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+          .then((b) => new Promise((res, rej) => {
+            // The callback form, because Safari still ships it and the promise
+            // form is the newer of the two.
+            const out = ac.decodeAudioData(b, res, rej);
+            if (out && out.then) out.then(res, rej);
+          }))
+          .then((buf) => { caChingBuf = buf; return buf; })
+          .catch((e) => { caChingLoad = null; throw e; });
+        return caChingLoad;
       }
 
-      /** An old cash register. The lever clunks, the bell gets struck twice
-       *  (landing a little sharp, which is the joke), and three coins rattle
-       *  into the tray at random pitches so no two are identical. Synthesized
-       *  rather than shipped as an asset, so the plugin stays text-only. */
+      /** A real cash register: a public-domain recording, trimmed and
+       *  normalised (see caching.m4a.README.md for provenance and licence).
+       *  Playback rate is jittered by a few percent so a run of calls does not
+       *  sound like a loop of the same file. */
       function playCaChing() {
         if (!soundOn) return;
         const now = performance.now();
@@ -458,75 +504,24 @@
         try {
           const ac = audio();
           if (!ac) return;
-          // Small lookahead. Scheduling at exactly currentTime lands in the past
-          // by the time the graph is built, and those notes are silently dropped.
-          const t0 = ac.currentTime + 0.02;
-          const master = ac.createGain();
-          master.gain.value = 0.34;
-          master.connect(ac.destination);
-
-          // 1. "Ka" — the lever: a wooden thud under a scrape of noise.
-          const thud = ac.createOscillator();
-          const tg = ac.createGain();
-          thud.type = 'triangle';
-          thud.frequency.setValueAtTime(190, t0);
-          thud.frequency.exponentialRampToValueAtTime(70, t0 + 0.09);
-          tg.gain.setValueAtTime(0.9, t0);
-          tg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
-          thud.connect(tg); tg.connect(master);
-          thud.start(t0); thud.stop(t0 + 0.13);
-
-          const clack = noiseSource(ac);
-          const cf = ac.createBiquadFilter();
-          const cg = ac.createGain();
-          cf.type = 'bandpass'; cf.frequency.value = 2600; cf.Q.value = 1.2;
-          cg.gain.setValueAtTime(0.5, t0);
-          cg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.05);
-          clack.connect(cf); cf.connect(cg); cg.connect(master);
-          clack.start(t0); clack.stop(t0 + 0.06);
-
-          // 2. "CHING" — inharmonic partials are what read as metal rather than
-          //    as a beep, and the pitch bend makes it land sharp like a real one.
-          const strike = (at, amp, bend) => {
-            [1, 2.76, 5.4, 8.93].forEach((ratio, i) => {
-              const o = ac.createOscillator();
-              const g = ac.createGain();
-              o.type = i === 0 ? 'triangle' : 'sine';
-              const hz = 1046.5 * ratio;
-              o.frequency.setValueAtTime(hz * bend, t0 + at);
-              o.frequency.exponentialRampToValueAtTime(hz, t0 + at + 0.05);
-              const peak = amp / (i + 1.4);
-              const dur = 1.1 / (i * 0.9 + 1);
-              g.gain.setValueAtTime(0.0001, t0 + at);
-              g.gain.exponentialRampToValueAtTime(peak, t0 + at + 0.006);
-              g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
-              o.connect(g); g.connect(master);
-              o.start(t0 + at); o.stop(t0 + at + dur + 0.02);
-            });
-          };
-          strike(0.07, 0.85, 1.06);
-          strike(0.17, 0.50, 1.00);
-
-          // 3. Coins into the tray.
-          for (let i = 0; i < 3; i++) {
-            const at = 0.42 + i * 0.075 + Math.random() * 0.03;
-            const o = ac.createOscillator();
+          loadCaChing(ac).then((buf) => {
+            const src = ac.createBufferSource();
+            src.buffer = buf;
+            src.playbackRate.value = 0.97 + Math.random() * 0.06;
             const g = ac.createGain();
-            o.type = 'square';
-            o.frequency.setValueAtTime(1600 + Math.random() * 900, t0 + at);
-            g.gain.setValueAtTime(0.0001, t0 + at);
-            g.gain.exponentialRampToValueAtTime(0.1 - i * 0.025, t0 + at + 0.004);
-            g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.06);
-            o.connect(g); g.connect(master);
-            o.start(t0 + at); o.stop(t0 + at + 0.08);
-          }
+            g.gain.value = 0.75;
+            src.connect(g); g.connect(ac.destination);
+            src.start(ac.currentTime + 0.01);
+          }).catch(() => { /* asset missing or undecodable: stay silent */ });
         } catch (e) { /* audio is decorative, never break the dashboard for it */ }
       }
 
       function renderSoundBtn() {
         const b = document.getElementById('btn-sound');
-        b.textContent = soundOn ? 'Sound on' : 'Sound off';
         b.setAttribute('aria-pressed', soundOn ? 'true' : 'false');
+        b.setAttribute('aria-label', soundOn ? 'Sound on' : 'Sound off');
+        b.setAttribute('data-tip', soundOn ? 'Sound on' : 'Sound off');
+        b.classList.toggle('sound-on', soundOn);
       }
 
       const fmtInt = (n) => new Intl.NumberFormat().format(Math.round(n));
@@ -1171,11 +1166,18 @@
         const ac = audio();
         if (!ac) {
           lucidos.ui.toast('This browser has no Web Audio, so no ca-ching.', 'warning', { key: 'tc-sound' });
-        } else if (ac.state !== 'running') {
-          lucidos.ui.toast(`Audio is ${ac.state}. Click anywhere in the dashboard to wake it.`, 'warning', { key: 'tc-sound' });
-        } else {
-          lucidos.ui.toast('Ca-ching armed. Every live call rings the register.', 'success', { key: 'tc-sound', durationMs: 2500 });
+          return;
         }
+        if (ac.state !== 'running') {
+          lucidos.ui.toast(`Audio is ${ac.state}. Click anywhere in the dashboard to wake it.`, 'warning', { key: 'tc-sound' });
+          return;
+        }
+        // The sample load is the other way this goes quiet, and it fails
+        // asynchronously, so the verdict waits for it.
+        loadCaChing(ac).then(
+          () => lucidos.ui.toast('Ca-ching armed. Every live call rings the register.', 'success', { key: 'tc-sound', durationMs: 2500 }),
+          (e) => lucidos.ui.toast(`Could not load the register sound: ${e.message}`, 'error', { key: 'tc-sound' }),
+        );
       });
       document.getElementById('btn-refresh').addEventListener('click', async () => {
         if (dirty) {
