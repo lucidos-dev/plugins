@@ -536,11 +536,11 @@
        *  does not: a dense register hit reads louder than one bright coin at
        *  the same peak. */
       const SOUNDS = [
-        { id: 'register', label: 'Cash register', note: 'The full ka-ching', file: 'register.m4a', gain: 0.75 },
         { id: 'arcade', label: 'Arcade coin', note: 'Two-tone 8-bit pickup', file: 'arcade.m4a', gain: 0.34 },
+        { id: 'register', label: 'Cash register', note: 'The full ka-ching', file: 'register.m4a', gain: 0.75 },
         { id: 'coinbox', label: 'Coin in the tin', note: 'Metal money box', file: 'coinbox.m4a', gain: 0.8 },
       ];
-      const DEFAULT_SOUND = 'register';
+      const DEFAULT_SOUND = 'arcade';
 
       let soundId = DEFAULT_SOUND;
       let customSound = null;   // { name, path } for an uploaded clip

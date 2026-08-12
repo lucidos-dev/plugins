@@ -1,5 +1,5 @@
 id = "token-cost"
-version = "0.1.9"
+version = "0.1.10"
 name = "Token Cost"
 description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, cache-hit share, context-size distribution, and per-model/per-producer cost from a pricing table you edit in the app's own Settings tab. Ships an incremental rollup script; ask Lucidos to set up an hourly rollup trigger after install."
 source = "https://github.com/lucidos-dev/plugins/tree/main/token-cost"
