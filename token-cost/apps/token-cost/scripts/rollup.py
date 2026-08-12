@@ -31,9 +31,21 @@ other call in its own thread survives.
 This is a heuristic, unlike the fix the engine needs (key on the CC assistant
 message id, which is not persisted here). It is safe at these magnitudes: the
 5th percentile of surviving rows is ~47k input tokens, so two genuinely
-distinct calls agreeing on all four counts is implausible. It is applied to
-every producer rather than just claude_code, because a true duplicate is
-never worth counting whoever emitted it.
+distinct calls agreeing on all four counts is implausible.
+
+It is scoped to claude_code, because only claude_code ever had the frame bug
+(42% of its rows against 1.1% for codex), and on the other producers an equal
+pair is a real repeat rather than a re-delivered frame. Measured on the whole
+store, collapsing every producer cost codex 2.75% of its uncached input and
+2.08% of its output, and main_llm nothing at all (zero collisions in 31,845
+rows). A time-gap guard was considered instead and rejected: at 5 seconds it
+leaves claude_code at 1.62x when a real transcript measures 1.77x frames per
+message, so it under-collapses the very thing it exists to catch.
+
+Engine builds from 2026-08-11 emit one row per real API call, so on newer data
+this collapses nothing (431 rows in the first night, zero dropped). It stays
+for the ~220k pre-fix rows, and needs no cutoff date: the LAG is evaluated pair
+by pair within a thread, so old threads collapse and new ones pass through.
 
 The LAG runs over each thread's FULL history, not just the touched days, so a
 duplicate straddling midnight is still caught on an incremental run.
@@ -101,7 +113,8 @@ COPY (
     + """ IS NOT DISTINCT FROM LAG("""
     + _USAGE_TUPLE
     + """)
-          OVER (PARTITION BY thread_id ORDER BY sequence) AS dup
+          OVER (PARTITION BY thread_id ORDER BY sequence)
+        AND payload->>'producer' = 'claude_code' AS dup
       FROM events
       WHERE event_type = 'ContextCaptured'
         AND payload->'usage' IS NOT NULL
@@ -194,8 +207,9 @@ def main() -> None:
             "'in' is TOTAL prompt size (uncached + cache_read + cache_write). "
             "uncached = in - cache_read - cache_write. 'long' is the subset of rows "
             f"whose prompt exceeded {LONG_CTX_THRESHOLD}, for the long-context price tier. "
-            "A row whose usage tuple repeats the previous row in the same thread is "
-            "dropped as a re-delivered streaming frame, not counted as a second call."
+            "A claude_code row whose usage tuple repeats the previous row in the same "
+            "thread is dropped as a re-delivered streaming frame, not counted as a "
+            "second call. Other producers are never collapsed."
         ),
         "days": days,
     }

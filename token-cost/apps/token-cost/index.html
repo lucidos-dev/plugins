@@ -33,15 +33,28 @@
         color: var(--text-primary); line-height: 1.05;
         font-variant-numeric: tabular-nums;
       }
-      .hero-value .live { color: var(--accent); }
+      .hero-value .live {
+        color: var(--accent); display: inline-block;
+        transition: transform var(--duration-fast) ease, color var(--duration-fast) ease;
+      }
+      /* Same idea as the Ouroboros score pop: the figure jumps on the frame the
+         number changes and settles back, so a live cost tick is felt, not just
+         read. Suppressed for a user who asked for reduced motion. */
+      .hero-value .live.bump { transform: scale(1.09); color: var(--accent-green); }
+      @media (prefers-reduced-motion: reduce) {
+        .hero-value .live { transition: none; }
+        .hero-value .live.bump { transform: none; color: var(--accent); }
+      }
       .hero-sub { color: var(--text-secondary); font-size: var(--font-size-sm); margin-top: var(--space-sm); }
       .pulse {
         display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%;
         background: var(--accent-green); margin-right: var(--space-xs);
         vertical-align: middle; opacity: 0.35;
       }
-      .pulse.on { animation: blip var(--duration-emphasis) ease-out; opacity: 1; }
-      @keyframes blip { from { transform: scale(2.2); opacity: 1; } to { transform: scale(1); opacity: 1; } }
+      .pulse.on { animation: blip var(--duration-normal) ease-out; opacity: 1; }
+      /* Deliberately small: at scale(2.2) over the emphasis duration the dot
+         read as an alarm rather than a heartbeat, and it fires on every call. */
+      @keyframes blip { from { transform: scale(1.45); opacity: 0.8; } to { transform: scale(1); opacity: 1; } }
 
       .stat-strip { display: flex; gap: var(--space-xl); flex-wrap: wrap; }
       .stat { min-width: 7rem; }
@@ -144,7 +157,14 @@
       .field input { width: 100%; box-sizing: border-box; font-family: var(--font-mono);
         font-variant-numeric: tabular-nums; padding: var(--space-xs) var(--space-sm); }
       .field .hint { color: var(--text-muted); font-size: var(--font-size-2xs); margin-top: var(--space-xs); }
-      .save-bar { display: flex; align-items: center; gap: var(--space-lg); flex-wrap: wrap; }
+      /* The whole row sits right, and the primary CTA is the rightmost thing
+         in it, so the eye lands on Save last. The status text is pushed to the
+         left edge of the group rather than trailing the buttons. */
+      .save-bar {
+        display: flex; align-items: center; gap: var(--space-lg);
+        flex-wrap: wrap; justify-content: flex-end;
+      }
+      .save-bar .button-group { justify-content: flex-end; }
       .dirty-dot { color: var(--accent-yellow); font-size: var(--font-size-xs); }
     </style>
   </head>
@@ -302,12 +322,12 @@
 
         <section class="block">
           <div class="card save-bar">
-            <div class="button-group">
-              <button class="action-btn" id="btn-save">Save settings</button>
-              <button class="action-btn action-btn-secondary" id="btn-revert">Revert</button>
-              <button class="action-btn action-btn-secondary" id="btn-defaults">Restore defaults</button>
-            </div>
             <span id="save-state" class="muted" style="font-size: var(--font-size-xs)"></span>
+            <div class="button-group">
+              <button class="action-btn action-btn-secondary" id="btn-defaults">Restore defaults</button>
+              <button class="action-btn action-btn-secondary" id="btn-revert">Revert</button>
+              <button class="action-btn" id="btn-save">Save settings</button>
+            </div>
           </div>
           <p class="sec-note" style="margin-top: var(--space-md)">
             Stored as JSON at <code>artifacts/token-cost/pricing.json</code>, so it is version-controlled with the rest of the workspace and you can still edit it by hand.
@@ -359,6 +379,8 @@
       // Last usage tuple seen per thread, so a re-delivered streaming frame is
       // not counted as a second call. See pushLive.
       const lastUsageByThread = new Map();
+      // Held so a rapid second tick restarts the bump instead of stacking timers.
+      let bumpTimer = null;
       // The producer filter is a managed Select, since its options change with settings.
       let producerSelect = null;
 
@@ -370,8 +392,13 @@
         return String(Math.round(n));
       };
       const fmtMoney = (n) => {
-        if (n >= 1000) return '$' + new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n);
-        if (n >= 1) return '$' + n.toFixed(2);
+        // Always show cents, at every magnitude. The last two digits are what
+        // move as calls land, so dropping them above $1000 froze the number.
+        if (n >= 1) {
+          return '$' + new Intl.NumberFormat(undefined, {
+            minimumFractionDigits: 2, maximumFractionDigits: 2,
+          }).format(n);
+        }
         if (n >= 0.01) return '$' + n.toFixed(3);
         return '$' + n.toFixed(4);
       };
@@ -504,8 +531,23 @@
         const isToday = days.length === 1 && days[0] === todayKey;
         document.getElementById('hero-label-text').textContent =
           isToday ? 'Spend today' : `Spend, ${days.length} day${days.length === 1 ? '' : 's'}`;
-        document.getElementById('hero-cost').innerHTML =
-          `<span class="live">${fmtMoney(totalCost)}</span>`;
+        const heroEl = document.getElementById('hero-cost');
+        const heroText = fmtMoney(totalCost);
+        // Reuse the span instead of rebuilding it: replacing innerHTML would
+        // drop the element mid-animation, so the bump would never be seen.
+        let liveEl = heroEl.querySelector('.live');
+        if (!liveEl) {
+          heroEl.innerHTML = '<span class="live"></span>';
+          liveEl = heroEl.querySelector('.live');
+        }
+        if (liveEl.textContent !== heroText) {
+          liveEl.textContent = heroText;
+          liveEl.classList.remove('bump');
+          void liveEl.offsetWidth;
+          liveEl.classList.add('bump');
+          clearTimeout(bumpTimer);
+          bumpTimer = setTimeout(() => liveEl.classList.remove('bump'), 160);
+        }
         const perCall = total.calls ? totalCost / total.calls : 0;
         const daysN = Math.max(1, days.length);
         document.getElementById('hero-sub').textContent =
@@ -621,10 +663,16 @@
         // one from the SAME thread, which is exactly what the rollup does to
         // the stored rows. Per thread matters: two unrelated calls elsewhere
         // that happen to agree on all four counts are still counted twice.
+        // Scoped to claude_code: on codex an equal pair is a real repeat (it
+        // never had the frame bug), and collapsing it lost ~2% of its spend.
+        // Engine builds from 2026-08-11 emit one event per real call, so on a
+        // current engine this drops nothing and is here for older streams.
         const tid = ev.thread_id || '';
         const key = `${call.in}/${call.cache_read}/${call.cache_write}/${call.out}`;
-        if (lastUsageByThread.get(tid) === key) return;
-        lastUsageByThread.set(tid, key);
+        if (call.producer === 'claude_code') {
+          if (lastUsageByThread.get(tid) === key) return;
+          lastUsageByThread.set(tid, key);
+        }
 
         live.push(call);
         if (live.length > 5000) live = live.slice(-4000);
