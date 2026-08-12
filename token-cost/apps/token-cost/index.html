@@ -648,7 +648,7 @@
        *  speaker in the header. */
       const SOUND_ICONS = {
         register: '<rect x="2" y="9" width="20" height="12" rx="2"/><path d="M6 9V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3"/><path d="M6 13h5M6 17h5"/><circle cx="17" cy="15" r="2"/>',
-        arcade: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.75 1.75 0 0 1 0 3.5h-3a1.75 1.75 0 0 0 0 3.5h4"/>',
+        arcade: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11"/><path d="M14.75 9.25a2 2 0 0 0-2-2h-1.5a1.75 1.75 0 0 0 0 3.5h1.5a1.75 1.75 0 0 1 0 3.5h-1.5a2 2 0 0 1-2-2"/>',
         coinbox: '<path d="M4 9h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M3 5h18v4H3z"/><path d="M10 13h4"/>',
         custom: '<path d="M12 3v10"/><path d="m8 7 4-4 4 4"/><path d="M4 15v3a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-3"/>',
       };
@@ -1058,12 +1058,19 @@
 
         const gen = daily.generated ? lucidos.utils.timeAgo(daily.generated) : 'never';
         document.getElementById('meta').textContent =
-          `${fmtInt(Object.keys(daily.days).length)} days on record · rollup ${gen} · ${live.length} live call${live.length === 1 ? '' : 's'} this session`;
+          `${fmtInt(Object.keys(daily.days).length)} days on record · rollup ${gen} · ${live.length} call${live.length === 1 ? '' : 's'} since the rollup`;
       }
 
-      function pushLive(ev) {
+      /** Fold one ContextCaptured into the live tail.
+       *
+       *  `opts.quiet` is the backfill replaying history: same accounting, but
+       *  no pulse, no ring and no re-render per row, since a page load must
+       *  not fire 300 coins and 300 layouts. Returns whether the call was
+       *  counted, so the backfill knows if anything changed. */
+      function pushLive(ev, opts = {}) {
+        const quiet = opts.quiet === true;
         const p = ev?.event;
-        if (!p || p.type !== 'ContextCaptured' || !p.usage) return;
+        if (!p || p.type !== 'ContextCaptured' || !p.usage) return false;
         const u = p.usage;
         const call = {
           seq: ev.seq,
@@ -1090,24 +1097,29 @@
         const tid = ev.thread_id || '';
         const key = `${call.in}/${call.cache_read}/${call.cache_write}/${call.out}`;
         if (call.producer === 'claude_code') {
-          if (lastUsageByThread.get(tid) === key) return;
+          if (lastUsageByThread.get(tid) === key) return false;
           lastUsageByThread.set(tid, key);
         }
 
         live.push(call);
         if (live.length > 5000) live = live.slice(-4000);
 
-        const pulse = document.getElementById('pulse');
-        pulse.classList.remove('on');
-        void pulse.offsetWidth;
-        pulse.classList.add('on');
-        playCaChing();
+        // A backfill replays up to a full day at once: one pulse, one coin and
+        // one layout per row would be a burst of noise on page load. The feed
+        // row is still built, so the recent history is there to scroll.
+        if (!quiet) {
+          const pulse = document.getElementById('pulse');
+          pulse.classList.remove('on');
+          void pulse.offsetWidth;
+          pulse.classList.add('on');
+          playCaChing();
+        }
 
         const feed = document.getElementById('feed');
         if (feed.querySelector('.empty-state')) feed.innerHTML = '';
         const fresh = Math.max(0, call.in - call.cache_read - call.cache_write);
         const row = document.createElement('div');
-        row.className = 'feed-row fresh-row';
+        row.className = 'feed-row' + (quiet ? '' : ' fresh-row');
         const t = new Date(call.at);
         row.innerHTML =
           `<div class="feed-time">${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}</div>` +
@@ -1117,7 +1129,94 @@
         feed.insertBefore(row, feed.firstChild);
         while (feed.children.length > 60) feed.removeChild(feed.lastChild);
 
-        render();
+        if (!quiet) render();
+        return true;
+      }
+
+      /** Everything that landed between the rollup's cursor and this tab
+       *  opening.
+       *
+       *  `live` only ever held what arrived over SSE while the tab was open,
+       *  so opening the dashboard at 07:50 against a 07:05 rollup showed
+       *  neither the stored nor the streamed version of those 45 minutes. The
+       *  hole closed itself on the next hourly run (the DataFileWritten
+       *  listener reloads), which is why it read as the chart lagging rather
+       *  than as missing data.
+       *
+       *  Queried from the same store the rollup reads, and folded through the
+       *  same `pushLive` path, so the frame dedupe and the seq > last_sequence
+       *  guard apply identically and nothing is counted twice. Only the
+       *  current local day is fetched: that is the only day the merge folds
+       *  live calls into, and it caps the query at one day of events.
+       *
+       *  Deliberately not a spinner or a blocking step: it runs after the
+       *  first render, so the dashboard paints from the rollup immediately and
+       *  the recent tail fills in behind it. */
+      async function backfillSinceRollup() {
+        const cursor = daily.last_sequence || 0;
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const PAGE = 500;
+
+        // Page backwards from newest and stop at the first row the rollup
+        // already has. The store returns newest first, so the gap is a prefix
+        // of that order and the walk costs one page on a normal load. A single
+        // limit=1000 call looked fine on a quiet morning and would have
+        // silently truncated a busy one: the peak measured here is 2,415 calls
+        // in one hour, and a whole day runs to 17,600.
+        // NOTE: `lucidos.events.query` builds its querystring from event_type /
+        // since / until / limit only, so it silently DROPS before_event_id and
+        // every page would come back identical. The engine endpoint does
+        // support the cursor, so this goes straight at it: same origin, no
+        // proxy needed, exactly the fallback the SDK guide names for
+        // /api/v1/*. Switch back to the SDK if it ever forwards the cursor.
+        const base = new URL('api/v1/events/query', document.baseURI);
+        const collected = [];
+        let before = null;
+        let reachedRollup = false;
+        for (let page = 0; page < 40 && !reachedRollup; page++) {
+          let rows;
+          try {
+            const u = new URL(base);
+            u.searchParams.set('event_type', 'ContextCaptured');
+            u.searchParams.set('since', startOfDay.toISOString());
+            u.searchParams.set('limit', String(PAGE));
+            if (before) u.searchParams.set('before_event_id', before);
+            const res = await fetch(u, { headers: { Accept: 'application/json' } });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            rows = await res.json();
+          } catch (e) {
+            // A failed backfill is not worth a toast: the rollup is still on
+            // screen and the next hourly run closes the gap anyway.
+            console.warn('token-cost: backfill failed', e);
+            break;
+          }
+          if (!Array.isArray(rows) || !rows.length) break;
+          for (const r of rows) {
+            if (r.sequence != null && r.sequence <= cursor) { reachedRollup = true; break; }
+            collected.push(r);
+          }
+          if (rows.length < PAGE) break;
+          before = rows[rows.length - 1].id;
+        }
+
+        // Oldest first, so the per-thread dedupe below sees the same order the
+        // rollup's SQL window function does.
+        collected.reverse();
+        let added = 0;
+        for (const r of collected) {
+          if (!r.payload || !r.payload.usage) continue;
+          if (live.some((c) => c.seq === r.sequence)) continue;
+          added += pushLive({
+            seq: r.sequence,
+            created: r.created,
+            thread_id: r.thread_id,
+            // The SSE envelope carries `type`; the stored payload does not, so
+            // stamp it or pushLive's own guard rejects every backfilled row.
+            event: { ...r.payload, type: 'ContextCaptured' },
+          }, { quiet: true }) ? 1 : 0;
+        }
+        if (added) render();
       }
 
       async function load() {
@@ -1140,6 +1239,9 @@
         syncProducerFilter();
         renderSettings();
         render();
+        // After the paint, never before it: the rollup is the bulk of the
+        // numbers and should be on screen while the recent tail is fetched.
+        await backfillSinceRollup();
       }
 
       /** Keep the producer dropdown in step with the configured labels, plus any
