@@ -16,12 +16,14 @@ than one bright coin at the same peak.
 | `register.m4a` | Cash register | 1.60s | 12.3 KB | [Commons: Cash register.ogg](https://commons.wikimedia.org/wiki/File:Cash_register.ogg), originally SoundBible 333 | Public domain, attribution not required |
 | `arcade.m4a` | Arcade coin | 0.67s | 6.5 KB | Synthesized for this app, see below | None, generated here |
 | `coinbox.m4a` | Coin in the tin | 0.95s | 9.5 KB | [Commons: Coins dropped in metallic moneybox.ogg](https://commons.wikimedia.org/wiki/File:Coins_dropped_in_metallic_moneybox.ogg) by ezwa | Public domain |
-| `coindrop.m4a` | Dropped coin | 1.03s | 10.1 KB | [Commons: Coin dropped on wooden floor.ogg](https://commons.wikimedia.org/wiki/File:Coin_dropped_on_wooden_floor.ogg) by ezwa | Public domain |
-| `palm.m4a` | Handful | 1.10s | 11.2 KB | [Commons: Shaking coins in palm.ogg](https://commons.wikimedia.org/wiki/File:Shaking_coins_in_palm.ogg) by ezwa | Public domain |
 
-The three ezwa recordings are several seconds long and contain a run of separate
-hits; each one here is a single hit cut out of that run (`coinbox` 1.15s-2.10s,
-`coindrop` 0.72s-1.75s, `palm` 0.30s-1.40s of the original).
+The ezwa recording is several seconds long and contains a run of separate hits;
+the one here is a single hit cut out of that run (1.15s-2.10s of the original).
+
+Two more ezwa clips shipped in v0.1.7 and were cut in v0.1.8 for sounding bad
+rather than for any licence reason: `coindrop` (Coin dropped on wooden floor)
+and `palm` (Shaking coins in palm). Both are public domain if they are ever
+wanted back.
 
 Note on fetching these from Commons: the ezwa `.ogg` originals are Ogg Skeleton
 v4.0 containers that libsndfile and afconvert both refuse. Commons' own

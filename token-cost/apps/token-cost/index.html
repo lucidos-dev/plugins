@@ -251,13 +251,15 @@
       .sound-card .sc-ico { flex: 0 0 auto; color: var(--text-muted); }
       .sound-card.selected .sc-ico { color: var(--accent); }
       .sound-card .sc-ico svg { display: block; width: 1.5rem; height: 1.5rem; }
-      .sound-card .sc-text { min-width: 0; }
+      /* A column, and both children are blocks: as inline spans they ran on
+         one line and the note collided with the name it belongs under. */
+      .sound-card .sc-text { min-width: 0; display: flex; flex-direction: column; }
       .sound-card .sc-name {
-        font-size: var(--font-size-md); white-space: nowrap;
+        display: block; font-size: var(--font-size-md); white-space: nowrap;
         overflow: hidden; text-overflow: ellipsis;
       }
       .sound-card .sc-note {
-        color: var(--text-muted); font-size: var(--font-size-2xs);
+        display: block; color: var(--text-muted); font-size: var(--font-size-2xs);
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
       /* A short pulse on the icon while its sound plays, so the click has a
@@ -537,8 +539,6 @@
         { id: 'register', label: 'Cash register', note: 'The full ka-ching', file: 'register.m4a', gain: 0.75 },
         { id: 'arcade', label: 'Arcade coin', note: 'Two-tone 8-bit pickup', file: 'arcade.m4a', gain: 0.34 },
         { id: 'coinbox', label: 'Coin in the tin', note: 'Metal money box', file: 'coinbox.m4a', gain: 0.8 },
-        { id: 'coindrop', label: 'Dropped coin', note: 'One coin, wooden floor', file: 'coindrop.m4a', gain: 0.8 },
-        { id: 'palm', label: 'Handful', note: 'Coins shaken in a palm', file: 'palm.m4a', gain: 0.85 },
       ];
       const DEFAULT_SOUND = 'register';
 
@@ -551,6 +551,8 @@
         if (c) customSound = JSON.parse(c);
       } catch (e) { /* private mode */ }
       if (soundId === 'custom' && !customSound) soundId = DEFAULT_SOUND;
+      // A pick stored before a sound was retired would leave no card selected.
+      if (soundId !== 'custom' && !SOUNDS.some((s) => s.id === soundId)) soundId = DEFAULT_SOUND;
 
       let audioCtx = null;
       // Decoded samples by url, and the in-flight fetches, so a burst of calls
@@ -641,15 +643,13 @@
         b.classList.toggle('sound-on', soundOn);
       }
 
-      /** One icon per sound, so the pack reads as five different things before
+      /** One icon per sound, so the pack reads as different things before
        *  a single one is played. All 24x24 currentColor strokes, matching the
        *  speaker in the header. */
       const SOUND_ICONS = {
         register: '<rect x="2" y="9" width="20" height="12" rx="2"/><path d="M6 9V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3"/><path d="M6 13h5M6 17h5"/><circle cx="17" cy="15" r="2"/>',
         arcade: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.75 1.75 0 0 1 0 3.5h-3a1.75 1.75 0 0 0 0 3.5h4"/>',
         coinbox: '<path d="M4 9h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M3 5h18v4H3z"/><path d="M10 13h4"/>',
-        coindrop: '<ellipse cx="12" cy="18" rx="7" ry="3"/><circle cx="12" cy="7" r="4"/><path d="M12 11v4"/>',
-        palm: '<path d="M4 12a8 8 0 0 0 16 0"/><circle cx="9" cy="7" r="2.5"/><circle cx="15.5" cy="8.5" r="2"/><path d="M4 12h16"/>',
         custom: '<path d="M12 3v10"/><path d="m8 7 4-4 4 4"/><path d="M4 15v3a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-3"/>',
       };
 
