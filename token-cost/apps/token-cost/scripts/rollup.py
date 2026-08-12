@@ -50,6 +50,19 @@ by pair within a thread, so old threads collapse and new ones pass through.
 The LAG runs over each thread's FULL history, not just the touched days, so a
 duplicate straddling midnight is still caught on an incremental run.
 
+LOCAL DAYS, AND PER-HOUR DETAIL FOR THE RECENT ONES
+---------------------------------------------------
+Days are bucketed in the USER'S LOCAL timezone, not UTC. The app decides what
+"today" is with a local-time date, so a UTC bucket disagreed with it for every
+call made between midnight and 02:00 Oslo, quietly filing those into the
+previous day. The timezone is resolved from /etc/localtime (then TZ, then UTC).
+
+The same query also groups by local hour, which is what lets the app draw a
+single selected day as 24 hourly bars instead of one lone column. Hours are
+kept only for the most recent HOURS_DAYS days (the only ones a single-day
+selection can land on) and pruned from older days, so the file does not grow
+24x.
+
 State path is anchored on LUCIDOS_WORKSPACE, never on __file__ (see
 knowhow/script-state-paths.md).
 """
@@ -66,6 +79,36 @@ OUT = WS / "data" / "artifacts" / "token-cost" / "daily.json"
 
 BUCKET_EDGES = [0, 32000, 64000, 128000, 200000, 400000]
 LONG_CTX_THRESHOLD = 200000
+# Days that keep their per-hour breakdown. The app draws hourly bars only when
+# exactly one day is selected, so a short window covers every case that can
+# reach it, and older days shed the 24x detail.
+HOURS_DAYS = 3
+
+
+def local_tz() -> str:
+    """IANA name for this machine's timezone.
+
+    Postgres runs on Etc/UTC here, so the conversion has to be explicit and
+    named. /etc/localtime is a symlink into the zoneinfo tree on both macOS and
+    Linux, which is the only place the IANA name survives (time.tzname gives
+    'CEST', which Postgres will not take).
+    """
+    try:
+        parts = pathlib.Path("/etc/localtime").resolve().parts
+        if "zoneinfo" in parts:
+            i = len(parts) - 1 - parts[::-1].index("zoneinfo")
+            name = "/".join(parts[i + 1 :])
+            if name:
+                return name
+    except OSError:
+        pass
+    return os.environ.get("TZ") or "UTC"
+
+
+TZ = local_tz()
+# Spelled once; interpolated rather than bound because these go through psql -c.
+LOCAL_DAY = f"((created AT TIME ZONE '{TZ}')::date)"
+LOCAL_HOUR = f"(extract(hour FROM (created AT TIME ZONE '{TZ}'))::int)"
 
 # `usage` tuple, spelled once for the value and once inside the LAG.
 _USAGE_TUPLE = """(
@@ -80,7 +123,8 @@ ROLLUP_SQL = (
 COPY (
   SELECT coalesce(json_agg(row_to_json(t)), '[]'::json) FROM (
     SELECT
-      to_char(date_trunc('day', created), 'YYYY-MM-DD') AS day,
+      to_char(local_day, 'YYYY-MM-DD') AS day,
+      local_hour AS hour,
       producer,
       model,
       count(*) AS calls,
@@ -101,7 +145,12 @@ COPY (
       max(in_tok) AS max_in
     FROM (
       SELECT
-        created,
+        """
+    + LOCAL_DAY
+    + """ AS local_day,
+        """
+    + LOCAL_HOUR
+    + """ AS local_hour,
         payload->>'producer' AS producer,
         payload->>'model' AS model,
         (payload->'usage'->>'input_tokens')::bigint AS in_tok,
@@ -121,12 +170,14 @@ COPY (
         AND thread_id IN (
           SELECT DISTINCT thread_id FROM events
           WHERE event_type = 'ContextCaptured'
-            AND date_trunc('day', created)::date = ANY (%(days)s)
+            AND """
+    + LOCAL_DAY
+    + """ = ANY (%(days)s)
         )
     ) s
     WHERE NOT dup
-      AND date_trunc('day', created)::date = ANY (%(days)s)
-    GROUP BY 1, 2, 3
+      AND local_day = ANY (%(days)s)
+    GROUP BY 1, 2, 3, 4
   ) t
 ) TO STDOUT;
 """
@@ -153,7 +204,7 @@ def main() -> None:
     # Which days gained rows, and the new high-water sequence. One cheap scan.
     head = psql(
         "SELECT coalesce(max(sequence), 0) || '|' || "
-        "coalesce(string_agg(DISTINCT to_char(date_trunc('day', created), 'YYYY-MM-DD'), ','), '') "
+        f"coalesce(string_agg(DISTINCT to_char({LOCAL_DAY}, 'YYYY-MM-DD'), ','), '') "
         f"FROM events WHERE event_type = 'ContextCaptured' AND sequence > {since};"
     )
     max_seq_s, _, day_list = head.partition("|")
@@ -172,46 +223,74 @@ def main() -> None:
     raw_rows = int(
         psql(
             "SELECT count(*) FROM events WHERE event_type = 'ContextCaptured' "
-            f"AND payload->'usage' IS NOT NULL AND date_trunc('day', created)::date = ANY ({day_array});"
+            f"AND payload->'usage' IS NOT NULL AND {LOCAL_DAY} = ANY ({day_array});"
         )
         or 0
     )
 
+    def blank() -> dict:
+        return {
+            "calls": 0,
+            "in": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "out": 0,
+            "buckets": [0] * 6,
+            "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0},
+            "max_in": 0,
+        }
+
+    def fold(dst: dict, x: dict) -> None:
+        dst["calls"] += int(x["calls"])
+        dst["in"] += int(x["total_in"])
+        dst["cache_read"] += int(x["cache_read"])
+        dst["cache_write"] += int(x["cache_write"])
+        dst["out"] += int(x["out_tok"])
+        for i in range(6):
+            dst["buckets"][i] += int(x[f"b{i}"])
+        dst["long"]["in"] += int(x["long_in"] or 0)
+        dst["long"]["out"] += int(x["long_out"] or 0)
+        dst["long"]["cache_read"] += int(x["long_cr"] or 0)
+        dst["long"]["cache_write"] += int(x["long_cw"] or 0)
+        dst["max_in"] = max(dst["max_in"], int(x["max_in"]))
+
     days = state.get("days", {})
+    hours = state.get("hours", {})
     for d in touched:
         days[d] = {}
+        hours[d] = {}
     kept = 0
+    # The query returns one row per (day, hour, producer, model). The day totals
+    # are that summed over hours, so the two views can never disagree.
     for x in rows:
         kept += int(x["calls"])
-        days[x["day"]][f"{x['producer']}|{x['model']}"] = {
-            "calls": int(x["calls"]),
-            "in": int(x["total_in"]),
-            "cache_read": int(x["cache_read"]),
-            "cache_write": int(x["cache_write"]),
-            "out": int(x["out_tok"]),
-            "buckets": [int(x[f"b{i}"]) for i in range(6)],
-            "long": {
-                "in": int(x["long_in"] or 0),
-                "out": int(x["long_out"] or 0),
-                "cache_read": int(x["long_cr"] or 0),
-                "cache_write": int(x["long_cw"] or 0),
-            },
-            "max_in": int(x["max_in"]),
-        }
+        key = f"{x['producer']}|{x['model']}"
+        fold(days[x["day"]].setdefault(key, blank()), x)
+        hr = str(int(x["hour"]))
+        fold(hours[x["day"]].setdefault(hr, {}).setdefault(key, blank()), x)
+
+    # Hourly detail only for the days a single-day selection can reach.
+    keep_hours = set(sorted(days)[-HOURS_DAYS:])
+    hours = {d: v for d, v in hours.items() if d in keep_hours}
 
     payload = {
         "generated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "last_sequence": max(max_seq, since),
         "bucket_edges": BUCKET_EDGES,
+        "timezone": TZ,
+        "hours_days": HOURS_DAYS,
         "note": (
             "'in' is TOTAL prompt size (uncached + cache_read + cache_write). "
             "uncached = in - cache_read - cache_write. 'long' is the subset of rows "
             f"whose prompt exceeded {LONG_CTX_THRESHOLD}, for the long-context price tier. "
             "A claude_code row whose usage tuple repeats the previous row in the same "
             "thread is dropped as a re-delivered streaming frame, not counted as a "
-            "second call. Other producers are never collapsed."
+            "second call. Other producers are never collapsed. Days are bucketed in "
+            f"the local timezone ({TZ}). 'hours' holds the same shape keyed by local "
+            f"hour, for the most recent {HOURS_DAYS} days only."
         ),
         "days": days,
+        "hours": hours,
     }
 
     OUT.parent.mkdir(parents=True, exist_ok=True)

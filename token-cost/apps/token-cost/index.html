@@ -5,6 +5,7 @@
     <title>Token Cost</title>
     <script src="/api/v1/sdk-prefs.js"></script>
     <link rel="stylesheet" href="/api/v1/sdk-iframe.css" />
+    <script src="/api/v1/sdk-iframe-audio.js"></script>
     <script src="/api/v1/sdk.js"></script>
     <style>
       body { margin: 0; padding: var(--space-xl); }
@@ -35,15 +36,17 @@
       }
       .hero-value .live {
         color: var(--accent); display: inline-block;
-        transition: transform var(--duration-fast) ease, color var(--duration-fast) ease;
+        transition: transform var(--duration-fast) ease;
       }
       /* Same idea as the Ouroboros score pop: the figure jumps on the frame the
          number changes and settles back, so a live cost tick is felt, not just
-         read. Suppressed for a user who asked for reduced motion. */
-      .hero-value .live.bump { transform: scale(1.09); color: var(--accent-green); }
+         read. Scale only, no colour shift: the figure stays accent-blue, since
+         flashing it green read as a state change rather than a tick.
+         Suppressed for a user who asked for reduced motion. */
+      .hero-value .live.bump { transform: scale(1.09); }
       @media (prefers-reduced-motion: reduce) {
         .hero-value .live { transition: none; }
-        .hero-value .live.bump { transform: none; color: var(--accent); }
+        .hero-value .live.bump { transform: none; }
       }
       .hero-sub { color: var(--text-secondary); font-size: var(--font-size-sm); margin-top: var(--space-sm); }
       .pulse {
@@ -55,6 +58,29 @@
       /* Deliberately small: at scale(2.2) over the emphasis duration the dot
          read as an alarm rather than a heartbeat, and it fires on every call. */
       @keyframes blip { from { transform: scale(1.45); opacity: 0.8; } to { transform: scale(1); opacity: 1; } }
+
+      /* Tooltip. The host's global tooltip is document-scoped (it binds
+         listeners on the host document and appends #tooltip to the host body),
+         so it cannot reach into an app iframe and the SDK exposes no bridge.
+         This is a local reimplementation that reads the SAME attribute
+         contract (data-tooltip, data-tooltip-title) and copies the host's box
+         treatment from base.css, so it looks identical and the markup already
+         matches if a bridge ever lands. */
+      #tip {
+        position: fixed; z-index: 9999; max-width: 30rem;
+        padding: 0.5rem 0.75rem;
+        background: var(--bg-secondary); color: var(--text-secondary);
+        border: 1px solid var(--border-color); border-radius: 0.625rem;
+        font-family: var(--font-ui); font-size: var(--font-size-xs);
+        line-height: 1.4; text-align: left; white-space: pre-line;
+        pointer-events: none; opacity: 0; display: none;
+        transition: opacity var(--duration-fast); box-shadow: var(--shadow-sm);
+      }
+      #tip-title {
+        font-weight: 600; font-size: var(--font-size-sm);
+        color: var(--text-primary); margin-bottom: 0.5rem;
+      }
+      #tip-title:empty { display: none; }
 
       .stat-strip { display: flex; gap: var(--space-xl); flex-wrap: wrap; }
       .stat { min-width: 7rem; }
@@ -180,6 +206,7 @@
             <button class="segmented-btn active" id="tab-dashboard">Dashboard</button>
             <button class="segmented-btn" id="tab-settings">Settings</button>
           </div>
+          <button class="action-btn action-btn-secondary" id="btn-sound" aria-pressed="false">Sound off</button>
           <button class="action-btn action-btn-secondary" id="btn-refresh">Refresh</button>
         </div>
       </header>
@@ -384,6 +411,59 @@
       // The producer filter is a managed Select, since its options change with settings.
       let producerSelect = null;
 
+      // ---- Coin sound -------------------------------------------------------
+      // Off by default and remembered per device: this dashboard is open all day
+      // while agents run, so audio has to be something the user asks for. The
+      // toggle click is the gesture that unlocks the AudioContext, which is why
+      // there is no way to enable sound without one.
+      const SOUND_KEY = 'token-cost:sound';
+      let soundOn = false;
+      try { soundOn = localStorage.getItem(SOUND_KEY) === '1'; } catch (e) { /* private mode */ }
+      let audioCtx = null;
+      // Rate limit: a busy agent lands several calls a second and an unbounded
+      // chime per call becomes a buzz. Coins beyond this are dropped, not queued.
+      let lastCoinAt = 0;
+
+      /** A two-note coin pickup: a short blip that immediately jumps up a fifth,
+       *  each note an exponential decay. Synthesized rather than shipped as an
+       *  asset so the plugin stays text-only and nothing has to be fetched. */
+      function playCoin() {
+        if (!soundOn) return;
+        const now = performance.now();
+        if (now - lastCoinAt < 120) return;
+        lastCoinAt = now;
+        try {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return;
+          audioCtx = audioCtx || window._audioCtx || new AC();
+          if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+          const t0 = audioCtx.currentTime;
+          const master = audioCtx.createGain();
+          master.gain.value = 0.09;
+          master.connect(audioCtx.destination);
+          // B5 then F#6, the classic pickup interval, second note at +70ms.
+          [[987.77, 0, 0.07], [1479.98, 0.07, 0.22]].forEach(([hz, at, dur]) => {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(hz, t0 + at);
+            g.gain.setValueAtTime(0.0001, t0 + at);
+            g.gain.exponentialRampToValueAtTime(1, t0 + at + 0.008);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+            osc.connect(g);
+            g.connect(master);
+            osc.start(t0 + at);
+            osc.stop(t0 + at + dur + 0.02);
+          });
+        } catch (e) { /* audio is decorative, never break the dashboard for it */ }
+      }
+
+      function renderSoundBtn() {
+        const b = document.getElementById('btn-sound');
+        b.textContent = soundOn ? 'Sound on' : 'Sound off';
+        b.setAttribute('aria-pressed', soundOn ? 'true' : 'false');
+      }
+
       const fmtInt = (n) => new Intl.NumberFormat().format(Math.round(n));
       const fmtTok = (n) => {
         if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
@@ -483,21 +563,48 @@
         if (day === localDay(new Date())) {
           for (const c of live) {
             if (c.seq && c.seq <= daily.last_sequence) continue;
-            const key = `${c.producer}|${c.model}`;
-            const b = out[key] || (out[key] = emptyU());
-            const edges = daily.bucket_edges;
-            let bi = 0;
-            for (let i = edges.length - 1; i >= 0; i--) { if (c.in >= edges[i]) { bi = i; break; } }
-            addU(b, {
-              calls: 1, in: c.in, cache_read: c.cache_read, cache_write: c.cache_write, out: c.out,
-              buckets: [0, 0, 0, 0, 0, 0].map((_, i) => (i === bi ? 1 : 0)),
-              long: c.in >= (pricing?.long_context_multiplier?.threshold_tokens || 200000)
-                ? { in: c.in, out: c.out, cache_read: c.cache_read, cache_write: c.cache_write }
-                : { in: 0, out: 0, cache_read: 0, cache_write: 0 },
-            });
+            foldCall(out, c);
           }
         }
         return out;
+      }
+
+      /** The same merge, for one local hour of one day. Returns null when the
+       *  rollup has no hourly detail for that day, which is how the caller
+       *  knows to fall back to daily bars rather than drawing an empty chart. */
+      function seriesForHour(day, hour) {
+        const stored = daily.hours?.[day];
+        if (!stored) return null;
+        const out = {};
+        for (const [key, v] of Object.entries(stored[String(hour)] || {})) {
+          out[key] = addU(emptyU(), v);
+        }
+        if (day === localDay(new Date())) {
+          for (const c of live) {
+            if (c.seq && c.seq <= daily.last_sequence) continue;
+            const t = new Date(c.at);
+            if (localDay(t) !== day || t.getHours() !== hour) continue;
+            foldCall(out, c);
+          }
+        }
+        return out;
+      }
+
+      /** Add one live call into a series map, bucketed and long-context split
+       *  exactly as the rollup does it. */
+      function foldCall(out, c) {
+        const key = `${c.producer}|${c.model}`;
+        const b = out[key] || (out[key] = emptyU());
+        const edges = daily.bucket_edges;
+        let bi = 0;
+        for (let i = edges.length - 1; i >= 0; i--) { if (c.in >= edges[i]) { bi = i; break; } }
+        addU(b, {
+          calls: 1, in: c.in, cache_read: c.cache_read, cache_write: c.cache_write, out: c.out,
+          buckets: [0, 0, 0, 0, 0, 0].map((_, i) => (i === bi ? 1 : 0)),
+          long: c.in >= (pricing?.long_context_multiplier?.threshold_tokens || 200000)
+            ? { in: c.in, out: c.out, cache_read: c.cache_read, cache_write: c.cache_write }
+            : { in: 0, out: 0, cache_read: 0, cache_write: 0 },
+        });
       }
 
       function render() {
@@ -510,13 +617,15 @@
         for (const day of days) {
           const s = seriesForDay(day);
           const dayTotal = emptyU();
+          let dayCost = 0;
           for (const [key, v] of Object.entries(s)) {
             const [producer] = key.split('|');
             if (pf !== 'all' && producer !== pf) continue;
             addU(byKey[key] || (byKey[key] = emptyU()), v);
             addU(dayTotal, v);
+            dayCost += costOf(key.split('|')[1], v, v.long);
           }
-          perDay.push({ day, u: dayTotal });
+          perDay.push({ day, u: dayTotal, cost: dayCost });
         }
 
         const total = emptyU();
@@ -559,15 +668,48 @@
         const cachePct = total.in ? (total.cache_read / total.in) * 100 : 0;
         document.getElementById('s-cache').textContent = cachePct.toFixed(1) + '%';
 
-        // Bars
-        const maxDay = Math.max(1, ...perDay.map((d) => d.u.in + d.u.out));
+        // Bars. One selected day is drawn as 24 hourly columns, since a single
+        // daily bar says nothing a headline number does not. Any wider range
+        // stays one column per day.
+        const hourly = days.length === 1 && daily.hours?.[days[0]] !== undefined;
+        const cols = [];
+        if (hourly) {
+          const day = days[0];
+          for (let h = 0; h < 24; h++) {
+            const s = seriesForHour(day, h) || {};
+            const u = emptyU();
+            let cost = 0;
+            for (const [key, v] of Object.entries(s)) {
+              if (pf !== 'all' && key.split('|')[0] !== pf) continue;
+              addU(u, v);
+              cost += costOf(key.split('|')[1], v, v.long);
+            }
+            cols.push({ label: `${String(h).padStart(2, '0')}:00`, u, cost });
+          }
+        } else {
+          for (const { day, u, cost } of perDay) cols.push({ label: day, u, cost });
+        }
+
+        const maxCol = Math.max(1, ...cols.map((c) => c.u.in + c.u.out));
         const bars = document.getElementById('bars');
         bars.innerHTML = '';
-        for (const { day, u } of perDay) {
+        for (const { label, u, cost } of cols) {
           const fresh = Math.max(0, u.in - u.cache_read - u.cache_write);
           const col = document.createElement('div');
           col.className = 'bar-col';
-          col.title = `${day}\n${fmtInt(u.calls)} calls\nfresh in ${fmtTok(fresh)} · cache write ${fmtTok(u.cache_write)} · cache read ${fmtTok(u.cache_read)} · out ${fmtTok(u.out)}`;
+          // Host tooltip, not the browser's `title`: it is themed, appears
+          // immediately, and renders a bold title over the body. The host walks
+          // up from the hovered node to the nearest data-tooltip, so putting it
+          // on the column covers the segments inside it.
+          col.setAttribute('data-tooltip-title', label);
+          col.setAttribute(
+            'data-tooltip',
+            u.calls
+              ? `${fmtMoney(cost)}\n${fmtInt(u.calls)} calls\n` +
+                `fresh in ${fmtTok(fresh)}\ncache write ${fmtTok(u.cache_write)}\n` +
+                `cache read ${fmtTok(u.cache_read)}\nout ${fmtTok(u.out)}`
+              : 'No calls',
+          );
           const segs = [
             ['out', u.out], ['fresh', fresh], ['write', u.cache_write], ['read', u.cache_read],
           ];
@@ -575,13 +717,15 @@
             if (v <= 0) continue;
             const s = document.createElement('div');
             s.className = 'bar-seg ' + cls;
-            s.style.height = ((v / maxDay) * 100).toFixed(3) + '%';
+            s.style.height = ((v / maxCol) * 100).toFixed(3) + '%';
             col.appendChild(s);
           }
           bars.appendChild(col);
         }
-        document.getElementById('ax-from').textContent = perDay[0]?.day || '';
-        document.getElementById('ax-to').textContent = perDay[perDay.length - 1]?.day || '';
+        document.getElementById('ax-from').textContent = cols[0]?.label || '';
+        document.getElementById('ax-to').textContent = cols[cols.length - 1]?.label || '';
+        document.getElementById('bar-hint').textContent =
+          hourly ? 'hover a bar for its hour' : 'hover a bar for its day';
 
         // Model table
         const rows = Object.entries(byKey)
@@ -681,6 +825,7 @@
         pulse.classList.remove('on');
         void pulse.offsetWidth;
         pulse.classList.add('on');
+        playCoin();
 
         const feed = document.getElementById('feed');
         if (feed.querySelector('.empty-state')) feed.innerHTML = '';
@@ -946,6 +1091,15 @@
       });
 
       document.getElementById('range').addEventListener('change', render);
+
+      document.getElementById('btn-sound').addEventListener('click', () => {
+        soundOn = !soundOn;
+        try { localStorage.setItem(SOUND_KEY, soundOn ? '1' : '0'); } catch (e) { /* private mode */ }
+        renderSoundBtn();
+        // The click IS the gesture that unlocks audio, so play one immediately:
+        // it confirms the toggle and primes the context in the same beat.
+        if (soundOn) { lastCoinAt = 0; playCoin(); }
+      });
       document.getElementById('btn-refresh').addEventListener('click', async () => {
         if (dirty) {
           const ok = await lucidos.ui.confirm({
@@ -970,7 +1124,53 @@
         if (String(d?.path || d?.event?.path || '').includes('token-cost/daily.json')) load();
       });
 
+      renderSoundBtn();
       load();
+
+      // ---- Tooltip ----------------------------------------------------------
+      // Mirrors the host's global tooltip: same attributes, same box, same
+      // prefer-above-then-flip placement. Delegated from the document so it
+      // covers bars that are rebuilt on every render.
+      (function tooltips() {
+        const tip = document.createElement('div');
+        tip.id = 'tip';
+        const title = document.createElement('div');
+        title.id = 'tip-title';
+        const body = document.createElement('div');
+        tip.appendChild(title);
+        tip.appendChild(body);
+        document.body.appendChild(tip);
+        const GAP = 8;
+
+        function hide() { tip.style.opacity = '0'; tip.style.display = 'none'; }
+
+        function show(el) {
+          const text = el.getAttribute('data-tooltip');
+          if (!text) return;
+          title.textContent = el.getAttribute('data-tooltip-title') || '';
+          body.textContent = text;
+          tip.style.display = 'block';
+          const t = el.getBoundingClientRect();
+          const r = tip.getBoundingClientRect();
+          // Prefer above the element's own border, so the box never covers the
+          // bar being read and never drifts with the pointer inside it.
+          let top = t.top - r.height - GAP;
+          if (top < GAP) top = t.bottom + GAP;
+          let left = t.left + t.width / 2 - r.width / 2;
+          left = Math.max(GAP, Math.min(left, window.innerWidth - r.width - GAP));
+          tip.style.top = `${top}px`;
+          tip.style.left = `${left}px`;
+          tip.style.opacity = '1';
+        }
+
+        document.addEventListener('mouseover', (e) => {
+          const el = e.target.closest?.('[data-tooltip]');
+          if (el) show(el); else hide();
+        });
+        document.addEventListener('mouseleave', hide, true);
+        window.addEventListener('scroll', hide, true);
+        window.addEventListener('blur', hide);
+      })();
     </script>
   </body>
 </html>
