@@ -158,6 +158,79 @@
       td.money { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-primary); }
       .muted { color: var(--text-muted); }
 
+      /* By model on a narrow screen. Eight columns cannot fit a phone, so each
+         row stops being a grid row and becomes a stacked card. Driven purely by
+         the media query, never by a width read in JS, so rotating the phone or
+         dragging a desktop window across the breakpoint re-lays-out for free.
+
+         Scoped to table.model-table throughout, deliberately: the Settings
+         price tables are also <table>s and keep their own table-layout: auto
+         treatment, which these rules must not touch. */
+      @media (max-width: 40rem) {
+        table.model-table,
+        table.model-table tbody,
+        table.model-table tfoot,
+        table.model-table tr,
+        table.model-table td { display: block; width: auto; }
+
+        /* Left in the DOM, not removed: it is the label source for the
+           td::before pairs below and the row header for a screen reader. */
+        table.model-table thead {
+          position: absolute; width: 1px; height: 1px;
+          overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+        }
+
+        table.model-table tbody tr,
+        table.model-table tfoot tr {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+          gap: var(--space-sm) var(--space-md);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-md);
+          padding: var(--space-md);
+          margin-bottom: var(--space-md);
+        }
+        table.model-table tfoot tr {
+          background: var(--bg-tertiary); margin-bottom: 0;
+        }
+        table.model-table tfoot td { border-top: none; }
+        table.model-table tfoot td.row-head { margin-bottom: var(--space-xs); }
+
+        table.model-table td { padding: 0; text-align: left; }
+        table.model-table td[colspan] { grid-column: 1 / -1; }
+
+        /* Model id and producer own the top of the card, full width and
+           unabridged. Truncating them is what made two rows indistinguishable,
+           and the ids differ only in their tail. */
+        table.model-table td.row-head,
+        table.model-table td.row-sub {
+          grid-column: 1 / -1;
+          width: auto; overflow: visible; white-space: normal;
+          overflow-wrap: anywhere;
+        }
+        table.model-table td.row-head {
+          font-family: var(--font-mono); font-weight: 600;
+          color: var(--text-primary); font-size: var(--font-size-md);
+        }
+        table.model-table td.row-sub {
+          font-size: var(--font-size-xs); margin-bottom: var(--space-xs);
+        }
+        table.model-table td.row-sub:empty { display: none; }
+
+        /* Each number carries its own label, so the six of them read as pairs
+           instead of one run of digits. */
+        table.model-table td[data-label] {
+          display: flex; flex-direction: column; gap: var(--space-xs);
+        }
+        table.model-table td[data-label]::before {
+          content: attr(data-label);
+          font-family: var(--font-ui);
+          font-size: var(--font-size-2xs); font-weight: 600;
+          text-transform: uppercase; letter-spacing: 0.06em;
+          color: var(--text-muted);
+        }
+      }
+
       /* Daily bars */
       .bars { display: flex; align-items: stretch; gap: 0.1875rem; height: 9rem; }
       .bar-col { flex: 1 1 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; cursor: default; }
@@ -351,7 +424,7 @@
       <section class="block">
         <h2 class="sec">By model</h2>
         <div class="card">
-          <table>
+          <table class="model-table">
             <thead>
               <tr>
                 <th>Model</th><th>Producer</th><th>Calls</th>
@@ -383,6 +456,7 @@
         <section class="block">
           <h2 class="sec">Model rates</h2>
           <p class="sec-note">USD per 1,000,000 tokens. Every cost on the dashboard is computed from these numbers in the browser, so an edit re-prices your whole history the moment you save. A model the engine reports that is not listed here falls back to the <strong>default</strong> row.</p>
+          <p class="sec-note" id="rates-source" style="display: none">Right now these are the <strong>built-in defaults</strong>. Nothing has been written to <code>artifacts/token-cost/pricing.json</code> yet, so the first Save creates it.</p>
           <div class="card">
             <table class="price-table">
               <thead>
@@ -508,6 +582,7 @@
 
       let daily = { days: {}, bucket_edges: [0, 32000, 64000, 128000, 200000, 400000] };
       let pricing = null;
+      let usingDefaultRates = false;
       // Calls seen live this session, folded into today's numbers on top of the rollup.
       let live = [];
       // Last usage tuple seen per thread, so a re-delivered streaming frame is
@@ -1018,14 +1093,17 @@
           const fresh = Math.max(0, r.u.in - r.u.cache_read - r.u.cache_write);
           const tr = document.createElement('tr');
           tr.innerHTML =
-            `<td>${lucidos.utils.escapeHtml(r.model)}</td>` +
-            `<td class="muted">${lucidos.utils.escapeHtml(producerLabel[r.producer] || r.producer)}</td>` +
-            `<td class="num">${fmtInt(r.u.calls)}</td>` +
-            `<td class="num">${fmtTok(fresh)}</td>` +
-            `<td class="num">${fmtTok(r.u.cache_write)}</td>` +
-            `<td class="num muted">${fmtTok(r.u.cache_read)}</td>` +
-            `<td class="num">${fmtTok(r.u.out)}</td>` +
-            `<td class="money">${fmtMoney(r.cost)}</td>`;
+            // data-label is what the narrow-viewport CSS prints above each
+            // number once the row reflows into a stacked card. Emitted always,
+            // invisible on desktop, so nothing here branches on viewport width.
+            `<td class="row-head">${lucidos.utils.escapeHtml(r.model)}</td>` +
+            `<td class="row-sub muted">${lucidos.utils.escapeHtml(producerLabel[r.producer] || r.producer)}</td>` +
+            `<td class="num" data-label="Calls">${fmtInt(r.u.calls)}</td>` +
+            `<td class="num" data-label="Fresh in">${fmtTok(fresh)}</td>` +
+            `<td class="num" data-label="Cache write">${fmtTok(r.u.cache_write)}</td>` +
+            `<td class="num muted" data-label="Cache read">${fmtTok(r.u.cache_read)}</td>` +
+            `<td class="num" data-label="Out">${fmtTok(r.u.out)}</td>` +
+            `<td class="money" data-label="Cost">${fmtMoney(r.cost)}</td>`;
           tbody.appendChild(tr);
         }
         if (!rows.length) {
@@ -1033,10 +1111,13 @@
         }
         const freshTotal = Math.max(0, total.in - total.cache_read - total.cache_write);
         document.getElementById('tfoot').innerHTML =
-          `<tr><td>Total</td><td></td><td class="num">${fmtInt(total.calls)}</td>` +
-          `<td class="num">${fmtTok(freshTotal)}</td><td class="num">${fmtTok(total.cache_write)}</td>` +
-          `<td class="num">${fmtTok(total.cache_read)}</td><td class="num">${fmtTok(total.out)}</td>` +
-          `<td class="money">${fmtMoney(totalCost)}</td></tr>`;
+          `<tr><td class="row-head">Total</td><td class="row-sub"></td>` +
+          `<td class="num" data-label="Calls">${fmtInt(total.calls)}</td>` +
+          `<td class="num" data-label="Fresh in">${fmtTok(freshTotal)}</td>` +
+          `<td class="num" data-label="Cache write">${fmtTok(total.cache_write)}</td>` +
+          `<td class="num" data-label="Cache read">${fmtTok(total.cache_read)}</td>` +
+          `<td class="num" data-label="Out">${fmtTok(total.out)}</td>` +
+          `<td class="money" data-label="Cost">${fmtMoney(totalCost)}</td></tr>`;
 
         // Histogram
         const edges = daily.bucket_edges;
@@ -1058,7 +1139,8 @@
 
         const gen = daily.generated ? lucidos.utils.timeAgo(daily.generated) : 'never';
         document.getElementById('meta').textContent =
-          `${fmtInt(Object.keys(daily.days).length)} days on record · rollup ${gen} · ${live.length} call${live.length === 1 ? '' : 's'} since the rollup`;
+          `${fmtInt(Object.keys(daily.days).length)} days on record · rollup ${gen} · ${live.length} call${live.length === 1 ? '' : 's'} since the rollup` +
+          (usingDefaultRates ? ' · built-in rates' : '');
       }
 
       /** Fold one ContextCaptured into the live tail.
@@ -1223,8 +1305,14 @@
         try {
           pricing = JSON.parse(await lucidos.data.read(PRICING));
         } catch (e) {
+          // No pricing.json is the normal first-run state, not a fault: the
+          // built-in rates ARE the designed fallback and the file is only
+          // written when you save an edit. This used to raise a warning toast
+          // on every reload, nagging forever about a condition the user may
+          // never need to act on. It is reported quietly instead, in the meta
+          // line under the title and in the Settings tab.
           pricing = JSON.parse(JSON.stringify(DEFAULT_PRICING));
-          lucidos.ui.toast('No pricing table yet, using built-in defaults. Edit them under Settings.', 'warning');
+          usingDefaultRates = true;
         }
         if (!pricing.models) pricing.models = JSON.parse(JSON.stringify(DEFAULT_PRICING.models));
         if (!pricing.producers) pricing.producers = JSON.parse(JSON.stringify(DEFAULT_PRICING.producers));
@@ -1315,6 +1403,9 @@
 
       function renderSettings() {
         if (!draft) draft = JSON.parse(JSON.stringify(pricing || DEFAULT_PRICING));
+
+        document.getElementById('rates-source').style.display =
+          usingDefaultRates ? '' : 'none';
 
         // Model rates. `default` is the fallback row every unlisted model uses,
         // so its id is fixed and it cannot be removed.
@@ -1442,6 +1533,8 @@
           return;
         }
         pricing = JSON.parse(JSON.stringify(payload));
+        usingDefaultRates = false;
+        document.getElementById('rates-source').style.display = 'none';
         dirty = false;
         document.getElementById('save-state').textContent = 'Saved';
         document.getElementById('save-state').className = 'muted';
