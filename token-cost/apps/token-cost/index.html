@@ -35,13 +35,22 @@
       #btn-sound.sound-on #wave-1,
       #btn-sound.sound-on #wave-2 { opacity: 1; }
       /* The slash is drawn on with a dash offset rather than toggled, so
-         muting reads as a stroke being struck through the speaker. */
-      #btn-sound #sound-slash {
-        stroke-dasharray: 27;
+         muting reads as a stroke being struck through the speaker. It runs
+         bottom-left to top-right, centred on the cone rather than on the icon
+         box, so it strikes the speaker instead of the empty corner beside it.
+         The mask cuts a gap in the speaker underneath it so the two shapes
+         never merge into one blob; cutting rather than painting a
+         background-coloured stroke keeps it correct over the button's hover
+         fill. Both lines carry the same dash so the gap retracts with the
+         stroke that made it, and 22 is the stroke's own length. */
+      #btn-sound #sound-slash,
+      #btn-sound #slash-cut {
+        stroke-dasharray: 22;
         stroke-dashoffset: 0;
         transition: stroke-dashoffset var(--duration-normal) ease;
       }
-      #btn-sound.sound-on #sound-slash { stroke-dashoffset: 27; }
+      #btn-sound.sound-on #sound-slash,
+      #btn-sound.sound-on #slash-cut { stroke-dashoffset: 22; }
 
       /* Hero: the one focal point */
       .hero {
@@ -218,6 +227,47 @@
       }
       .save-bar .button-group { justify-content: flex-end; }
       .dirty-dot { color: var(--accent-yellow); font-size: var(--font-size-xs); }
+
+      /* Ring-sound picker. One card per sound, each carrying its own icon, so
+         the pack is scannable by shape before anything is played. The selected
+         card takes the accent border the rest of Lucidos uses for a chosen
+         item, and the icon animates while its sound is ringing. */
+      .sound-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+        gap: var(--space-md);
+      }
+      .sound-card {
+        display: flex; align-items: center; gap: var(--space-md);
+        padding: var(--space-md); text-align: left;
+        background: var(--bg-tertiary); color: var(--text-primary);
+        border: 1px solid var(--border-color); border-radius: var(--radius-md);
+        cursor: pointer; font-family: var(--font-ui);
+        transition: border-color var(--duration-fast) ease,
+                    background var(--duration-fast) ease;
+      }
+      .sound-card:hover { background: var(--bg-hover); }
+      .sound-card:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+      .sound-card.selected { border-color: var(--accent); background: var(--bg-selected); }
+      .sound-card .sc-ico { flex: 0 0 auto; color: var(--text-muted); }
+      .sound-card.selected .sc-ico { color: var(--accent); }
+      .sound-card .sc-ico svg { display: block; width: 1.5rem; height: 1.5rem; }
+      .sound-card .sc-text { min-width: 0; }
+      .sound-card .sc-name {
+        font-size: var(--font-size-md); white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis;
+      }
+      .sound-card .sc-note {
+        color: var(--text-muted); font-size: var(--font-size-2xs);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      /* A short pulse on the icon while its sound plays, so the click has a
+         visible answer even on a machine with the volume down. */
+      @keyframes sc-ring {
+        0% { transform: scale(1); }
+        30% { transform: scale(1.18); }
+        100% { transform: scale(1); }
+      }
+      .sound-card.ringing .sc-ico { animation: sc-ring var(--duration-emphasis) ease; }
     </style>
   </head>
   <body>
@@ -235,10 +285,19 @@
           <button class="icon-btn" id="btn-sound" aria-pressed="false" aria-label="Sound off" data-tip="Sound off">
             <svg id="ico-sound" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M11 5 6 9H2v6h4l5 4z"></path>
-              <path id="wave-1" d="M15.5 8.5a5 5 0 0 1 0 7"></path>
-              <path id="wave-2" d="M18.5 5.5a9 9 0 0 1 0 13"></path>
-              <line id="sound-slash" x1="2.5" y1="21.5" x2="21.5" y2="2.5"></line>
+              <defs>
+                <mask id="sound-slash-mask">
+                  <rect x="0" y="0" width="24" height="24" fill="#fff"></rect>
+                  <line id="slash-cut" x1="1" y1="19.5" x2="16" y2="4.5"
+                        stroke="#000" stroke-width="4.5" stroke-linecap="round"></line>
+                </mask>
+              </defs>
+              <g mask="url(#sound-slash-mask)">
+                <path d="M11 5 6 9H2v6h4l5 4z"></path>
+                <path id="wave-1" d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+                <path id="wave-2" d="M18.5 5.5a9 9 0 0 1 0 13"></path>
+              </g>
+              <line id="sound-slash" x1="1" y1="19.5" x2="16" y2="4.5"></line>
             </svg>
           </button>
           <button class="action-btn action-btn-secondary" id="btn-refresh">Refresh</button>
@@ -382,6 +441,18 @@
         </section>
 
         <section class="block">
+          <h2 class="sec">Ring sound</h2>
+          <p class="sec-note">What plays when a live call lands, while the speaker in the header is on. Click a card to pick it and hear it. Every built-in is public domain or synthesized here, and provenance is recorded in <code>apps/token-cost/sounds/README.md</code>. The choice is per device, kept in this browser, so a phone and a laptop can ring differently.</p>
+          <div class="card">
+            <div class="sound-grid" id="sound-grid"></div>
+            <input type="file" id="sound-file" accept="audio/*" style="display: none" />
+            <p class="sec-note" style="margin: var(--space-lg) 0 0">
+              A custom clip is uploaded to <code>artifacts/imported/</code> and played from there. Keep it under a second or two: it fires on every call, and anything longer overlaps the next one.
+            </p>
+          </div>
+        </section>
+
+        <section class="block">
           <div class="card save-bar">
             <span id="save-state" class="muted" style="font-size: var(--font-size-xs)"></span>
             <div class="button-group">
@@ -451,13 +522,41 @@
       // toggle click is the gesture that unlocks the AudioContext, which is why
       // there is no way to enable sound without one.
       const SOUND_KEY = 'token-cost:sound';
+      const PICK_KEY = 'token-cost:sound-id';
+      const CUSTOM_KEY = 'token-cost:sound-custom';
       let soundOn = false;
       try { soundOn = localStorage.getItem(SOUND_KEY) === '1'; } catch (e) { /* private mode */ }
+
+      /** The built-in pack. Each entry ships in apps/token-cost/sounds/ and is
+       *  trimmed to about a second, so a ring never outlasts the call that
+       *  caused it. Provenance and licence for every one: sounds/README.md.
+       *  `gain` evens out how loud they feel, which peak normalising alone
+       *  does not: a dense register hit reads louder than one bright coin at
+       *  the same peak. */
+      const SOUNDS = [
+        { id: 'register', label: 'Cash register', note: 'The full ka-ching', file: 'register.m4a', gain: 0.75 },
+        { id: 'arcade', label: 'Arcade coin', note: 'Two-tone 8-bit pickup', file: 'arcade.m4a', gain: 0.34 },
+        { id: 'coinbox', label: 'Coin in the tin', note: 'Metal money box', file: 'coinbox.m4a', gain: 0.8 },
+        { id: 'coindrop', label: 'Dropped coin', note: 'One coin, wooden floor', file: 'coindrop.m4a', gain: 0.8 },
+        { id: 'palm', label: 'Handful', note: 'Coins shaken in a palm', file: 'palm.m4a', gain: 0.85 },
+      ];
+      const DEFAULT_SOUND = 'register';
+
+      let soundId = DEFAULT_SOUND;
+      let customSound = null;   // { name, path } for an uploaded clip
+      try {
+        const p = localStorage.getItem(PICK_KEY);
+        if (p) soundId = p;
+        const c = localStorage.getItem(CUSTOM_KEY);
+        if (c) customSound = JSON.parse(c);
+      } catch (e) { /* private mode */ }
+      if (soundId === 'custom' && !customSound) soundId = DEFAULT_SOUND;
+
       let audioCtx = null;
-      // The decoded sample, and the in-flight fetch so a burst of calls during
-      // load waits on one request rather than firing several.
-      let caChingBuf = null;
-      let caChingLoad = null;
+      // Decoded samples by url, and the in-flight fetches, so a burst of calls
+      // during load waits on one request per sound rather than firing several.
+      const bufs = new Map();
+      const loads = new Map();
       // Rate limit: a busy agent lands several calls a second and the register
       // rings for most of a second. Extra ones are dropped, not queued.
       let lastCoinAt = 0;
@@ -470,16 +569,30 @@
         return audioCtx;
       }
 
-      /** Fetch and decode the register once, then hold the AudioBuffer.
-       *  lucidos.data.url resolves the app's own bundled asset, which is what
-       *  keeps it working under the WIP-preview route as well as live. */
-      function loadCaChing(ac) {
-        if (caChingBuf) return Promise.resolve(caChingBuf);
-        if (caChingLoad) return caChingLoad;
-        const url = (window.lucidos && lucidos.data && lucidos.data.url)
-          ? lucidos.data.url('apps/token-cost/caching.m4a')
-          : 'caching.m4a';
-        caChingLoad = fetch(url)
+      /** The currently selected sound, resolved to a url and a gain. Falls back
+       *  to the default when a stored id names a sound that no longer exists,
+       *  so a renamed built-in cannot leave the dashboard permanently silent. */
+      function currentSound() {
+        if (soundId === 'custom' && customSound) {
+          return { id: 'custom', label: customSound.name, url: dataUrl(customSound.path), gain: 0.8 };
+        }
+        const s = SOUNDS.find((x) => x.id === soundId) || SOUNDS.find((x) => x.id === DEFAULT_SOUND);
+        return { id: s.id, label: s.label, url: dataUrl('apps/token-cost/sounds/' + s.file), gain: s.gain };
+      }
+
+      /** lucidos.data.url resolves the app's own bundled assets, which is what
+       *  keeps them working under the WIP-preview route as well as live. */
+      function dataUrl(path) {
+        return (window.lucidos && lucidos.data && lucidos.data.url)
+          ? lucidos.data.url(path)
+          : path.replace(/^apps\/token-cost\//, '');
+      }
+
+      /** Fetch and decode a sound once, then hold the AudioBuffer. */
+      function loadSound(ac, url) {
+        if (bufs.has(url)) return Promise.resolve(bufs.get(url));
+        if (loads.has(url)) return loads.get(url);
+        const p = fetch(url)
           .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
           .then((b) => new Promise((res, rej) => {
             // The callback form, because Safari still ships it and the promise
@@ -487,32 +600,36 @@
             const out = ac.decodeAudioData(b, res, rej);
             if (out && out.then) out.then(res, rej);
           }))
-          .then((buf) => { caChingBuf = buf; return buf; })
-          .catch((e) => { caChingLoad = null; throw e; });
-        return caChingLoad;
+          .then((buf) => { bufs.set(url, buf); return buf; })
+          .catch((e) => { loads.delete(url); throw e; });
+        loads.set(url, p);
+        return p;
       }
 
-      /** A real cash register: a public-domain recording, trimmed and
-       *  normalised (see caching.m4a.README.md for provenance and licence).
-       *  Playback rate is jittered by a few percent so a run of calls does not
-       *  sound like a loop of the same file. */
-      function playCaChing() {
-        if (!soundOn) return;
+      /** Ring the selected sound. Playback rate is jittered by a few percent so
+       *  a run of calls does not sound like a loop of the same file.
+       *  `force` is the preview path: it ignores the on/off toggle and the rate
+       *  limit, because the user just asked to hear this one. */
+      function playCaChing(force, override) {
+        if (!soundOn && !force) return;
         const now = performance.now();
-        if (now - lastCoinAt < 220) return;
-        lastCoinAt = now;
+        if (!force) {
+          if (now - lastCoinAt < 220) return;
+          lastCoinAt = now;
+        }
         try {
           const ac = audio();
           if (!ac) return;
-          loadCaChing(ac).then((buf) => {
+          const snd = override || currentSound();
+          return loadSound(ac, snd.url).then((buf) => {
             const src = ac.createBufferSource();
             src.buffer = buf;
             src.playbackRate.value = 0.97 + Math.random() * 0.06;
             const g = ac.createGain();
-            g.gain.value = 0.75;
+            g.gain.value = snd.gain;
             src.connect(g); g.connect(ac.destination);
             src.start(ac.currentTime + 0.01);
-          }).catch(() => { /* asset missing or undecodable: stay silent */ });
+          });
         } catch (e) { /* audio is decorative, never break the dashboard for it */ }
       }
 
@@ -522,6 +639,105 @@
         b.setAttribute('aria-label', soundOn ? 'Sound on' : 'Sound off');
         b.setAttribute('data-tip', soundOn ? 'Sound on' : 'Sound off');
         b.classList.toggle('sound-on', soundOn);
+      }
+
+      /** One icon per sound, so the pack reads as five different things before
+       *  a single one is played. All 24x24 currentColor strokes, matching the
+       *  speaker in the header. */
+      const SOUND_ICONS = {
+        register: '<rect x="2" y="9" width="20" height="12" rx="2"/><path d="M6 9V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3"/><path d="M6 13h5M6 17h5"/><circle cx="17" cy="15" r="2"/>',
+        arcade: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.75 1.75 0 0 1 0 3.5h-3a1.75 1.75 0 0 0 0 3.5h4"/>',
+        coinbox: '<path d="M4 9h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M3 5h18v4H3z"/><path d="M10 13h4"/>',
+        coindrop: '<ellipse cx="12" cy="18" rx="7" ry="3"/><circle cx="12" cy="7" r="4"/><path d="M12 11v4"/>',
+        palm: '<path d="M4 12a8 8 0 0 0 16 0"/><circle cx="9" cy="7" r="2.5"/><circle cx="15.5" cy="8.5" r="2"/><path d="M4 12h16"/>',
+        custom: '<path d="M12 3v10"/><path d="m8 7 4-4 4 4"/><path d="M4 15v3a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-3"/>',
+      };
+
+      /** The picker under Settings. Rebuilt rather than patched, since it is a
+       *  handful of cards and a pick changes two of them at once. */
+      function renderSoundGrid() {
+        const grid = document.getElementById('sound-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        const entries = SOUNDS.map((s) => ({
+          id: s.id, label: s.label, note: s.note, icon: SOUND_ICONS[s.id],
+        }));
+        entries.push({
+          id: 'custom',
+          label: customSound ? customSound.name : 'Your own clip',
+          note: customSound ? 'Click to replace' : 'Upload an audio file',
+          icon: SOUND_ICONS.custom,
+        });
+
+        for (const e of entries) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'sound-card' + (soundId === e.id ? ' selected' : '');
+          btn.dataset.sound = e.id;
+          btn.setAttribute('aria-pressed', soundId === e.id ? 'true' : 'false');
+          btn.innerHTML =
+            `<span class="sc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" ` +
+            `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${e.icon}</svg></span>` +
+            `<span class="sc-text"><span class="sc-name">${lucidos.utils.escapeHtml(e.label)}</span>` +
+            `<span class="sc-note">${lucidos.utils.escapeHtml(e.note)}</span></span>`;
+          btn.addEventListener('click', () => pickSound(e.id, btn));
+          grid.appendChild(btn);
+        }
+      }
+
+      /** Pick a sound and play it. The preview ignores the header toggle: the
+       *  click is itself the gesture that unlocks audio, and someone auditioning
+       *  the pack has plainly asked to hear it. */
+      function pickSound(id, card) {
+        if (id === 'custom' && (!customSound || soundId === 'custom')) {
+          // No clip yet, or the selected one being clicked again: both mean
+          // "choose a file". Selecting an already-uploaded clip is the case in
+          // between, and falls through to the normal pick below.
+          document.getElementById('sound-file').click();
+          return;
+        }
+        soundId = id;
+        try { localStorage.setItem(PICK_KEY, id); } catch (e) { /* private mode */ }
+        renderSoundGrid();
+        const now = document.querySelector(`.sound-card[data-sound="${id}"]`) || card;
+        if (now) {
+          now.classList.remove('ringing');
+          void now.offsetWidth;   // restart the animation on a repeat click
+          now.classList.add('ringing');
+        }
+        const p = playCaChing(true);
+        if (p && p.catch) {
+          p.catch((e) => lucidos.ui.toast(`Could not play that sound: ${e.message}`, 'error', { key: 'tc-sound' }));
+        }
+      }
+
+      /** Upload a clip and select it. It lands in artifacts/imported/ like any
+       *  other upload, so it is version-controlled and survives a reinstall of
+       *  the app, and only the path is kept in this browser. */
+      async function uploadSound(file) {
+        lucidos.ui.toast(`Uploading ${file.name}…`, 'info', { key: 'tc-sound', spinning: true });
+        try {
+          const res = await lucidos.data.upload(file);
+          if (!res || !res.success || !res.filename) {
+            throw new Error((res && res.error) || 'upload failed');
+          }
+          const path = 'artifacts/imported/' + res.filename;
+          // Decode before committing to it: an unsupported codec is far better
+          // caught here than as silence on every call for the rest of the day.
+          const ac = audio();
+          if (ac) await loadSound(ac, dataUrl(path));
+          customSound = { name: file.name, path };
+          soundId = 'custom';
+          try {
+            localStorage.setItem(CUSTOM_KEY, JSON.stringify(customSound));
+            localStorage.setItem(PICK_KEY, 'custom');
+          } catch (e) { /* private mode */ }
+          renderSoundGrid();
+          lucidos.ui.toast(`${file.name} is now the ring sound`, 'success', { key: 'tc-sound', durationMs: 2500 });
+          playCaChing(true);
+        } catch (e) {
+          lucidos.ui.toast(`Could not use that clip: ${e.message || e}`, 'error', { key: 'tc-sound' });
+        }
       }
 
       const fmtInt = (n) => new Intl.NumberFormat().format(Math.round(n));
@@ -1174,10 +1390,18 @@
         }
         // The sample load is the other way this goes quiet, and it fails
         // asynchronously, so the verdict waits for it.
-        loadCaChing(ac).then(
-          () => lucidos.ui.toast('Ca-ching armed. Every live call rings the register.', 'success', { key: 'tc-sound', durationMs: 2500 }),
-          (e) => lucidos.ui.toast(`Could not load the register sound: ${e.message}`, 'error', { key: 'tc-sound' }),
+        const snd = currentSound();
+        loadSound(ac, snd.url).then(
+          () => lucidos.ui.toast(`${snd.label} armed. Every live call rings it.`, 'success', { key: 'tc-sound', durationMs: 2500 }),
+          (e) => lucidos.ui.toast(`Could not load ${snd.label}: ${e.message}`, 'error', { key: 'tc-sound' }),
         );
+      });
+
+      document.getElementById('sound-file').addEventListener('change', (ev) => {
+        const f = ev.target.files && ev.target.files[0];
+        // Clear it either way, so picking the same file twice still fires.
+        ev.target.value = '';
+        if (f) uploadSound(f);
       });
       document.getElementById('btn-refresh').addEventListener('click', async () => {
         if (dirty) {
@@ -1204,6 +1428,7 @@
       });
 
       renderSoundBtn();
+      renderSoundGrid();
       load();
 
       // ---- Tooltip ----------------------------------------------------------
