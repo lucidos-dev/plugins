@@ -1,8 +1,9 @@
 id = "token-cost"
-version = "0.1.12"
+version = "0.2.0"
 name = "Token Cost"
-description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, cache-hit share, context-size distribution, and per-model/per-producer cost from a pricing table you edit in the app's own Settings tab. Ships an incremental rollup script; ask Lucidos to set up an hourly rollup trigger after install."
+description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, cache-hit share, context-size distribution, and per-model/per-producer cost from a pricing table you edit in the app's own Settings tab. A dead stream, a gap behind it, or a stale rollup are each detected and named in the header instead of quietly showing plausible wrong numbers. Ships an incremental rollup script; ask Lucidos to set up an hourly rollup trigger after install."
 source = "https://github.com/lucidos-dev/plugins/tree/main/token-cost"
+engine = ">=0.27.0"
 categories = ["developer-tools", "data"]
 
 setup = """

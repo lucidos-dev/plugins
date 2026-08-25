@@ -42,6 +42,37 @@ The **Settings** tab holds everything the dashboard prices with:
 Saving writes `artifacts/token-cost/pricing.json`, so the table is
 version-controlled with the rest of the workspace and still editable by hand.
 
+## Staying honest
+
+The dashboard's worst failure is a silent one: the numbers stay plausible while
+going stale, so the rendered page tells you nothing. Three states are detected
+and named in the header instead.
+
+- **The stream dies.** The app polls the event store, recovers the calls it
+  missed, and says how many it dropped.
+- **A gap sits behind the rollup.** Calls that landed between the last rollup and
+  page load are backfilled, including a tail from before midnight.
+- **The rollup is overdue.** Said plainly, with live totals still current.
+
+Every call is priced exactly once whichever path delivered it, rollup or stream,
+and the total does not depend on the order they arrive in.
+
+## Tests
+
+`tests/run.sh` runs the accounting and freshness suites headless: it extracts the
+app's script block and runs it against DOM and SDK stubs. No browser, no build
+step, about a second. Every assertion pins a way the dashboard was actually able
+to go wrong.
+
+```
+apps/token-cost/tests/run.sh
+```
+
+## Requirements
+
+Lucidos 0.27.0 or newer. The app resolves the workspace-prefixed events endpoint
+through `lucidos.apiUrl`, which earlier engines do not expose.
+
 ## After install
 
 Ask Lucidos to set up the rollup trigger; the plugin's setup step walks it

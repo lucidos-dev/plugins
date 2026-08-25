@@ -11,11 +11,24 @@
       body { margin: 0; padding: var(--space-xl); }
       .wrap { max-width: 68rem; margin: 0 auto; }
 
+      /* The header is a title block on the left and a control cluster on the
+         right. `align-items: baseline` used to sit the buttons on the TITLE's
+         baseline, which dropped the whole cluster low and left Refresh looking
+         hung off the bottom of the row, misaligned with the segmented control
+         beside it. Center is what a control cluster wants: the buttons agree
+         with each other, and the row reads as one bar. */
       header.top {
-        display: flex; align-items: baseline; justify-content: space-between;
+        display: flex; align-items: center; justify-content: space-between;
         gap: var(--space-lg); flex-wrap: wrap; margin-bottom: var(--space-xl);
       }
-      .top-meta { color: var(--text-muted); font-size: var(--font-size-xs); }
+      .top-meta {
+        color: var(--text-muted); font-size: var(--font-size-xs);
+        margin-top: var(--space-2xs);
+      }
+      /* The one state worth colouring in the header: what you are reading may
+         be behind. Yellow rather than red, because the figures are still
+         correct as of the timestamp beside them. */
+      .top-meta.stale { color: var(--accent-yellow); }
 
       /* Sound toggle. Off is the resting state, so the speaker is muted-looking
          by default: waves hidden, slash drawn, muted colour. On drops the slash
@@ -300,6 +313,9 @@
       }
       .save-bar .button-group { justify-content: flex-end; }
       .dirty-dot { color: var(--accent-yellow); font-size: var(--font-size-xs); }
+      /* A button standing in for an input inside .field, so it lines up with
+         the real inputs beside it instead of shrinking to its own text. */
+      .field .action-btn { width: 100%; }
 
       /* Ring-sound picker. One card per sound, each carrying its own icon, so
          the pack is scannable by shape before anything is played. The selected
@@ -384,7 +400,7 @@
         <div class="hero-row">
           <div class="hero-main">
             <div class="hero-label"><span class="pulse" id="pulse"></span><span id="hero-label-text">Spend today</span></div>
-            <div class="hero-value" id="hero-cost">$0.00</div>
+            <div class="hero-value" id="hero-cost">&nbsp;</div>
             <div class="hero-sub" id="hero-sub">&nbsp;</div>
           </div>
           <div class="stat-strip">
@@ -404,23 +420,18 @@
           <option value="0">All time</option>
         </select>
         <div id="producer-slot"></div>
+        <div id="currency-slot"></div>
+        <span class="muted" id="fx-note" style="font-size: var(--font-size-xs)"></span>
       </div>
 
-      <section class="block">
-        <h2 class="sec">Per day</h2>
-        <div class="card">
-          <div class="bars" id="bars"></div>
-          <div class="axis"><span id="ax-from"></span><span id="ax-to"></span></div>
-          <div class="legend">
-            <span><span class="swatch" style="background: var(--accent-yellow)"></span>Fresh input</span>
-            <span><span class="swatch" style="background: var(--accent); opacity: 0.7"></span>Cache write</span>
-            <span><span class="swatch" style="background: var(--accent); opacity: 0.35"></span>Cache read</span>
-            <span><span class="swatch" style="background: var(--accent-green)"></span>Output</span>
-            <span class="muted" id="bar-hint">hover a bar for its day</span>
-          </div>
-        </div>
-      </section>
-
+      <!-- ORDER: the two blocks that MOVE come first.
+           "By model" is what anyone opens this dashboard to see, and along
+           with "Live calls" it is the only part that changes while you watch
+           it. The two static charts (Per day, Context size) are reference,
+           read once, so they sit below the fold where they cost nothing.
+           Reordered 2026-08-19: the spend headline and the model table were
+           775px apart with a static bar chart between them, so no scroll
+           position held both the running total and the rows it is made of. -->
       <section class="block">
         <h2 class="sec">By model</h2>
         <div class="card">
@@ -438,25 +449,43 @@
       </section>
 
       <section class="block">
-        <h2 class="sec">Context size per call</h2>
-        <p class="sec-note">How big the prompt was on each call. The top rows are where a long-context premium bites.</p>
-        <div class="card" id="hist"></div>
-      </section>
-
-      <section class="block">
         <h2 class="sec">Live calls</h2>
         <p class="sec-note">Every model call in the workspace as it lands, streamed over SSE. Includes calls from other threads and agents running right now.</p>
         <div class="card feed" id="feed">
           <div class="empty-state">Waiting for the next model call…</div>
         </div>
       </section>
+
+      <!-- Reference below the fold: neither of these changes while you watch,
+           so they read once and then stay out of the way of the two live
+           blocks above. -->
+      <section class="block">
+        <h2 class="sec">Per day</h2>
+        <div class="card">
+          <div class="bars" id="bars"></div>
+          <div class="axis"><span id="ax-from"></span><span id="ax-to"></span></div>
+          <div class="legend">
+            <span><span class="swatch" style="background: var(--accent-yellow)"></span>Fresh input</span>
+            <span><span class="swatch" style="background: var(--accent); opacity: 0.7"></span>Cache write</span>
+            <span><span class="swatch" style="background: var(--accent); opacity: 0.35"></span>Cache read</span>
+            <span><span class="swatch" style="background: var(--accent-green)"></span>Output</span>
+            <span class="muted" id="bar-hint">hover a bar for its day</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2 class="sec">Context size per call</h2>
+        <p class="sec-note">How big the prompt was on each call. The top rows are where a long-context premium bites.</p>
+        <div class="card" id="hist"></div>
+      </section>
       </div><!-- /view-dashboard -->
 
       <div id="view-settings" style="display: none">
         <section class="block">
           <h2 class="sec">Model rates</h2>
-          <p class="sec-note">USD per 1,000,000 tokens. Every cost on the dashboard is computed from these numbers in the browser, so an edit re-prices your whole history the moment you save. A model the engine reports that is not listed here falls back to the <strong>default</strong> row.</p>
           <p class="sec-note" id="rates-source" style="display: none">Right now these are the <strong>built-in defaults</strong>. Nothing has been written to <code>artifacts/token-cost/pricing.json</code> yet, so the first Save creates it.</p>
+          <p class="sec-note" id="rates-note">Rates per 1,000,000 tokens. Every cost on the dashboard is computed from these numbers in the browser, so an edit re-prices your whole history as soon as it lands. A model the engine reports that is not listed here falls back to the <strong>default</strong> row.</p>
           <div class="card">
             <table class="price-table">
               <thead>
@@ -472,6 +501,38 @@
                 <span class="list-row-add-label">Add model</span>
               </button>
             </div>
+          </div>
+        </section>
+
+        <section class="block">
+          <h2 class="sec">Currency</h2>
+          <p class="sec-note">Providers bill in USD, so the rates above are entered in one <strong>base currency</strong> and everything else is converted for display only. Changing the base does not touch the numbers you typed: it only changes what unit they are read as. The dashboard's own currency picker is per device, kept in this browser, so a shared workspace can be read in kroner on one machine and dollars on another.</p>
+          <div class="card">
+            <div class="field-grid">
+              <div class="field">
+                <label for="base-currency-slot">Rates are entered in</label>
+                <div id="base-currency-slot"></div>
+                <div class="hint">The unit for every number in the table above</div>
+              </div>
+              <div class="field">
+                <label>Exchange rates</label>
+                <button class="action-btn action-btn-secondary" id="btn-fx-refresh">Update rates</button>
+                <div class="hint" id="fx-status">&nbsp;</div>
+              </div>
+            </div>
+            <table class="price-table" style="margin-top: var(--space-lg)">
+              <thead><tr><th>Currency</th><th>Per 1 <span id="fx-base-label">USD</span></th><th></th></tr></thead>
+              <tbody id="fx-body"></tbody>
+            </table>
+            <div style="margin-top: var(--space-md)">
+              <button type="button" class="list-row-add-card" id="btn-add-currency">
+                <span class="list-row-add-icon">+</span>
+                <span class="list-row-add-label">Add currency</span>
+              </button>
+            </div>
+            <p class="sec-note" style="margin: var(--space-lg) 0 0">
+              Rates are stored in <code>artifacts/token-cost/pricing.json</code> next to the model prices, so the dashboard converts offline and a currency you never refresh keeps working at the last rate it saw. <strong>Update rates</strong> pulls the daily ECB reference rates from <code>frankfurter.dev</code>, which needs no key. Add any three-letter code and it appears in the dashboard picker.
+            </p>
           </div>
         </section>
 
@@ -533,12 +594,10 @@
             <span id="save-state" class="muted" style="font-size: var(--font-size-xs)"></span>
             <div class="button-group">
               <button class="action-btn action-btn-secondary" id="btn-defaults">Restore defaults</button>
-              <button class="action-btn action-btn-secondary" id="btn-revert">Revert</button>
-              <button class="action-btn" id="btn-save">Save settings</button>
             </div>
           </div>
           <p class="sec-note" style="margin-top: var(--space-md)">
-            Stored as JSON at <code>artifacts/token-cost/pricing.json</code>, so it is version-controlled with the rest of the workspace and you can still edit it by hand.
+            Edits save themselves a moment after you stop typing, so there is nothing to press. Stored as JSON at <code>artifacts/token-cost/pricing.json</code>, so it is version-controlled with the rest of the workspace and you can still edit it by hand.
           </p>
         </section>
       </div><!-- /view-settings -->
@@ -561,33 +620,169 @@
           'claude-opus-4-8': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
           'claude-opus-4-7': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
           'opus': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
-          'claude-sonnet-5': { uncached_in: 3.0, cache_write: 3.75, cache_read: 0.3, out: 15.0 },
+          // Opus 4.1 predates the Opus 4.6 repricing and keeps the old card.
+          'claude-opus-4-1': { uncached_in: 15.0, cache_write: 18.75, cache_read: 1.5, out: 75.0 },
+          // Corrected 2026-08-24. Sonnet 5 carried Sonnet 4.6's $3/$15 and
+          // Haiku 4.5 carried Haiku 3.5's $0.80/$4.00. Sonnet 5 is $2/$10, and
+          // the increase to $3/$15 announced for 2026-09-01 was cancelled.
+          // Haiku 4.5 is $1/$5. Sonnet 4.6 and Fable 5 keep $3/$15.
+          'claude-sonnet-5': { uncached_in: 2.0, cache_write: 2.5, cache_read: 0.2, out: 10.0 },
           'claude-sonnet-4-6': { uncached_in: 3.0, cache_write: 3.75, cache_read: 0.3, out: 15.0 },
-          'sonnet': { uncached_in: 3.0, cache_write: 3.75, cache_read: 0.3, out: 15.0 },
+          'sonnet': { uncached_in: 2.0, cache_write: 2.5, cache_read: 0.2, out: 10.0 },
           'claude-fable-5': { uncached_in: 3.0, cache_write: 3.75, cache_read: 0.3, out: 15.0 },
-          'claude-haiku-4-5-20251001': { uncached_in: 0.8, cache_write: 1.0, cache_read: 0.08, out: 4.0 },
-          'haiku': { uncached_in: 0.8, cache_write: 1.0, cache_read: 0.08, out: 4.0 },
-          'gpt-5.5': { uncached_in: 5.0, cache_write: 5.0, cache_read: 0.5, out: 30.0 },
-          'gpt-5.6-sol': { uncached_in: 5.0, cache_write: 5.0, cache_read: 0.5, out: 30.0 },
+          'claude-haiku-4-5-20251001': { uncached_in: 1.0, cache_write: 1.25, cache_read: 0.1, out: 5.0 },
+          'haiku': { uncached_in: 1.0, cache_write: 1.25, cache_read: 0.1, out: 5.0 },
+          // OpenAI does not bill a cache write. Prefix caching there is
+          // automatic, so there is no breakpoint to create and nothing to
+          // charge for; `cache_creation_tokens` is always None on that path.
+          // The rate is 0 so a stray non-zero write can never invent spend.
+          // Every id the picker offers is listed: an unlisted one falls
+          // through to `default`, which is the Opus card, and a mini model
+          // priced as Opus overstates by more than an order of magnitude.
+          'gpt-5.5': { uncached_in: 5.0, cache_write: 0.0, cache_read: 0.5, out: 30.0 },
+          'gpt-5.6-sol': { uncached_in: 5.0, cache_write: 0.0, cache_read: 0.5, out: 30.0 },
+          'gpt-5.6-terra': { uncached_in: 2.0, cache_write: 0.0, cache_read: 0.2, out: 12.0 },
+          'gpt-5.6-luna': { uncached_in: 0.2, cache_write: 0.0, cache_read: 0.02, out: 1.2 },
+          'gpt-5.4': { uncached_in: 2.5, cache_write: 0.0, cache_read: 0.25, out: 15.0 },
+          'gpt-5.4-mini': { uncached_in: 0.75, cache_write: 0.0, cache_read: 0.075, out: 4.5 },
           'gemini-3.5-flash': { uncached_in: 0.3, cache_write: 0.3, cache_read: 0.075, out: 2.5 },
           'gemini-3.1-pro-preview': { uncached_in: 1.25, cache_write: 1.25, cache_read: 0.31, out: 10.0 },
+          // Local models run on this machine, so nobody bills for them. Listed
+          // explicitly so they do not fall through to `default` and invent spend.
+          'muse-glimmer:30b-mlx': { uncached_in: 0, cache_write: 0, cache_read: 0, out: 0 },
         },
         long_context_multiplier: { threshold_tokens: 200000, in_multiplier: 1.0, out_multiplier: 1.0 },
         producers: {
-          main_llm: 'Chat & triggers',
+          main_llm: 'Lucidos Agent',
           claude_code: 'Claude Code',
           codex: 'Codex',
         },
+        // Units of each currency per 1 unit of `currency`. Seeded from the ECB
+        // daily reference rates so a fresh workspace converts before it has
+        // ever reached the network; Settings → Update rates refreshes them.
+        fx: {
+          _updated: '2026-08-11',
+          rates: {
+            USD: 1.0, EUR: 0.86655, GBP: 0.74075, NOK: 9.5065, SEK: 9.5004,
+            DKK: 6.4781, CHF: 0.81031, JPY: 159.2, CAD: 1.3938, AUD: 1.4156,
+            INR: 95.44, PLN: 3.7231,
+          },
+        },
+      };
+
+      /** Every currency Intl knows how to render, in the order the pickers show
+       *  them: the ones this workspace is most likely to want first. A code not
+       *  in this list still works, it just carries no display name. */
+      const CURRENCY_NAMES = {
+        USD: 'US Dollar', EUR: 'Euro', GBP: 'British Pound', NOK: 'Norwegian Krone',
+        SEK: 'Swedish Krona', DKK: 'Danish Krone', CHF: 'Swiss Franc', JPY: 'Japanese Yen',
+        CAD: 'Canadian Dollar', AUD: 'Australian Dollar', INR: 'Indian Rupee',
+        PLN: 'Polish Zloty', CZK: 'Czech Koruna', BRL: 'Brazilian Real',
+        ZAR: 'South African Rand', KRW: 'South Korean Won', CNY: 'Chinese Yuan',
+        SGD: 'Singapore Dollar', NZD: 'New Zealand Dollar', MXN: 'Mexican Peso',
+        HKD: 'Hong Kong Dollar', ILS: 'Israeli Shekel', TRY: 'Turkish Lira',
+        HUF: 'Hungarian Forint', RON: 'Romanian Leu', ISK: 'Icelandic Krona',
+        THB: 'Thai Baht', PHP: 'Philippine Peso', MYR: 'Malaysian Ringgit',
+        IDR: 'Indonesian Rupiah',
       };
 
       let daily = { days: {}, bucket_edges: [0, 32000, 64000, 128000, 200000, 400000] };
       let pricing = null;
+      // True while nothing has ever been written to pricing.json, so the
+      // dashboard is running on DEFAULT_PRICING. Reported quietly, never as a toast.
       let usingDefaultRates = false;
-      // Calls seen live this session, folded into today's numbers on top of the rollup.
+      // Calls seen since the rollup's cursor, folded into the daily numbers on
+      // top of it. Filled from SSE while the tab is open AND from the periodic
+      // catch-up below, so the two together survive a stream that dies.
       let live = [];
-      // Last usage tuple seen per thread, so a re-delivered streaming frame is
-      // not counted as a second call. See pushLive.
+      // Every sequence number already folded in, whichever path delivered it.
+      // This is the identity dedupe: SSE and a catch-up racing over the same
+      // call must count it once. Rebuilt whenever `live` is pruned.
+      let seenSeq = new Set();
+      // Last usage tuple seen per thread, with the sequence it came from, so a
+      // re-delivered streaming frame is not counted as a second call and a row
+      // arriving out of order cannot retroactively suppress a newer one.
+      // See countedLive.
       const lastUsageByThread = new Map();
+      // Bumped whenever `live` changes, so the derived view below knows when
+      // its cache is void without deep-comparing an array of thousands.
+      let liveRevision = 0;
+      let countedCache = { rev: -1, cursor: -1, calls: [] };
+      // Sequence of the row that last played the entry animation, so a rebuild
+      // does not re-animate a row the user has already seen arrive.
+      let lastAnimatedSeq = null;
+
+      /** The live tail with Claude Code's re-delivered streaming frames
+       *  collapsed, in sequence order.
+       *
+       *  Claude Code re-delivers the same assistant message while it streams,
+       *  each delivery carrying the same usage block, so one API call arrives
+       *  as 2-3 identical events (measured 1.73x on claude_code; codex and the
+       *  chat loop are clean). A frame whose usage repeats the previous one
+       *  from the SAME thread is dropped, exactly as the rollup does to the
+       *  stored rows. Per thread matters: two unrelated calls elsewhere that
+       *  happen to agree on all four counts are still counted twice. Scoped to
+       *  claude_code, because on codex an equal pair is a real repeat (it
+       *  never had the frame bug) and collapsing it lost ~2% of its spend.
+       *  Engine builds from 2026-08-11 emit one event per real call, so on a
+       *  current engine this drops nothing and is here for older streams.
+       *
+       *  DERIVED rather than decided at arrival, which is the point. The
+       *  collapse is order-sensitive, and the catch-up hands us rows OLDER
+       *  than ones SSE already delivered: an incremental version got the
+       *  answer wrong whenever delivery order and sequence order disagreed,
+       *  double counting a real call or swallowing one. Sorting first makes
+       *  the result depend only on WHAT arrived, never on WHEN, so any
+       *  delivery order lands on the same total. */
+      function countedLive() {
+        const cursor = daily.last_sequence || 0;
+        if (countedCache.rev === liveRevision && countedCache.cursor === cursor) {
+          return countedCache.calls;
+        }
+        const rows = live
+          .filter((c) => c.seq == null || c.seq > cursor)
+          .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+        lastUsageByThread.clear();
+        const out = [];
+        for (const c of rows) {
+          if (c.producer === 'claude_code') {
+            const key = `${c.in}/${c.cache_read}/${c.cache_write}/${c.out}`;
+            if (lastUsageByThread.get(c.thread) === key) continue;
+            lastUsageByThread.set(c.thread, key);
+          }
+          out.push(c);
+        }
+        countedCache = { rev: liveRevision, cursor, calls: out };
+        return out;
+      }
+
+      // ---- Freshness ------------------------------------------------------
+      // The dashboard is left open for hours, so SSE liveness cannot be
+      // assumed: a suspended laptop, a dropped stream or a proxy timeout all
+      // leave the page connected-looking and silently behind. Nothing here
+      // trusts the stream; the catch-up below is the source of truth and the
+      // stream is only an accelerator.
+      const CATCHUP_MS = 45000;        // backstop reconcile while visible
+      const ROLLUP_STALE_MS = 70 * 60000;  // hourly rollup, plus a grace margin
+      let catchUpInFlight = false;
+      let lastCatchUpAt = 0;           // performance.now() of the last success
+      let lastCatchUpFailed = false;
+      let lastCatchUpError = null;   // the message, so the header can name it
+      let lastSseAt = 0;               // last ContextCaptured delivered by SSE
+      // Wall clock of the moment this page opened its stream. A call that
+      // happened BEFORE this instant was never the stream's to deliver, so
+      // finding it by polling is not a drop. Without this, a page opened after
+      // a busy minute reconciles the backlog and then accuses the stream of
+      // losing every one of those calls, which is a lie told confidently in
+      // the header. Seen on camera 2026-08-20: "live stream dropped 18 calls"
+      // on a tab that had existed for forty-five seconds.
+      let sseOpenedAt = 0;
+      let streamMissed = 0;            // calls a catch-up found that SSE never delivered
+      // The local day the columns were last cut for, so a midnight crossing
+      // with the page open is noticed. Filled on the first render: `localDay`
+      // is declared further down and calling it here is a temporal dead zone
+      // error that takes the whole app out at load.
+      let renderedDay = null;
       // Held so a rapid second tick restarts the bump instead of stacking timers.
       let bumpTimer = null;
       // The producer filter is a managed Select, since its options change with settings.
@@ -638,12 +833,55 @@
       // rings for most of a second. Extra ones are dropped, not queued.
       let lastCoinAt = 0;
 
+      /** True once the page has claimed a playback audio session.
+       *
+       *  iOS is the reason this exists. Web Audio there defaults to the
+       *  ambient session, which the physical ring/silent switch mutes, so an
+       *  iPhone with the switch flipped plays nothing at all while every
+       *  diagnostic reports a healthy running context: the toggle says armed,
+       *  the sample decodes, the source starts, and the speaker stays silent.
+       *  navigator.audioSession (Safari 17+) is the only way a web page can say
+       *  "this is playback, not a UI blip" and be routed past the switch. */
+      let audioSessionSet = false;
+      function claimPlaybackSession() {
+        if (audioSessionSet) return true;
+        try {
+          if (navigator.audioSession) {
+            navigator.audioSession.type = 'playback';
+            audioSessionSet = true;
+          }
+        } catch (e) { /* not supported, the ring switch wins */ }
+        return audioSessionSet;
+      }
+
       function audio() {
         const AC = window.AudioContext || window.webkitAudioContext;
         if (!AC) return null;
+        // Claimed before the context is constructed: Safari reads the session
+        // type when the context is created, so setting it afterwards is late.
+        claimPlaybackSession();
         audioCtx = audioCtx || window._audioCtx || new AC();
         if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
         return audioCtx;
+      }
+
+      /** iOS keeps a context 'running' while routing it nowhere, and it also
+       *  suspends one the moment the tab is backgrounded without ever telling
+       *  the page. Both leave the register silent long after the unlocking
+       *  gesture, so the context is nudged awake whenever the page comes back. */
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && soundOn && audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume().catch(() => {});
+        }
+      });
+
+      /** iOS Safari, and only iOS Safari, routes Web Audio through the ringer
+       *  channel when no audio session is claimed. Detected by capability, not
+       *  by user-agent sniffing: an iPad reports itself as a Mac. */
+      function isIOS() {
+        return /iP(hone|ad|od)/.test(navigator.platform || '') ||
+          (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform || '')) ||
+          /iPhone|iPad|iPod/.test(navigator.userAgent);
       }
 
       /** The currently selected sound, resolved to a url and a gain. Falls back
@@ -815,6 +1053,45 @@
         }
       }
 
+      // ---- Currency ---------------------------------------------------------
+      // Rates live in ONE currency (pricing.currency, the base) and every figure
+      // on the dashboard is converted at paint time. Nothing stored is ever
+      // converted: switching display currency must never rewrite a rate the
+      // user typed, or a round trip through two currencies would erode it.
+      const DISPLAY_CCY_KEY = 'token-cost:currency';
+      let displayCcy = null;   // null until load() resolves it against the table
+      let currencySelect = null;
+
+      const baseCcy = () => (pricing?.currency || 'USD').toUpperCase();
+      const fxRates = () => (pricing?.fx?.rates) || { [baseCcy()]: 1 };
+
+      /** Units of `code` per 1 unit of the base. The base itself is always 1,
+       *  whatever the table says, so an edited or missing self-rate cannot
+       *  quietly scale every number on the page. */
+      function fxRate(code) {
+        const c = String(code || '').toUpperCase();
+        if (c === baseCcy()) return 1;
+        const r = Number(fxRates()[c]);
+        return Number.isFinite(r) && r > 0 ? r : null;
+      }
+
+      /** The currency actually being rendered in. Falls back to the base when
+       *  the selected code has no usable rate, which matters because a freshly
+       *  added currency sits at rate 0 until the first refresh: converting and
+       *  labelling have to fall back TOGETHER, or base-currency figures would
+       *  print under the new currency's symbol. */
+      function displayCode() {
+        const c = (displayCcy || baseCcy()).toUpperCase();
+        return fxRate(c) === null ? baseCcy() : c;
+      }
+
+      /** Base-currency amount -> display currency. */
+      function toDisplay(n) {
+        return n * (fxRate(displayCode()) ?? 1);
+      }
+
+      const ccyLabel = (code) => (CURRENCY_NAMES[code] ? `${code} · ${CURRENCY_NAMES[code]}` : code);
+
       const fmtInt = (n) => new Intl.NumberFormat().format(Math.round(n));
       const fmtTok = (n) => {
         if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
@@ -822,17 +1099,35 @@
         if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
         return String(Math.round(n));
       };
-      const fmtMoney = (n) => {
-        // Always show cents, at every magnitude. The last two digits are what
-        // move as calls land, so dropping them above $1000 froze the number.
-        if (n >= 1) {
-          return '$' + new Intl.NumberFormat(undefined, {
-            minimumFractionDigits: 2, maximumFractionDigits: 2,
-          }).format(n);
+      /** Money, converted to the display currency and rendered with its own
+       *  symbol, grouping and decimal mark via Intl.
+       *
+       *  Two deliberate departures from Intl's defaults:
+       *  - Always show cents, at every magnitude. The last two digits are what
+       *    move as calls land, so dropping them above 1000 froze the number.
+       *  - Below one unit, widen to 3 and then 4 decimals. A per-call cost is
+       *    fractions of a cent, and at 2 decimals every row in the live feed
+       *    reads as zero. This overrides the currency's own digit count, so a
+       *    zero-decimal currency like JPY still resolves a single call. */
+      function fmtMoney(n) {
+        const code = displayCode();
+        const v = toDisplay(n);
+        // Thresholds are read in the DISPLAYED amount, so precision follows the
+        // magnitude on screen. In kroner a call is ~0.22, which at 2 decimals
+        // would round a busy feed to a column of identical numbers.
+        const digits = v >= 1 ? 2 : v >= 0.01 ? 3 : 4;
+        try {
+          return new Intl.NumberFormat(undefined, {
+            style: 'currency', currency: code, currencyDisplay: 'narrowSymbol',
+            minimumFractionDigits: digits, maximumFractionDigits: digits,
+          }).format(v);
+        } catch (e) {
+          // An invalid or unknown code must not take the dashboard down with it.
+          return `${new Intl.NumberFormat(undefined, {
+            minimumFractionDigits: digits, maximumFractionDigits: digits,
+          }).format(v)} ${code}`;
         }
-        if (n >= 0.01) return '$' + n.toFixed(3);
-        return '$' + n.toFixed(4);
-      };
+      }
       const localDay = (d) => {
         const p = (x) => String(x).padStart(2, '0');
         return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
@@ -877,9 +1172,24 @@
         );
       }
 
+      /** Every day either source knows about.
+       *
+       *  Taking the rollup's key set literally was wrong twice over. At 00:03
+       *  the rollup has no row for today at all, so "Today" rendered as empty
+       *  while calls were visibly landing in the feed below it. And a live
+       *  call on a day the rollup has never seen had nowhere to be counted.
+       *  Today is always a legitimate column even with nothing in it: an empty
+       *  "Spend today" is a fact, a missing one reads as the app being broken. */
+      function knownDays() {
+        const s = new Set(Object.keys(daily.days));
+        for (const c of countedLive()) s.add(localDay(new Date(c.at)));
+        s.add(localDay(new Date()));
+        return [...s].sort();
+      }
+
       function selectedDays() {
         const n = parseInt(document.getElementById('range').value, 10);
-        const all = Object.keys(daily.days).sort();
+        const all = knownDays();
         if (!n) return all;
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - (n - 1));
@@ -905,17 +1215,21 @@
         return a;
       }
 
-      /** Merge the persisted rollup with anything seen live this session. */
+      /** Merge the persisted rollup with anything seen since its cursor.
+       *
+       *  Folds by the call's OWN local day rather than only into today. The
+       *  old form dropped every unrolled call the moment the clock passed
+       *  midnight: a dashboard left open overnight showed yesterday losing its
+       *  last hour and today starting from nothing, until the next hourly
+       *  rollup happened to run. */
       function seriesForDay(day) {
         const out = {};
         for (const [key, v] of Object.entries(daily.days[day] || {})) {
           out[key] = addU(emptyU(), v);
         }
-        if (day === localDay(new Date())) {
-          for (const c of live) {
-            if (c.seq && c.seq <= daily.last_sequence) continue;
-            foldCall(out, c);
-          }
+        for (const c of countedLive()) {
+          if (localDay(new Date(c.at)) !== day) continue;
+          foldCall(out, c);
         }
         return out;
       }
@@ -930,13 +1244,10 @@
         for (const [key, v] of Object.entries(stored[String(hour)] || {})) {
           out[key] = addU(emptyU(), v);
         }
-        if (day === localDay(new Date())) {
-          for (const c of live) {
-            if (c.seq && c.seq <= daily.last_sequence) continue;
-            const t = new Date(c.at);
-            if (localDay(t) !== day || t.getHours() !== hour) continue;
-            foldCall(out, c);
-          }
+        for (const c of countedLive()) {
+          const t = new Date(c.at);
+          if (localDay(t) !== day || t.getHours() !== hour) continue;
+          foldCall(out, c);
         }
         return out;
       }
@@ -960,6 +1271,7 @@
 
       function render() {
         if (!pricing) return;
+        if (renderedDay === null) renderedDay = localDay(new Date());
         const days = selectedDays();
         const pf = producerFilter();
 
@@ -1094,9 +1406,9 @@
           const tr = document.createElement('tr');
           tr.innerHTML =
             // data-label is what the narrow-viewport CSS prints above each
-            // number once the row reflows into a stacked card. Emitted always,
-            // invisible on desktop, so nothing here branches on viewport width.
-            `<td class="row-head">${lucidos.utils.escapeHtml(r.model)}</td>` +
+            // number, so the layout is driven entirely by the media query and
+            // nothing here reads the viewport width.
+            `<td class="row-head">${lucidos.utils.escapeHtml(modelName(r.model))}</td>` +
             `<td class="row-sub muted">${lucidos.utils.escapeHtml(producerLabel[r.producer] || r.producer)}</td>` +
             `<td class="num" data-label="Calls">${fmtInt(r.u.calls)}</td>` +
             `<td class="num" data-label="Fresh in">${fmtTok(fresh)}</td>` +
@@ -1137,10 +1449,52 @@
           hist.appendChild(row);
         }
 
-        const gen = daily.generated ? lucidos.utils.timeAgo(daily.generated) : 'never';
-        document.getElementById('meta').textContent =
-          `${fmtInt(Object.keys(daily.days).length)} days on record · rollup ${gen} · ${live.length} call${live.length === 1 ? '' : 's'} since the rollup` +
-          (usingDefaultRates ? ' · built-in rates' : '');
+        // ONE fact, not a chain. This line used to join four dot-separated
+        // bits (days on record, rollup age, calls since the rollup, rates
+        // provenance), which read as a row of debug output under the title and
+        // was the first thing anyone noticed about the header. The days count
+        // and the rollup age are bookkeeping about this app's own cache, not
+        // about the workspace's spend, and nobody reading a cost dashboard
+        // needs either. What IS worth a line is how current the number below
+        // it is, and that is exactly what the stale note already says.
+        const sinceRollup = countedLive().length;
+        const meta = document.getElementById('meta');
+        const note = freshnessNote();
+        meta.textContent = note
+          ? note.replace(/^ · /, '')
+          : `live · ${sinceRollup} call${sinceRollup === 1 ? '' : 's'} since the last rollup`;
+        meta.className = 'top-meta' + (isStale() ? ' stale' : '');
+        renderFeed();
+        renderFxNote();
+      }
+
+      /** Whether what is on screen may be behind the workspace.
+       *
+       *  Two ways that happens, and neither used to be visible: the reconcile
+       *  is failing (offline, engine restarting), or the hourly rollup has not
+       *  run when it should have. A number that is quietly old is worse than
+       *  one labelled as old, which is the entire lesson of this fix. */
+      function isStale() {
+        if (lastCatchUpFailed) return true;
+        if (lastCatchUpAt && performance.now() - lastCatchUpAt > CATCHUP_MS * 3) return true;
+        if (daily.generated && Date.now() - new Date(daily.generated).getTime() > ROLLUP_STALE_MS) return true;
+        return false;
+      }
+
+      /** The trailing clause on the meta line. Silent in the healthy case:
+       *  a permanent "up to date" badge is noise, and it is exactly the kind
+       *  of reassurance that keeps being printed while the numbers freeze. */
+      function freshnessNote() {
+        if (lastCatchUpFailed) {
+          return ` · not reaching the event store (${lastCatchUpError || 'unknown'}), retrying`;
+        }
+        if (daily.generated && Date.now() - new Date(daily.generated).getTime() > ROLLUP_STALE_MS) {
+          return ' · rollup overdue, live totals still current';
+        }
+        if (streamMissed) {
+          return ` · live stream dropped ${fmtInt(streamMissed)} call${streamMissed === 1 ? '' : 's'}, recovered by polling`;
+        }
+        return '';
       }
 
       /** Fold one ContextCaptured into the live tail.
@@ -1159,32 +1513,35 @@
           at: ev.created || new Date().toISOString(),
           model: p.model || 'unknown',
           producer: p.producer || 'unknown',
+          // Kept on the call, because the frame collapse is per thread and is
+          // now computed from the stored rows rather than at arrival.
+          thread: ev.thread_id || '',
           in: u.input_tokens || 0,
           cache_read: u.cache_read_tokens || 0,
           cache_write: u.cache_creation_tokens || 0,
           out: u.output_tokens || 0,
         };
 
-        // Claude Code re-delivers the same assistant message while it streams,
-        // each delivery carrying the same usage block, so one API call arrives
-        // as 2-3 identical events (measured 1.73x on claude_code; codex and the
-        // chat loop are clean). Drop a frame whose usage repeats the previous
-        // one from the SAME thread, which is exactly what the rollup does to
-        // the stored rows. Per thread matters: two unrelated calls elsewhere
-        // that happen to agree on all four counts are still counted twice.
-        // Scoped to claude_code: on codex an equal pair is a real repeat (it
-        // never had the frame bug), and collapsing it lost ~2% of its spend.
-        // Engine builds from 2026-08-11 emit one event per real call, so on a
-        // current engine this drops nothing and is here for older streams.
-        const tid = ev.thread_id || '';
-        const key = `${call.in}/${call.cache_read}/${call.cache_write}/${call.out}`;
-        if (call.producer === 'claude_code') {
-          if (lastUsageByThread.get(tid) === key) return false;
-          lastUsageByThread.set(tid, key);
+        // Identity dedupe, and it is the only one applied at arrival: SSE and
+        // the periodic catch-up both deliver the same rows by design, so a
+        // call already folded in must be dropped whichever arrived first. A
+        // row at or below the rollup's cursor is already in the stored
+        // numbers, so it is not live at all.
+        if (call.seq != null) {
+          if (call.seq <= (daily.last_sequence || 0)) return false;
+          if (seenSeq.has(call.seq)) return false;
+          seenSeq.add(call.seq);
         }
 
         live.push(call);
-        if (live.length > 5000) live = live.slice(-4000);
+        liveRevision++;
+        if (live.length > 5000) {
+          live = live.slice(-4000);
+          // The set is the dedupe for everything still in `live`, so it is
+          // rebuilt with it. A pruned row is older than the rollup will be at
+          // the next hourly run, so forgetting it costs nothing.
+          seenSeq = new Set(live.map((c) => c.seq).filter((s) => s != null));
+        }
 
         // A backfill replays up to a full day at once: one pulse, one coin and
         // one layout per row would be a burst of noise on page load. The feed
@@ -1197,47 +1554,177 @@
           playCaChing();
         }
 
-        const feed = document.getElementById('feed');
-        if (feed.querySelector('.empty-state')) feed.innerHTML = '';
-        const fresh = Math.max(0, call.in - call.cache_read - call.cache_write);
-        const row = document.createElement('div');
-        row.className = 'feed-row' + (quiet ? '' : ' fresh-row');
-        const t = new Date(call.at);
-        row.innerHTML =
-          `<div class="feed-time">${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}</div>` +
-          `<div class="feed-model">${lucidos.utils.escapeHtml(call.model)}</div>` +
-          `<div class="feed-tok">${fmtTok(fresh)} fresh · ${fmtTok(call.cache_read)} cached · ${fmtTok(call.out)} out</div>` +
-          `<div class="feed-cost">${fmtMoney(costOf(call.model, { in: call.in, cache_read: call.cache_read, cache_write: call.cache_write, out: call.out }, call.in >= (pricing?.long_context_multiplier?.threshold_tokens || 2e5) ? { in: call.in, out: call.out, cache_read: call.cache_read, cache_write: call.cache_write } : null))}</div>`;
-        feed.insertBefore(row, feed.firstChild);
-        while (feed.children.length > 60) feed.removeChild(feed.lastChild);
-
         if (!quiet) render();
         return true;
       }
 
-      /** Everything that landed between the rollup's cursor and this tab
-       *  opening.
+      /** The live feed, rebuilt from the collapsed view.
        *
-       *  `live` only ever held what arrived over SSE while the tab was open,
-       *  so opening the dashboard at 07:50 against a 07:05 rollup showed
-       *  neither the stored nor the streamed version of those 45 minutes. The
-       *  hole closed itself on the next hourly run (the DataFileWritten
-       *  listener reloads), which is why it read as the chart lagging rather
-       *  than as missing data.
+       *  Rebuilt rather than appended to, for the same reason the totals are
+       *  derived: rows do not arrive in time order once a catch-up is filling
+       *  a hole behind the stream, and a collapsed streaming frame must not
+       *  appear as a call that was never priced. Sixty rows is nothing to
+       *  rebuild, and it removes any way for the list and the numbers above it
+       *  to disagree. */
+      function renderFeed() {
+        const feed = document.getElementById('feed');
+        const rows = countedLive().slice().sort((a, b) => (b.at < a.at ? -1 : b.at > a.at ? 1 : 0)).slice(0, 60);
+        if (!rows.length) {
+          feed.innerHTML = '<div class="empty-state">Waiting for the next model call…</div>';
+          return;
+        }
+        // The newest row keeps its entry animation only while it is genuinely
+        // new, so a periodic rebuild does not re-animate the whole list.
+        const top = rows[0];
+        const isNew = top.seq != null && top.seq !== lastAnimatedSeq;
+        if (isNew) lastAnimatedSeq = top.seq;
+
+        feed.innerHTML = '';
+        for (const call of rows) {
+          const fresh = Math.max(0, call.in - call.cache_read - call.cache_write);
+          const row = document.createElement('div');
+          row.className = 'feed-row' + (isNew && call === top ? ' fresh-row' : '');
+          row.dataset.at = call.at;
+          const t = new Date(call.at);
+          row.innerHTML =
+            `<div class="feed-time">${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}</div>` +
+            `<div class="feed-model">${lucidos.utils.escapeHtml(modelName(call.model))}</div>` +
+            `<div class="feed-tok">${fmtTok(fresh)} fresh · ${fmtTok(call.cache_read)} cached · ${fmtTok(call.out)} out</div>` +
+            `<div class="feed-cost">${fmtMoney(costOf(call.model, { in: call.in, cache_read: call.cache_read, cache_write: call.cache_write, out: call.out }, call.in >= (pricing?.long_context_multiplier?.threshold_tokens || 2e5) ? { in: call.in, out: call.out, cache_read: call.cache_read, cache_write: call.cache_write } : null))}</div>`;
+          feed.appendChild(row);
+        }
+      }
+
+      /** Reconcile against the event store: everything that landed after the
+       *  rollup's cursor and is not already folded in.
        *
-       *  Queried from the same store the rollup reads, and folded through the
-       *  same `pushLive` path, so the frame dedupe and the seq > last_sequence
-       *  guard apply identically and nothing is counted twice. Only the
-       *  current local day is fetched: that is the only day the merge folds
-       *  live calls into, and it caps the query at one day of events.
+       *  This is the dashboard's source of truth, and SSE is only an
+       *  accelerator on top of it. That inversion is the whole point. `live`
+       *  used to hold only what arrived over SSE while the tab was open, so
+       *  every way the stream can quietly stop (a suspended laptop, a dropped
+       *  EventSource, a proxy idle timeout, a backgrounded phone) left the
+       *  numbers frozen with no sign anything was wrong. The page looked
+       *  connected, the rollup timestamp looked recent, and the figures were
+       *  simply old. Clicking Refresh appeared to fix it because a reload was
+       *  the only thing that ever re-read the store.
+       *
+       *  Now it runs on load, on a timer while the tab is visible, whenever
+       *  the tab is shown again, and whenever the network comes back. It is
+       *  idempotent: rows are deduped by sequence in `pushLive`, so the timer
+       *  and the stream racing over the same call count it once.
        *
        *  Deliberately not a spinner or a blocking step: it runs after the
        *  first render, so the dashboard paints from the rollup immediately and
        *  the recent tail fills in behind it. */
-      async function backfillSinceRollup() {
+      /** The engine's event-query endpoint, under this workspace's prefix.
+       *
+       *  `lucidos.apiUrl` is the SDK's sanctioned answer for an engine
+       *  endpoint no SDK method covers, and it exists because getting this
+       *  wrong is what froze this dashboard: an app iframe is served at
+       *  `/<workspace>/app/<id>/` with no `<base href>`, so a hand-written
+       *  `/api/v1/...` either nests under the app path or makes the gateway
+       *  read `api` as a workspace name. Both 404, silently.
+       *
+       *  This app loads sdk.js in its <head>, so the global is always there;
+       *  a missing `apiUrl` means the SDK failed to load and every other
+       *  `lucidos.*` call is broken too. Fail loudly rather than deriving a
+       *  URL that would silently 404. */
+      function eventsEndpoint() {
+        const apiUrl = window.lucidos?.apiUrl;
+        if (!apiUrl) throw new Error('Lucidos SDK not loaded: cannot resolve the events endpoint');
+        return new URL(apiUrl('/events/query'), location.origin);
+      }
+
+      /** Raw model id -> the display label the picker already shows.
+       *
+       *  The engine's registry carries a `label` for every model, which is
+       *  what Settings renders. This dashboard was printing the `id` instead,
+       *  so a row read `claude-opus-5@default[1m]` where the picker two panels
+       *  away says `Opus 5 (1M)`. Same model, two vocabularies, and the raw
+       *  one is a routing string: `@default` is a Vertex endpoint alias and
+       *  `[1m]` a context-window suffix. Neither is a fact about the model
+       *  worth a reader's attention.
+       *
+       *  Falls back to the id, deliberately. A model that has since been
+       *  removed from the registry still has rows in the rollup, and printing
+       *  its id is honest; printing nothing, or dropping the row, is not. */
+      let modelLabels = {};
+      let modelLabelsNoAlias = {};
+
+      /** `claude-opus-5@default[1m]` -> `claude-opus-5[1m]`.
+       *
+       *  THE ROLLUP AND THE REGISTRY DO NOT AGREE ON THE ID. The registry
+       *  keys on the full routing string including the `@default` Vertex
+       *  endpoint alias; what reaches the usage rows has that alias stripped
+       *  already, so an exact lookup misses and the row printed
+       *  `claude-opus-5[1m]` while the picker said `Opus 5 (1M)`. Only the
+       *  aliased models were affected, which is why three of four rows in the
+       *  table looked correct and one did not.
+       *
+       *  Normalising both sides is the fix rather than special-casing
+       *  `@default`, because the alias is per-deployment: another endpoint
+       *  name would reintroduce the same gap. */
+      function stripEndpointAlias(id) {
+        return String(id).replace(/@[^[\]]*/, '');
+      }
+
+      async function loadModelLabels() {
+        const apiUrl = window.lucidos?.apiUrl;
+        if (!apiUrl) return;
+        try {
+          const res = await fetch(new URL(apiUrl('/models'), location.origin),
+                                  { headers: { Accept: 'application/json' } });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const body = await res.json();
+          const rows = Array.isArray(body) ? body : (body.models || body.data || []);
+          const next = {};
+          const nextNoAlias = {};
+          for (const m of rows) {
+            if (!m || !m.id || !m.label) continue;
+            next[m.id] = m.label;
+            // First registry row wins, so an exact id can never be shadowed
+            // by another model's de-aliased form.
+            const bare = stripEndpointAlias(m.id);
+            if (!(bare in nextNoAlias)) nextNoAlias[bare] = m.label;
+          }
+          modelLabels = next;
+          modelLabelsNoAlias = nextNoAlias;
+        } catch (e) {
+          // Non-fatal by design: the dashboard's job is the numbers, and it
+          // shows every one of them with ids if the registry is unreachable.
+          console.warn('token-cost: could not load model labels', e);
+        }
+      }
+
+      function modelName(id) {
+        return modelLabels[id]
+            || modelLabelsNoAlias[stripEndpointAlias(id)]
+            || id;
+      }
+
+      async function catchUp(opts = {}) {
+        if (catchUpInFlight) return;
+        catchUpInFlight = true;
+        try {
+          await reconcile(opts);
+        } finally {
+          catchUpInFlight = false;
+        }
+      }
+
+      async function reconcile(opts) {
         const cursor = daily.last_sequence || 0;
+        // The window has to cover every call the rollup has not absorbed, not
+        // just today's. Anchored on when the rollup last ran, with a margin,
+        // so a dashboard open across midnight still reconciles yesterday's
+        // unrolled tail instead of silently dropping it.
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
+        let since = startOfDay;
+        if (daily.generated) {
+          const ran = new Date(new Date(daily.generated).getTime() - 5 * 60000);
+          if (ran < since) since = ran;
+        }
         const PAGE = 500;
 
         // Page backwards from newest and stop at the first row the rollup
@@ -1249,33 +1736,50 @@
         // NOTE: `lucidos.events.query` builds its querystring from event_type /
         // since / until / limit only, so it silently DROPS before_event_id and
         // every page would come back identical. The engine endpoint does
-        // support the cursor, so this goes straight at it: same origin, no
-        // proxy needed, exactly the fallback the SDK guide names for
-        // /api/v1/*. Switch back to the SDK if it ever forwards the cursor.
-        const base = new URL('api/v1/events/query', document.baseURI);
+        // support the cursor, so this goes straight at it, via
+        // `eventsEndpoint()` above. Switch back to the SDK if it ever forwards
+        // the cursor.
+        const base = eventsEndpoint();
         const collected = [];
         let before = null;
         let reachedRollup = false;
+        let failed = false;
         for (let page = 0; page < 40 && !reachedRollup; page++) {
           let rows;
           try {
             const u = new URL(base);
             u.searchParams.set('event_type', 'ContextCaptured');
-            u.searchParams.set('since', startOfDay.toISOString());
+            u.searchParams.set('since', since.toISOString());
             u.searchParams.set('limit', String(PAGE));
             if (before) u.searchParams.set('before_event_id', before);
             const res = await fetch(u, { headers: { Accept: 'application/json' } });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             rows = await res.json();
           } catch (e) {
-            // A failed backfill is not worth a toast: the rollup is still on
-            // screen and the next hourly run closes the gap anyway.
-            console.warn('token-cost: backfill failed', e);
+            // Kept, and shown. "Something went wrong, retrying" is the kind of
+            // message that let this sit broken for weeks: the failure was a
+            // 404 on a malformed URL the whole time, and nothing on screen
+            // could have told anyone that.
+            console.warn('token-cost: catch-up failed', e);
+            lastCatchUpError = (e && e.message) ? e.message : String(e);
+            failed = true;
             break;
           }
           if (!Array.isArray(rows) || !rows.length) break;
           for (const r of rows) {
-            if (r.sequence != null && r.sequence <= cursor) { reachedRollup = true; break; }
+            // Stop only at the rollup's cursor. Stopping at the first row we
+            // already hold would be cheaper and is wrong: EventSource
+            // reconnects by itself, so the signature of a dropped stream is a
+            // HOLE with known rows on both sides of it. A walk that halts at
+            // the first familiar sequence turns around at the near edge of
+            // that hole and never fills it, which is precisely the drift this
+            // whole mechanism exists to remove. Rows already folded in are
+            // skipped one at a time by `pushLive`'s sequence dedupe instead,
+            // so a pass over familiar ground is cheap rather than harmful.
+            if (r.sequence != null && r.sequence <= cursor) {
+              reachedRollup = true;
+              break;
+            }
             collected.push(r);
           }
           if (rows.length < PAGE) break;
@@ -1288,20 +1792,46 @@
         let added = 0;
         for (const r of collected) {
           if (!r.payload || !r.payload.usage) continue;
-          if (live.some((c) => c.seq === r.sequence)) continue;
           added += pushLive({
             seq: r.sequence,
             created: r.created,
             thread_id: r.thread_id,
             // The SSE envelope carries `type`; the stored payload does not, so
-            // stamp it or pushLive's own guard rejects every backfilled row.
+            // stamp it or pushLive's own guard rejects every reconciled row.
             event: { ...r.payload, type: 'ContextCaptured' },
           }, { quiet: true }) ? 1 : 0;
         }
-        if (added) render();
+
+        lastCatchUpFailed = failed;
+        if (!failed) { lastCatchUpAt = performance.now(); lastCatchUpError = null; }
+        // Anything found by a periodic pass is a call SSE should have
+        // delivered and did not, which is the signal that the stream is dead
+        // rather than the workspace being quiet. Two exemptions, both of them
+        // calls the stream was never responsible for:
+        //   - the first pass after load, which is closing the rollup gap;
+        //   - anything stamped before this page opened its stream, which no
+        //     EventSource on this page could have carried.
+        // The second one is what kept the header honest on a page opened in
+        // the middle of a busy run.
+        if (!opts.initial) {
+          const missed = collected.filter((r) => {
+            if (!r.created) return true;
+            const t = new Date(r.created).getTime();
+            return !sseOpenedAt || !Number.isFinite(t) || t >= sseOpenedAt;
+          }).length;
+          if (missed) streamMissed += Math.min(missed, added);
+        }
+        if (added || failed || !opts.initial) render();
       }
 
       async function load() {
+        // Fired before the pricing read rather than awaited here: the registry
+        // is a separate endpoint and the two have no dependency, so this
+        // overlaps with the file reads and is settled well before the paint
+        // below. Awaited rather than left dangling, because a table that
+        // paints ids and then swaps to names a moment later is a flicker on
+        // camera.
+        const labelsReady = loadModelLabels();
         try {
           pricing = JSON.parse(await lucidos.data.read(PRICING));
         } catch (e) {
@@ -1319,17 +1849,59 @@
         if (!pricing.long_context_multiplier) {
           pricing.long_context_multiplier = { ...DEFAULT_PRICING.long_context_multiplier };
         }
+        if (!pricing.currency) pricing.currency = 'USD';
+        pricing.currency = String(pricing.currency).toUpperCase();
+        // A pricing.json written before multi-currency has no fx block at all,
+        // and one written by hand may name a base with no self-rate. Both must
+        // land on a table that at least converts the base to itself.
+        if (!pricing.fx || typeof pricing.fx !== 'object') {
+          pricing.fx = JSON.parse(JSON.stringify(DEFAULT_PRICING.fx));
+        }
+        if (!pricing.fx.rates || typeof pricing.fx.rates !== 'object') pricing.fx.rates = {};
+        pricing.fx.rates[pricing.currency] = 1;
+
+        // Display currency is per device, so it is read from localStorage, not
+        // from the shared file. A stored code the table no longer carries falls
+        // back to the base rather than showing every figure unconverted.
+        let stored = null;
+        try { stored = localStorage.getItem(DISPLAY_CCY_KEY); } catch (e) { /* private mode */ }
+        displayCcy = stored && fxRate(stored) !== null ? stored.toUpperCase() : pricing.currency;
+
         try {
           daily = JSON.parse(await lucidos.data.read(DAILY));
         } catch (e) {
-          lucidos.ui.toast('No rollup yet, run the token-cost rollup trigger', 'warning');
+          // NO TOAST HERE. A missing rollup file is the ORDINARY state of a
+          // young workspace, not a fault: the dashboard reads the live tail
+          // and shows correct numbers without it, which is exactly what the
+          // header's "live · N calls since the last rollup" already says.
+          //
+          // As a toast it was actively wrong on camera. It fired on every
+          // single open in a fresh workspace, threw a yellow warning card over
+          // a dashboard that was working perfectly, and told the viewer to go
+          // run a trigger to fix a problem that does not exist. Same family as
+          // the dropped-calls banner: the app accusing itself of a fault while
+          // doing its job correctly.
+          //
+          // Logged rather than swallowed, so a REAL read failure (permissions,
+          // corrupt JSON) is still findable in the console.
+          console.info('no daily rollup yet, running on the live tail:', e && e.message);
         }
+        // A newer rollup has absorbed part of the live tail, so drop what its
+        // cursor now covers. Without this the same calls are counted twice for
+        // the rest of the session: once in the stored rows, once in `live`.
+        // That is the drift the hourly reload used to introduce.
+        const cursor = daily.last_sequence || 0;
+        live = live.filter((c) => c.seq == null || c.seq > cursor);
+        seenSeq = new Set(live.map((c) => c.seq).filter((s) => s != null));
+        liveRevision++;
+        await labelsReady;
         syncProducerFilter();
+        syncCurrencyFilter();
         renderSettings();
         render();
         // After the paint, never before it: the rollup is the bulk of the
         // numbers and should be on screen while the recent tail is fetched.
-        await backfillSinceRollup();
+        await catchUp({ initial: true });
       }
 
       /** Keep the producer dropdown in step with the configured labels, plus any
@@ -1356,19 +1928,126 @@
         producerSelect.setValue(options.some((o) => o.value === prev) ? prev : 'all');
       }
 
+      /** The dashboard's display-currency picker, listing the base plus every
+       *  currency with a usable rate. It sits beside the producer filter
+       *  because it reads the same way: a lens on the same numbers, not a
+       *  setting that changes them. */
+      function syncCurrencyFilter() {
+        const base = baseCcy();
+        const codes = [base].concat(
+          Object.keys(fxRates()).filter((c) => c !== base && fxRate(c) !== null).sort());
+        const options = codes.map((c) => ({ value: c, label: c === base ? `${c} · base` : ccyLabel(c) }));
+
+        if (!currencySelect) {
+          currencySelect = lucidos.ui.Select.create({
+            options,
+            value: displayCcy || base,
+            onChange: (v) => {
+              displayCcy = v;
+              try { localStorage.setItem(DISPLAY_CCY_KEY, v); } catch (e) { /* private mode */ }
+              render();
+            },
+          });
+          document.getElementById('currency-slot').appendChild(currencySelect.element);
+        } else {
+          currencySelect.setOptions(options);
+          currencySelect.setValue(codes.includes(displayCcy) ? displayCcy : base);
+        }
+        renderFxNote();
+      }
+
+      /** How the converted figures are qualified. Silent while reading in the
+       *  base (nothing is being converted), explicit otherwise, since a rate
+       *  months out of date is the one way these numbers can mislead. */
+      function renderFxNote() {
+        const el = document.getElementById('fx-note');
+        const base = baseCcy();
+        if (!displayCcy || displayCcy === base) { el.textContent = ''; return; }
+        const stamp = pricing?.fx?._updated;
+        const age = stamp ? Math.floor((Date.now() - new Date(stamp + 'T00:00:00Z').getTime()) / 864e5) : null;
+        const when = age === null ? 'an undated rate'
+          : age <= 0 ? "today's rate"
+          : age === 1 ? "yesterday's rate"
+          : age < 14 ? `a rate from ${age} days ago`
+          : `a rate from ${stamp}, ${age} days old`;
+        el.textContent = `converted from ${base} at ${when}`;
+        el.className = age !== null && age >= 14 ? 'dirty-dot' : 'muted';
+        el.style.fontSize = 'var(--font-size-xs)';
+      }
+
       /* ---------------- Settings ---------------- */
 
-      // Draft the user is editing. Nothing here reaches the dashboard until Save.
+      // Draft the user is editing. It is written back a moment after the last
+      // keystroke, so there is no Save button and no unsaved state to lose.
       let draft = null;
       let dirty = false;
+      let saveTimer = null;
+      let saving = false;
 
       const RATE_KEYS = ['uncached_in', 'cache_write', 'cache_read', 'out'];
+      const SAVE_DEBOUNCE_MS = 700;
+      // Managed Select for the base currency, held so each renderSettings pass
+      // can replace it rather than stacking a second one in the same slot.
+      let baseSelect = null;
 
+      function setSaveState(text, cls) {
+        const el = document.getElementById('save-state');
+        el.textContent = text;
+        el.className = cls;
+      }
+
+      // Every edit path calls this. It flags the pending write and restarts the
+      // debounce, so a burst of keystrokes costs exactly one file write.
       function markDirty() {
         dirty = true;
-        document.getElementById('save-state').textContent = 'Unsaved changes';
-        document.getElementById('save-state').className = 'dirty-dot';
+        setSaveState('Saving\u2026', 'dirty-dot');
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(saveNow, SAVE_DEBOUNCE_MS);
       }
+
+      async function saveNow() {
+        if (!draft || saving) return;
+        saving = true;
+        const payload = {
+          _comment: 'Model rates are per 1,000,000 tokens, in the currency named by \u2018currency\u2019. Edited from the Token Cost app\u2019s Settings tab, or by hand. A model id not listed here falls back to \u2018default\u2019. \u2018fx.rates\u2019 is units of each currency per 1 unit of the base, used for display conversion only.',
+          _updated: localDay(new Date()),
+          currency: (draft.currency || 'USD').toUpperCase(),
+          models: draft.models,
+          long_context_multiplier: draft.long_context_multiplier,
+          producers: draft.producers,
+          fx: (draft.fx && draft.fx.rates) ? draft.fx : { rates: {} },
+        };
+        try {
+          await lucidos.data.write(PRICING, JSON.stringify(payload, null, 2));
+        } catch (e) {
+          setSaveState('Not saved', 'dirty-dot');
+          lucidos.ui.toast(`Could not save: ${e.message || e}`, 'error', { key: 'tc-save' });
+          return;
+        } finally {
+          saving = false;
+        }
+        pricing = JSON.parse(JSON.stringify(payload));
+        usingDefaultRates = false;
+        document.getElementById('rates-source').style.display = 'none';
+        pricing.fx.rates[pricing.currency] = 1;
+        // Renaming the base, or removing the currency being displayed, must not
+        // leave the dashboard converting at a rate that no longer exists.
+        if (fxRate(displayCcy) === null) displayCcy = pricing.currency;
+        syncCurrencyFilter();
+        dirty = false;
+        setSaveState('Saved', 'muted');
+        render();
+      }
+
+      // A tab switch or a closed window must not swallow a write still sitting
+      // in the debounce, so flush it early on both.
+      function flushSave() {
+        if (!dirty) return;
+        clearTimeout(saveTimer);
+        saveNow();
+      }
+      window.addEventListener('blur', flushSave);
+      document.addEventListener('visibilitychange', () => { if (document.hidden) flushSave(); });
 
       function numInput(value, onInput, cls) {
         const i = document.createElement('input');
@@ -1403,9 +2082,21 @@
 
       function renderSettings() {
         if (!draft) draft = JSON.parse(JSON.stringify(pricing || DEFAULT_PRICING));
-
         document.getElementById('rates-source').style.display =
           usingDefaultRates ? '' : 'none';
+        if (!draft.currency) draft.currency = 'USD';
+        if (!draft.fx || typeof draft.fx !== 'object') draft.fx = { rates: {} };
+        if (!draft.fx.rates) draft.fx.rates = {};
+        draft.fx.rates[draft.currency] = 1;
+
+        // The rates note names the unit the table below is entered in, so the
+        // numbers are never ambiguous once the base is something other than USD.
+        document.getElementById('rates-note').innerHTML =
+          `Rates per 1,000,000 tokens, in <strong>${lucidos.utils.escapeHtml(draft.currency)}</strong>. ` +
+          'Every cost on the dashboard is computed from these numbers in the browser, so an edit ' +
+          're-prices your whole history as soon as it lands. A model the engine reports that is not ' +
+          'listed here falls back to the <strong>default</strong> row.';
+        document.getElementById('fx-base-label').textContent = draft.currency;
 
         // Model rates. `default` is the fallback row every unlisted model uses,
         // so its id is fixed and it cannot be removed.
@@ -1485,6 +2176,62 @@
           tr.appendChild(actions);
           pbody.appendChild(tr);
         }
+
+        // Base currency. Rebuilt as a managed Select each pass, because the
+        // option list grows as currencies are added to the table below.
+        const baseSlot = document.getElementById('base-currency-slot');
+        const baseCodes = [...new Set([draft.currency].concat(
+          Object.keys(draft.fx.rates), Object.keys(CURRENCY_NAMES)))].sort();
+        if (baseSelect) baseSelect.destroy();
+        baseSelect = lucidos.ui.Select.create({
+          options: baseCodes.map((c) => ({ value: c, label: ccyLabel(c) })),
+          value: draft.currency,
+          onChange: (v) => {
+            // Only the unit the typed rates are read as changes. The rates
+            // themselves are left exactly as entered, deliberately: silently
+            // multiplying them here would compound on every switch.
+            draft.currency = v;
+            draft.fx.rates[v] = 1;
+            markDirty();
+            renderSettings();
+          },
+        });
+        baseSlot.appendChild(baseSelect.element);
+
+        // Exchange rates, base excluded: its rate is definitionally 1 and an
+        // editable field for it is just a way to break every other figure.
+        const fxBody = document.getElementById('fx-body');
+        fxBody.innerHTML = '';
+        for (const code of Object.keys(draft.fx.rates).sort()) {
+          if (code === draft.currency) continue;
+          const tr = document.createElement('tr');
+
+          const codeCell = document.createElement('td');
+          const codeLabel = document.createElement('span');
+          codeLabel.textContent = ccyLabel(code);
+          codeCell.appendChild(codeLabel);
+          tr.appendChild(codeCell);
+
+          const rateCell = document.createElement('td');
+          const input = numInput(draft.fx.rates[code], (v) => {
+            draft.fx.rates[code] = isNaN(v) ? 0 : v;
+            // A hand-entered rate is no longer the ECB's, so the age note must
+            // stop claiming it is from the last refresh.
+            draft.fx._updated = localDay(new Date());
+          });
+          input.step = '0.0001';
+          rateCell.appendChild(input);
+          tr.appendChild(rateCell);
+
+          const actionsCell = document.createElement('td');
+          actionsCell.appendChild(removeBtn(() => { delete draft.fx.rates[code]; }, `Remove ${code}`));
+          tr.appendChild(actionsCell);
+          fxBody.appendChild(tr);
+        }
+
+        const stamp = draft.fx._updated;
+        document.getElementById('fx-status').textContent =
+          stamp ? `Rates as of ${stamp}` : 'Rates have never been refreshed';
       }
 
       function showTab(which) {
@@ -1517,42 +2264,84 @@
         renderSettings();
       });
 
-      document.getElementById('btn-save').addEventListener('click', async () => {
-        const payload = {
-          _comment: 'USD per 1,000,000 tokens. Edited from the Token Cost app\u2019s Settings tab, or by hand. A model id not listed here falls back to \u2018default\u2019.',
-          _updated: localDay(new Date()),
-          currency: draft.currency || 'USD',
-          models: draft.models,
-          long_context_multiplier: draft.long_context_multiplier,
-          producers: draft.producers,
-        };
-        try {
-          await lucidos.data.write(PRICING, JSON.stringify(payload, null, 2));
-        } catch (e) {
-          lucidos.ui.toast(`Could not save: ${e.message || e}`, 'error');
+      document.getElementById('btn-add-currency').addEventListener('click', async () => {
+        const missing = Object.keys(CURRENCY_NAMES)
+          .filter((c) => c !== draft.currency && !(c in draft.fx.rates));
+        if (!missing.length) {
+          lucidos.ui.toast('Every known currency is already in the table', 'info', { key: 'tc-ccy' });
           return;
         }
-        pricing = JSON.parse(JSON.stringify(payload));
-        usingDefaultRates = false;
-        document.getElementById('rates-source').style.display = 'none';
-        dirty = false;
-        document.getElementById('save-state').textContent = 'Saved';
-        document.getElementById('save-state').className = 'muted';
-        lucidos.ui.toast('Pricing saved, dashboard re-priced', 'success');
-        render();
+        const pick = await lucidos.ui.prompt({
+          title: 'Add a currency',
+          message: 'Pick one to add at rate 0, then press Update rates to fill it in, or type the rate by hand.',
+          placeholder: missing.slice(0, 6).join(', ') + '…',
+          okLabel: 'Add',
+        });
+        const code = String(pick || '').trim().toUpperCase();
+        if (!code) return;
+        if (!/^[A-Z]{3}$/.test(code)) {
+          lucidos.ui.toast(`${code} is not a three-letter currency code`, 'error', { key: 'tc-ccy' });
+          return;
+        }
+        if (code === draft.currency || code in draft.fx.rates) {
+          lucidos.ui.toast(`${code} is already in the table`, 'info', { key: 'tc-ccy' });
+          return;
+        }
+        draft.fx.rates[code] = 0;
+        markDirty();
+        renderSettings();
+        lucidos.ui.toast(`${code} added at rate 0. Press Update rates to fetch it.`, 'success', { key: 'tc-ccy', durationMs: 3500 });
       });
 
-      document.getElementById('btn-revert').addEventListener('click', () => {
-        draft = JSON.parse(JSON.stringify(pricing));
-        dirty = false;
-        document.getElementById('save-state').textContent = '';
-        renderSettings();
+      document.getElementById('btn-fx-refresh').addEventListener('click', async () => {
+        const btn = document.getElementById('btn-fx-refresh');
+        const status = document.getElementById('fx-status');
+        const base = draft.currency;
+        // Ask only for what the table already holds. Frankfurter rebases
+        // server-side, so a non-USD base needs no arithmetic here.
+        const wanted = Object.keys(draft.fx.rates).filter((c) => c !== base);
+        if (!wanted.length) {
+          lucidos.ui.toast('No currencies to update yet. Add one first.', 'info', { key: 'tc-fx' });
+          return;
+        }
+        btn.disabled = true;
+        status.textContent = 'Fetching…';
+        try {
+          const url = `https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(base)}` +
+            `&symbols=${encodeURIComponent(wanted.join(','))}`;
+          const res = await fetch(url, { headers: { Accept: 'application/json' } });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          const got = data && data.rates ? data.rates : {};
+          let n = 0;
+          const missed = [];
+          for (const code of wanted) {
+            const r = Number(got[code]);
+            if (Number.isFinite(r) && r > 0) { draft.fx.rates[code] = r; n++; } else missed.push(code);
+          }
+          if (!n) throw new Error('no rates came back');
+          // The API's own quote date, not today: ECB publishes on working days,
+          // so a Sunday refresh legitimately returns Friday's rates and the age
+          // note should say so.
+          draft.fx._updated = data.date || localDay(new Date());
+          markDirty();
+          renderSettings();
+          const tail = missed.length ? `. No rate for ${missed.join(', ')}` : '';
+          lucidos.ui.toast(`Updated ${n} rate${n === 1 ? '' : 's'} as of ${draft.fx._updated}${tail}`,
+            missed.length ? 'warning' : 'success', { key: 'tc-fx', durationMs: 4000 });
+        } catch (e) {
+          status.textContent = draft.fx._updated ? `Rates as of ${draft.fx._updated}` : 'Rates have never been refreshed';
+          lucidos.ui.toast(`Could not fetch rates: ${e.message || e}. The stored ones are unchanged.`,
+            'error', { key: 'tc-fx' });
+        } finally {
+          btn.disabled = false;
+        }
       });
 
       document.getElementById('btn-defaults').addEventListener('click', async () => {
         const ok = await lucidos.ui.confirm({
           title: 'Restore defaults?',
-          message: 'Replace every rate, multiplier and producer label with the built-in defaults. Nothing is written until you press Save.',
+          message: 'Replace every rate, multiplier and producer label with the built-in defaults. This saves straight away.',
           okLabel: 'Restore',
         });
         if (!ok) return;
@@ -1573,6 +2362,9 @@
         // the context state too, because a silent register is otherwise
         // indistinguishable from a broken one.
         lastCoinAt = 0;
+        // Claim the session inside the gesture, before the first context is
+        // built, so iOS routes this as playback from the very first ring.
+        const hasSession = claimPlaybackSession();
         playCaChing();
         const ac = audio();
         if (!ac) {
@@ -1587,7 +2379,18 @@
         // asynchronously, so the verdict waits for it.
         const snd = currentSound();
         loadSound(ac, snd.url).then(
-          () => lucidos.ui.toast(`${snd.label} armed. Every live call rings it.`, 'success', { key: 'tc-sound', durationMs: 2500 }),
+          () => {
+            // On an iPhone with no audioSession support there is one remaining
+            // way to be silent while every check passes, and the user cannot
+            // guess it from a success toast, so it is named here.
+            const armed = `${snd.label} armed. Every live call rings it.`;
+            if (isIOS() && !hasSession) {
+              lucidos.ui.toast(`${armed} If you hear nothing, check the ring/silent switch: this iOS version mutes web audio with it.`,
+                'info', { key: 'tc-sound', durationMs: 6000 });
+            } else {
+              lucidos.ui.toast(armed, 'success', { key: 'tc-sound', durationMs: 2500 });
+            }
+          },
           (e) => lucidos.ui.toast(`Could not load ${snd.label}: ${e.message}`, 'error', { key: 'tc-sound' }),
         );
       });
@@ -1599,24 +2402,22 @@
         if (f) uploadSound(f);
       });
       document.getElementById('btn-refresh').addEventListener('click', async () => {
-        if (dirty) {
-          const ok = await lucidos.ui.confirm({
-            title: 'Discard unsaved settings?',
-            message: 'Reloading pulls the pricing table back off disk and drops your unsaved edits.',
-            okLabel: 'Discard and reload',
-            danger: true,
-          });
-          if (!ok) return;
-        }
+        // Nothing can be unsaved for long, but a write may still be sitting in
+        // the debounce, so land it before pulling the file back off disk.
+        flushSave();
         draft = null;
         dirty = false;
-        document.getElementById('save-state').textContent = '';
+        setSaveState('', 'muted');
         await load();
         lucidos.ui.toast('Reloaded', 'success');
       });
 
       lucidos.sse.connect();
-      lucidos.sse.on('ContextCaptured', (data) => pushLive(data));
+      sseOpenedAt = Date.now();
+      lucidos.sse.on('ContextCaptured', (data) => {
+        lastSseAt = performance.now();
+        pushLive(data);
+      });
       // The rollup trigger rewrites the file, so pick it up without a reload.
       lucidos.sse.on('DataFileWritten', (d) => {
         if (String(d?.path || d?.event?.path || '').includes('token-cost/daily.json')) load();
@@ -1625,6 +2426,43 @@
       renderSoundBtn();
       renderSoundGrid();
       load();
+
+      // ---- Staying current --------------------------------------------------
+      // Nothing below assumes the stream is alive. Each of these is a way the
+      // page can find out it is behind, and every one ends in the same
+      // idempotent reconcile, so they can all fire at once harmlessly.
+
+      // The backstop. Only while the tab is visible: a hidden tab is throttled
+      // to roughly once a minute anyway, and the visibilitychange handler
+      // below covers the return with a single immediate pass.
+      setInterval(() => {
+        if (document.hidden) return;
+        catchUp();
+        // A day boundary crossed with the page open re-cuts every column, and
+        // "Spend today" must stop meaning yesterday. Only worth a render when
+        // the date actually changed.
+        const today = localDay(new Date());
+        if (today !== renderedDay) { renderedDay = today; render(); }
+        // The rollup timestamp ages on its own, so the meta line has to be
+        // repainted for staleness to ever appear without new calls landing.
+        if (isStale()) render();
+      }, CATCHUP_MS);
+
+      // Coming back to the tab is the single most likely moment to be behind:
+      // a suspended machine has missed everything, and the EventSource may
+      // have died without a reconnect. Reconcile immediately rather than
+      // waiting up to a full tick.
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) catchUp();
+      });
+      window.addEventListener('pageshow', () => catchUp());
+      window.addEventListener('online', () => catchUp());
+      // An EventSource that errors is not necessarily dead, but it is a strong
+      // hint the numbers are about to drift. Poll once now and let the timer
+      // carry it from there.
+      window.addEventListener('focus', () => {
+        if (lastSseAt && performance.now() - lastSseAt > CATCHUP_MS) catchUp();
+      });
 
       // ---- Tooltip ----------------------------------------------------------
       // Mirrors the host's global tooltip: same attributes, same box, same
