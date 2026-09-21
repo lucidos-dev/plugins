@@ -3,14 +3,13 @@
    ══════════════════════════════════════════════════════
    Save / Open / Share .slides decks via Google Drive.
 
-   Auth: uses lucidos.oauth.getAccessToken('google') — the SDK
-   method purpose-built for handing a short-lived bearer token to
-   in-browser code. The token never persists in the iframe; we
-   re-request it for every Drive call. The Drive REST API is
-   CORS-enabled and accepts the token as an Authorization header,
-   so no apis.json proxy entry or stored credential is needed —
-   the app just rides whatever Google account this workspace has
-   connected (via the OAuth account settings / connect_oauth_account).
+   Auth: every call goes through the `google` entry in
+   data/config/apis.json via lucidos.proxy('google').fetch(). The engine
+   forwards server-side and attaches the connected Google account's
+   access token, so no credential is ever read, held or sent from this
+   iframe — and mixed-content / CORS never enter into it. The app rides
+   whatever Google account this workspace has connected (via the OAuth
+   account settings / connect_oauth_account).
 
    Scope note: a workspace connected with only `drive.file` can
    save, re-open, and share files THIS app created — which covers
@@ -22,48 +21,62 @@
    ══════════════════════════════════════════════════════ */
 
 SS.drive = (function () {
-  const DRIVE = 'https://www.googleapis.com/drive/v3';
-  const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
-  const MAP_KEY = 'ss-drive-map'; // { [presId]: driveFileId }
+  // Paths, not absolute URLs: every call below goes through the `google`
+  // engine proxy, which owns the base URL and injects the access token
+  // server-side. The credential never enters this iframe.
+  const DRIVE = '/drive/v3';
+  const UPLOAD = '/upload/drive/v3';
+  const MAP_KEY = 'driveFileMap'; // { [presId]: driveFileId }
+
+  // Workspace state document (SS.appState, defined in components.js). The app
+  // frame has no localStorage, so the deck→file map and the last-used folder
+  // live there. The test page loads drive.js WITHOUT components.js, so tolerate
+  // the store being absent.
+  function store() { return SS.appState || null; }
 
   /* ── local id ↔ Drive file id map ── */
   function loadMap() {
-    try { return JSON.parse(localStorage.getItem(MAP_KEY)) || {}; }
-    catch (e) { return {}; }
+    const s = store();
+    const m = s && s.get(MAP_KEY, null);
+    return (m && typeof m === 'object') ? m : {};
   }
   function rememberFile(presId, fileId) {
-    const m = loadMap();
+    const s = store();
+    if (!s) return;
+    const m = Object.assign({}, loadMap());
     m[presId] = fileId;
-    localStorage.setItem(MAP_KEY, JSON.stringify(m));
+    s.set(MAP_KEY, m);
   }
   function knownFileId(presId) { return loadMap()[presId] || null; }
 
-  /* ── token ── */
-  async function token() {
-    if (!window.lucidos || !lucidos.oauth) {
+  /* ── transport ──
+     Every Drive call goes through the `google` proxy entry in
+     data/config/apis.json. The engine forwards server-side and attaches the
+     connected Google account's access token, so no token is read, held or
+     sent from here. `path` is Drive-relative, e.g. `${DRIVE}/files/<id>`. */
+  async function driveFetch(path, init) {
+    if (!window.lucidos || !lucidos.proxy) {
       throw new Error('Lucidos SDK not available');
     }
+    let res;
     try {
-      const t = await lucidos.oauth.getAccessToken('google');
-      return t.accessToken;
+      res = await lucidos.proxy('google').fetch(path, init);
     } catch (err) {
-      const code = err && err.httpCode;
-      if (code === 404) {
+      throw new Error('Could not reach Google Drive: ' + (err && (err.message || err)));
+    }
+    if (res.status === 404 && !init) {
+      // A proxy with no connected account answers 404 before Drive is reached.
+      // Drive's own 404s carry a JSON error body; the proxy's does not.
+      const peek = res.clone();
+      let body = '';
+      try { body = await peek.text(); } catch (e) { /* ignore */ }
+      if (!body || body.indexOf('"error"') === -1) {
         throw new Error(
           'No Google account is connected to this workspace. ' +
           'Connect one in Settings → Accounts (or ask Lucidos to "connect my Google account"), then try again.'
         );
       }
-      throw new Error('Could not get a Google access token: ' + (err && (err.message || err)));
     }
-  }
-
-  async function driveFetch(url, init) {
-    const tok = await token();
-    const res = await fetch(url, {
-      ...init,
-      headers: { Authorization: 'Bearer ' + tok, ...(init && init.headers) },
-    });
     if (!res.ok) {
       let detail = '';
       try { const j = await res.json(); detail = j.error && j.error.message ? j.error.message : ''; }
@@ -193,8 +206,8 @@ SS.drive = (function () {
   }
 
   // Find the Drive file id for a deck by its durable presId tag (appProperties.presId),
-  // which save() writes on every upload. This survives across browsers/devices where
-  // the local deck→file map (localStorage) was never populated — preventing duplicate
+  // which save() writes on every upload. This survives the case where the deck→file
+  // map in the workspace state document was never populated — preventing duplicate
   // same-named files. Returns the most-recently-modified match, or null.
   async function findByPresId(presId) {
     // Drive query values are single-quoted; only search for query-safe ids.
@@ -313,16 +326,18 @@ SS.drive = (function () {
   }
 
   /* ── last-used folder memory ── */
-  const LAST_FOLDER_KEY = 'ss-drive-last-folder'; // { id, name }
+  const LAST_FOLDER_KEY = 'driveLastFolder'; // { id, name }
   function rememberFolder(id, name, path) {
-    try {
-      const entry = { id, name };
-      if (Array.isArray(path) && path.length) entry.path = path;
-      localStorage.setItem(LAST_FOLDER_KEY, JSON.stringify(entry));
-    } catch (e) {}
+    const s = store();
+    if (!s) return;
+    const entry = { id, name };
+    if (Array.isArray(path) && path.length) entry.path = path;
+    s.set(LAST_FOLDER_KEY, entry);
   }
   function lastFolder() {
-    try { return JSON.parse(localStorage.getItem(LAST_FOLDER_KEY)) || null; } catch (e) { return null; }
+    const s = store();
+    const f = s && s.get(LAST_FOLDER_KEY, null);
+    return (f && typeof f === 'object') ? f : null;
   }
 
   /* ── pinned default folder (workspace config) ──
@@ -427,7 +442,7 @@ SS.drive = (function () {
 
   return {
     save, resolveSaveContent, list, download, meta, share, parseFileId, importDeck, findByPresId,
-    knownFileId, token, toast,
+    knownFileId, toast,
     getParents, moveFile, createFolder, listFolders, listSharedDrives, listInFolder, ancestry,
     rememberFolder, lastFolder, loadPinned, pinnedFolder, setPinned,
   };
@@ -834,15 +849,20 @@ SS.driveUI = (function () {
     });
   }
 
-  /* ── Save / Open entry points ── */
+  /* ── Save / Open entry points ──
+     Both await SS.appState so the deck→file map and the last-used folder
+     (workspace state, read asynchronously) are populated before the browser
+     opens — otherwise a save could create a duplicate Drive file. */
   async function saveCurrent() {
     const pres = SS._currentPres;
     if (!pres) { SS.drive.toast('No presentation open', 'warning'); return; }
+    await SS.appState.ready();
     await SS.drive.loadPinned();
     folderBrowser('save');
   }
 
   async function openPicker() {
+    await SS.appState.ready();
     await SS.drive.loadPinned();
     folderBrowser('open');
   }

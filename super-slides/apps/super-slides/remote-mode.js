@@ -738,13 +738,22 @@
 
   /* ── Public API ──────────────────────────────────── */
 
+  // `ss-mode` is deliberately PER-DEVICE — presenter on the laptop, remote on
+  // the phone — so it stays out of the workspace-wide SS.appState document,
+  // which every device shares. localStorage throws SecurityError in the
+  // isolated app frame, so both writes are guarded and the mode simply isn't
+  // remembered there, until Lucidos grows a per-device storage affordance.
+  function rememberMode(mode) {
+    try { localStorage.setItem('ss-mode', mode); } catch (err) { /* no storage in this frame */ }
+  }
+
   SS.toggleRemoteMode = function () {
     if (S.active) {
       SS.closeRemoteMode();
     } else {
       S.active = true;
       container.hidden = false;
-      localStorage.setItem('ss-mode', 'remote');
+      rememberMode('remote');
       showConnecting();
       ping();
     }
@@ -756,7 +765,7 @@
     S.connected = false;
     clearTimeout(connTimer);
     resetTimer();
-    localStorage.setItem('ss-mode', 'presenter');
+    rememberMode('presenter');
     container.hidden = true;
   };
 })();

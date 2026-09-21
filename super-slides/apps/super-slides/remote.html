@@ -4,9 +4,2031 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Super Slides — Remote</title>
+<!--
+  ════════════════════════════════════════════════════════════════════
+  This app runs in an isolated iframe at an opaque origin. Behind a
+  gateway the frame sends no device credential with a subresource, so a
+  stylesheet link or script src pointing at one of the app's OWN files
+  would answer 401 and the app would render unstyled or dead. Every one
+  of them is therefore INLINED below.
+
+  /api/v1/sdk*.js and /api/v1/sdk-iframe.css are exempt from the device
+  gate and stay real external tags.
+
+  ⚠ The inlined blocks are COPIES of the sibling source files, which are
+  kept (tests/index.html loads drive.js and nav-logic.js directly, and
+  knowhow/slides-format.md documents the layout). There is no build step:
+  edit the source file AND the copy here, or the app and the tests drift.
+  ════════════════════════════════════════════════════════════════════
+-->
+<script src="/api/v1/sdk-prefs.js"></script>
 <link rel="stylesheet" href="/api/v1/sdk-iframe.css">
-<link rel="stylesheet" href="styles.css">
-<link rel="stylesheet" href="remote.css">
+<style>
+/* ═══════════ styles.css (inlined) ═══════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Chakra+Petch:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Exo+2:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg: #0a0a0f;
+  --surface: #3a4770;
+  --border: #4f5d8a;
+  --card-border-neutral: #7a7a85;
+  --text: #f0f0f5;
+  --text-dim: #d0d4e4;
+  --accent: #6a96e0;
+  --accent-glow: rgba(106, 150, 224, 0.22);
+  --green: #22c55e;
+  --green-glow: rgba(34, 197, 94, 0.15);
+  --amber: #f59e0b;
+  --amber-glow: rgba(245, 158, 11, 0.15);
+  --cyan: #06b6d4;
+  --cyan-glow: rgba(6, 182, 212, 0.15);
+  --rose: #f43f5e;
+  --rose-glow: rgba(244, 63, 94, 0.15);
+  --orange: #f97316;
+  --orange-glow: rgba(249, 115, 22, 0.15);
+  --purple: #a855f7;
+  --purple-glow: rgba(168, 85, 247, 0.15);
+
+  /* Layout constants */
+  --slide-pad-top: 64px;
+  --slide-pad-x: 72px;
+  --slide-pad-bottom: 48px;
+  --content-max-w: 1000px;
+  --text-max-w: 800px;
+  --section-gap: 32px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+#app { height: 100vh; touch-action: manipulation; }
+
+body {
+  font-family: 'Exo 2', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ══════════════════════════════════════
+   Bottom bar — menu + nav hint
+   ══════════════════════════════════════ */
+
+.bottom-bar {
+  position: fixed; bottom: 24px; left: 32px;
+  display: flex; align-items: center; gap: 14px;
+  z-index: 200;
+}
+
+.menu-wrapper { position: relative; }
+
+.menu-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 3px 7px;
+  border-radius: 6px;
+  opacity: 0.4;
+  transition: opacity 0.2s, border-color 0.2s, background 0.2s;
+  line-height: 1;
+}
+.menu-btn:hover {
+  opacity: 0.9;
+  border-color: var(--border);
+  background: rgba(255,255,255,0.04);
+}
+
+.menu-dropdown {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 0;
+  min-width: 260px;
+  box-shadow: 0 -4px 32px rgba(0,0,0,0.5);
+  z-index: 300;
+}
+.menu-dropdown.open { display: block; }
+
+.menu-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 8px 16px 6px;
+  opacity: 0.6;
+}
+
+.menu-item {
+  padding: 10px 16px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.menu-item:hover {
+  background: rgba(255,255,255,0.06);
+}
+.menu-item.active {
+  color: var(--text);
+  background: rgba(255,255,255,0.10);
+}
+.menu-item.active:hover {
+  background: rgba(255,255,255,0.14);
+}
+.menu-item .menu-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  flex-shrink: 0;
+}
+.menu-item.active .menu-dot { opacity: 1; }
+
+.menu-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+  opacity: 0.5;
+}
+
+.menu-item-action {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.menu-item-action:hover {
+  color: var(--text);
+}
+.menu-item-action .menu-dot-remote {
+  width: auto; height: auto;
+  background: none;
+  opacity: 0.7;
+  font-size: 11px;
+  border-radius: 0;
+}
+
+.nav-hint {
+  font-size: 12px; color: var(--text-dim); opacity: 0.5;
+}
+
+/* ══════════════════════════════════════
+   Shell — progress & counter
+   ══════════════════════════════════════ */
+
+.progress {
+  position: fixed; top: 0; left: 0; height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--cyan));
+  transition: width 0.4s ease; z-index: 100;
+}
+.counter {
+  position: fixed; bottom: 24px; right: 32px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px; color: var(--text-dim); z-index: 100;
+  cursor: pointer; padding: 3px 8px; border-radius: 6px;
+  border: 1px solid transparent;
+  transition: border-color 0.2s, background 0.2s, opacity 0.2s;
+  opacity: 0.6;
+  user-select: none;
+}
+.counter:hover {
+  opacity: 1; border-color: var(--border);
+  background: rgba(255,255,255,0.04);
+}
+
+.slide-picker {
+  display: none;
+  position: fixed; bottom: 52px; right: 32px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 6px 0;
+  min-width: 200px; max-height: 60vh; overflow-y: auto;
+  box-shadow: 0 -4px 32px rgba(0,0,0,0.5);
+  z-index: 300;
+}
+.slide-picker.open { display: block; }
+
+.slide-picker-item {
+  padding: 8px 16px;
+  font-size: 13px; color: var(--text-dim);
+  cursor: pointer; display: flex; align-items: center; gap: 10px;
+  transition: background 0.15s;
+}
+.slide-picker-item:hover { background: rgba(255,255,255,0.06); }
+.slide-picker-item.active { color: var(--accent); }
+.slide-picker-item .picker-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; min-width: 20px; text-align: right;
+  opacity: 0.5;
+}
+.slide-picker-item.active .picker-num { opacity: 1; }
+
+.bg-dots {
+  position: fixed; inset: 0; z-index: -1;
+  background-image: radial-gradient(rgba(106,150,224,0.08) 1px, transparent 1px);
+  background-size: 30px 30px;
+}
+
+/* ══════════════════════════════════════
+   Deck & Slides
+   ══════════════════════════════════════ */
+
+.deck { position: relative; width: 100%; height: 100%; }
+
+.slide {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  padding: var(--slide-pad-top) var(--slide-pad-x) var(--slide-pad-bottom);
+  opacity: 0;
+  transition: opacity 0.4s ease-in;
+  pointer-events: none;
+}
+.slide.active { opacity: 1; pointer-events: all; }
+.slide.slide-hero { justify-content: center; }
+
+/* ══════════════════════════════════════
+   Typography
+   ══════════════════════════════════════ */
+
+h1 { font-family: 'Rajdhani', sans-serif; font-size: 52px; font-weight: 800; letter-spacing: -1.5px; line-height: 1.1; margin-bottom: 16px; }
+h2 { font-family: 'Rajdhani', sans-serif; font-size: 38px; font-weight: 700; letter-spacing: -1px; line-height: 1.2; margin-bottom: 8px; }
+h3 { font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 600; letter-spacing: -0.5px; margin-bottom: 8px; }
+.subtitle {
+  font-size: 20px; font-weight: 300; color: var(--text-dim); line-height: 1.5;
+  max-width: var(--text-max-w);
+}
+
+/* ══════════════════════════════════════
+   Tags
+   ══════════════════════════════════════ */
+
+.tag {
+  font-family: 'Rajdhani', sans-serif;
+  display: inline-block; padding: 6px 16px; border-radius: 20px;
+  font-size: 12px; font-weight: 600; letter-spacing: 1px;
+  text-transform: uppercase; margin-bottom: 16px;
+}
+.tag-accent { background: var(--accent-glow); color: var(--accent); border: 1px solid rgba(106,150,224,0.3); }
+.tag-green { background: var(--green-glow); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+.tag-amber { background: var(--amber-glow); color: var(--amber); border: 1px solid rgba(245,158,11,0.3); }
+.tag-cyan { background: var(--cyan-glow); color: var(--cyan); border: 1px solid rgba(6,182,212,0.3); }
+.tag-orange { background: var(--orange-glow); color: var(--orange); border: 1px solid rgba(249,115,22,0.3); }
+.tag-purple { background: var(--purple-glow); color: var(--purple); border: 1px solid rgba(168,85,247,0.3); }
+
+.center { text-align: center; }
+
+/* ══════════════════════════════════════
+   Layout — Columns & Grids
+   ══════════════════════════════════════ */
+
+.columns {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+  width: 100%; max-width: var(--content-max-w); margin-top: var(--section-gap);
+}
+.three-col {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px;
+  width: 100%; max-width: var(--content-max-w); margin-top: var(--section-gap);
+}
+.four-col {
+  display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 20px;
+  width: 100%; max-width: var(--content-max-w); margin-top: var(--section-gap);
+}
+
+.group {
+  display: flex; flex-direction: column; gap: 24px;
+}
+
+/* ══════════════════════════════════════
+   Cards
+   ══════════════════════════════════════ */
+
+.card {
+  background: var(--surface); border: 2px solid var(--card-border-neutral);
+  border-radius: 16px; padding: 24px; text-align: left;
+}
+.card h3 { margin-bottom: 10px; color: #fff; }
+.card p, .card li { font-size: 14px; color: var(--text-dim); line-height: 1.7; }
+.card ul { list-style: none; padding: 0; }
+.card ul li { padding: 5px 0; padding-left: 20px; position: relative; }
+.card ul li::before { content: '→'; position: absolute; left: 0; color: var(--accent); font-weight: 600; }
+
+/* Highlight variants keep neutral gray border at rest — color is reserved for focus state */
+.card.highlight-accent,
+.card.highlight-green,
+.card.highlight-amber,
+.card.highlight-cyan,
+.card.highlight-rose,
+.card.highlight-orange,
+.card.highlight-purple { border-color: var(--card-border-neutral); box-shadow: none; }
+
+/* ══════════════════════════════════════
+   Card Focus Mode
+   ══════════════════════════════════════ */
+
+.card,
+.insight,
+.pipeline {
+  transition: transform 0.35s cubic-bezier(0.33,0,0.2,1),
+              opacity 0.35s ease,
+              filter 0.35s ease,
+              border-color 0.35s ease,
+              box-shadow 0.35s ease;
+}
+
+.slide.has-card-focus .card {
+  opacity: 0.2;
+  filter: saturate(0.15) brightness(0.55);
+  transform: scale(0.97);
+  border-color: var(--card-border-neutral);
+  box-shadow: none;
+}
+
+.slide.has-card-focus .card.card-focused {
+  opacity: 1;
+  filter: none;
+  transform: scale(1.06);
+  z-index: 10;
+  position: relative;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent),
+              0 0 80px rgba(106,150,224,0.38),
+              0 0 180px rgba(106,150,224,0.22),
+              0 0 280px rgba(106,150,224,0.12),
+              0 8px 32px rgba(0,0,0,0.3) !important;
+}
+
+.slide.has-card-focus.insight-focused .card {
+  opacity: 1;
+  filter: none;
+  transform: scale(1);
+  transition: transform 0.35s cubic-bezier(0.33,0,0.2,1),
+              opacity 0.9s ease,
+              filter 0.9s ease,
+              border-color 0.35s ease,
+              box-shadow 0.35s ease;
+}
+
+.slide.has-card-focus.insight-focused .pipeline {
+  opacity: 1;
+  filter: none;
+  transition: opacity 0.9s ease, filter 0.9s ease;
+}
+
+.slide.has-card-focus .insight {
+  opacity: 0.12;
+  filter: saturate(0.15);
+}
+
+.slide.has-card-focus .insight.card-focused {
+  opacity: 1;
+  filter: none;
+  transform: scale(1.06);
+  z-index: 20;
+  position: relative;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent),
+              0 0 30px rgba(106,150,224,0.35),
+              0 0 60px rgba(106,150,224,0.2),
+              0 0 120px rgba(106,150,224,0.1),
+              0 8px 32px rgba(0,0,0,0.4) !important;
+  /* Hand transform solely to the keyframe animation — a competing
+     transform transition (inherited from the base rule) causes jank. */
+  transition: opacity 0.9s ease,
+              filter 0.9s ease,
+              border-color 0.35s ease,
+              box-shadow 0.35s ease;
+  animation: insight-pop 0.55s cubic-bezier(0.33, 0, 0.2, 1);
+}
+
+/* The "wave" — when the insight lands as the focused (last) card it grows past
+   its resting focus size and springs back to settle. A pronounced overshoot so
+   it reads as a deliberate pulse, not just a scale-in. Transform-only, one shot.
+   Resting focus size is scale(1.06), so the animation ends there. */
+@keyframes insight-pop {
+  0%   { transform: scale(0.97); opacity: 0.3; }
+  45%  { transform: scale(1.14); }
+  72%  { transform: scale(1.03); }
+  100% { transform: scale(1.06); }
+}
+
+/* The insight only pulses when it BECOMES the focused card — i.e. when you
+   arrow → onto it as the last highlighted thing on the slide. That pulse is the
+   `insight-pop` animation above, which is keyed to `.insight.card-focused`, so
+   it fires on focus and only on focus. Arrowing ← back to the second-last card
+   removes `.card-focused`, so the insight drops to its dimmed/hidden state and
+   stays perfectly still — no entrance pulse, no flash-through.
+
+   There is deliberately NO slide-entrance pulse (`.slide.active .insight`): a
+   pulse tied to the slide appearing fired on every visit, including going back,
+   which is exactly the "it waves at me while it's supposed to be quiet" bug. */
+
+@media (prefers-reduced-motion: reduce) {
+  .slide.has-card-focus .insight.card-focused {
+    animation: none;
+  }
+}
+
+.slide.has-card-focus .pipeline {
+  opacity: 0.12;
+  filter: saturate(0.15);
+}
+
+/* ══════════════════════════════════════
+   Takeaway Focus Mode
+   ══════════════════════════════════════ */
+
+.takeaway-item {
+  transition: transform 0.35s cubic-bezier(0.33,0,0.2,1),
+              opacity 0.35s ease,
+              filter 0.35s ease,
+              border-color 0.35s ease,
+              box-shadow 0.35s ease;
+  border-radius: 12px;
+  padding: 16px 20px;
+  border: 1px solid transparent;
+}
+
+.slide.has-card-focus .takeaway-item {
+  opacity: 0.15;
+  filter: saturate(0.15) brightness(0.55);
+  transform: scale(0.97);
+}
+
+.slide.has-card-focus .takeaway-item.card-focused {
+  opacity: 1;
+  filter: none;
+  transform: scale(1.04);
+  z-index: 10;
+  position: relative;
+  background: rgba(106,150,224,0.04);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent),
+              0 0 40px var(--accent-glow),
+              0 0 80px rgba(106,150,224,0.08),
+              0 8px 32px rgba(0,0,0,0.3);
+}
+
+/* ══════════════════════════════════════
+   Components
+   ══════════════════════════════════════ */
+
+.icon-large { font-size: 28px; margin-bottom: 12px; display: block; }
+
+.team-badge { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+.team-badge .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+.team-badge span { font-size: 14px; font-weight: 500; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+
+.insight {
+  border: 1px solid rgba(106,150,224,0.3);
+  background: rgba(106,150,224,0.05);
+  border-radius: 12px; padding: 20px 28px;
+  max-width: var(--text-max-w); margin-top: 24px; text-align: center;
+}
+.insight p { font-size: 16px; line-height: 1.6; color: var(--text-dim); }
+.insight strong { color: var(--text); }
+.insight em { color: var(--accent); font-style: normal; font-weight: 600; }
+.insight.insight-purple { border-color: rgba(168,85,247,0.3); background: rgba(168,85,247,0.05); }
+.insight.insight-green { border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.05); }
+.insight.insight-orange { border-color: rgba(249,115,22,0.3); background: rgba(249,115,22,0.05); }
+.insight.insight-cyan { border-color: rgba(6,182,212,0.3); background: rgba(6,182,212,0.05); }
+
+.pipeline {
+  display: flex; align-items: stretch; gap: 0;
+  width: 100%; max-width: var(--content-max-w); margin-top: var(--section-gap);
+}
+.pipeline-step {
+  flex: 1; padding: 20px 14px; text-align: center;
+  position: relative; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px;
+  background: var(--surface); border: 1px solid var(--border);
+}
+.pipeline-step:first-child { border-radius: 12px 0 0 12px; }
+.pipeline-step:last-child { border-radius: 0 12px 12px 0; }
+.pipeline-step:not(:last-child)::after {
+  content: '▸'; position: absolute; right: -8px; top: 50%;
+  transform: translateY(-50%); font-size: 16px;
+  color: var(--accent); z-index: 2; font-weight: 800;
+}
+.pipeline-step .step-icon { font-size: 24px; }
+.pipeline-step .step-label { font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 600; color: var(--text); }
+.pipeline-step .step-owner { font-size: 11px; font-weight: 600; letter-spacing: 0.5px; }
+.pipeline-step .step-sub { font-size: 11px; color: var(--text-dim); line-height: 1.15; }
+
+.skill-chips {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+}
+.skill-chip {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; padding: 4px 10px; border-radius: 6px;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.card.highlight-orange .skill-chip { color: var(--orange); border-color: rgba(249,115,22,0.25); background: rgba(249,115,22,0.05); }
+.card.highlight-cyan .skill-chip { color: var(--cyan); border-color: rgba(6,182,212,0.25); background: rgba(6,182,212,0.05); }
+.card.highlight-green .skill-chip { color: var(--green); border-color: rgba(34,197,94,0.25); background: rgba(34,197,94,0.05); }
+.card.highlight-accent .skill-chip { color: var(--accent); border-color: rgba(106,150,224,0.25); background: rgba(106,150,224,0.05); }
+.card.highlight-rose .skill-chip { color: var(--rose); border-color: rgba(244,63,94,0.25); background: rgba(244,63,94,0.05); }
+
+.owner-human { color: var(--cyan); }
+.owner-claude { color: var(--orange); }
+.owner-machine { color: var(--green); }
+.owner-hybrid { color: var(--purple); }
+
+.vs-label {
+  font-size: 14px; font-weight: 700; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;
+}
+
+.es-flow {
+  display: flex; align-items: center; gap: 8px;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  color: var(--text-dim); margin-top: 12px; flex-wrap: wrap;
+}
+.es-event {
+  background: rgba(168,85,247,0.1); border: 1px solid rgba(168,85,247,0.3);
+  border-radius: 6px; padding: 4px 10px; color: var(--purple); font-weight: 500;
+}
+.es-arrow { color: var(--purple); }
+
+.takeaway-list {
+  max-width: var(--text-max-w);
+  width: 100%;
+  margin-top: var(--section-gap);
+  text-align: left;
+}
+.takeaway-item {
+  display: flex; gap: 16px; align-items: baseline;
+  margin-bottom: 20px;
+}
+.takeaway-item:last-child { margin-bottom: 0; }
+.takeaway-num {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 28px; color: var(--accent); font-weight: 800; flex-shrink: 0;
+  min-width: 24px; text-align: right;
+}
+.takeaway-item h3 { margin-bottom: 4px; }
+.takeaway-item p { color: var(--text-dim); font-size: 15px; line-height: 1.6; }
+
+.tree {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 1.05;
+  white-space: pre;
+  color: #33ff33;
+  background: #000000;
+  border: 1px solid #1a3a1a;
+  border-radius: 12px;
+  padding: 24px 32px;
+  text-align: left;
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 0 30px rgba(0, 255, 0, 0.05), inset 0 0 60px rgba(0, 0, 0, 0.3);
+}
+.tree .dir { color: #5cf; font-weight: 600; }
+.tree .file { color: #ccc; }
+.tree .highlight { color: #33ff33; font-weight: 600; text-shadow: 0 0 6px rgba(51, 255, 51, 0.25); }
+.tree .exec { color: #33ff33; font-weight: 500; }
+.tree .config { color: #f6f; }
+.tree .comment { color: #336633; }
+
+.slide-header {
+  width: 100%;
+  min-height: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  flex-shrink: 0;
+}
+
+.arch-diagram {
+  width: 100%; max-width: var(--content-max-w); margin-top: var(--section-gap);
+}
+
+/* ══════════════════════════════════════
+   Title Scroller
+   ══════════════════════════════════════ */
+
+.persistent-title {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 16px; font-weight: 600; letter-spacing: 4px;
+  text-transform: uppercase; color: #A8C4E0; margin-bottom: 40px;
+}
+
+.title-scroller {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+.title-scroller.hidden { opacity: 0; pointer-events: none; }
+
+.title-scroller .persistent-title {
+  position: absolute;
+  top: 64px;
+  left: 0; right: 0;
+  text-align: center;
+  margin-bottom: 0;
+}
+
+.title-scroller .persistent-subtitle {
+  position: absolute;
+  bottom: 130px;
+  left: 0; right: 0;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 300;
+  letter-spacing: 1px;
+  color: #A8C4E0;
+  margin: 0;
+  opacity: 0.85;
+  line-height: 1.5;
+}
+
+.title-scroller .team-badge {
+  position: absolute;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 0;
+}
+
+.title-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  contain: layout style;
+}
+
+.title-item {
+  font-family: 'Rajdhani', sans-serif;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-weight: 800;
+  letter-spacing: -1.5px;
+  line-height: 1.15;
+  padding: 0 80px;
+  white-space: normal;
+  transform-origin: center center;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  contain: layout style;
+  transition:
+    transform 0.75s cubic-bezier(0.33, 0, 0.2, 1),
+    opacity 0.6s ease;
+}
+
+.title-item[data-title="0"] { font-size: 60px; }
+.title-item[data-title="1"] { font-size: 56px; }
+.title-item[data-title="2"] { font-size: 38px; }
+
+.title-item[data-title="2"] {
+  font-weight: 500;
+  font-style: italic;
+  letter-spacing: -0.5px;
+  line-height: 1.3;
+}
+
+.floating-asterisk {
+  position: absolute;
+  z-index: 12;
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--amber);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+.floating-asterisk.pulse {
+  animation: asterisk-pulse 0.8s ease forwards;
+}
+
+@keyframes asterisk-pulse {
+  0%   { opacity: 0; transform: scale(1); text-shadow: none; }
+  15%  { opacity: 1; transform: scale(1.6); text-shadow: 0 0 20px rgba(245,158,11,0.6), 0 0 40px rgba(245,158,11,0.3); }
+  40%  { opacity: 1; transform: scale(0.9); text-shadow: 0 0 10px rgba(245,158,11,0.3); }
+  65%  { opacity: 1; transform: scale(1.15); text-shadow: 0 0 15px rgba(245,158,11,0.4); }
+  100% { opacity: 1; transform: scale(1); text-shadow: 0 0 8px rgba(245,158,11,0.2); }
+}
+
+.results-may-vary {
+  color: var(--amber);
+  font-size: 13px;
+  font-style: italic;
+  position: absolute;
+  left: 0; right: 0;
+  text-align: center;
+  opacity: 0;
+  z-index: 11;
+  pointer-events: none;
+  transition: none;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+/* ══════════════════════════════════════
+   Section Indicator
+   ══════════════════════════════════════ */
+
+.section-indicator {
+  position: fixed;
+  top: 16px;
+  right: 32px;
+  display: flex;
+  gap: 6px;
+  z-index: 100;
+  align-items: center;
+}
+
+.section-pip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.35s ease;
+  opacity: 0.35;
+  border: 1px solid transparent;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.section-pip:hover {
+  opacity: 0.7;
+}
+
+.section-pip.active {
+  opacity: 1;
+  background: rgba(255,255,255,0.04);
+  border-color: var(--sec-color);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--sec-color) 20%, transparent);
+}
+
+.pip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sec-color);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  flex-shrink: 0;
+}
+
+.section-pip.active .pip-dot {
+  transform: scale(1.3);
+  box-shadow: 0 0 8px var(--sec-color);
+}
+
+.pip-label {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  transition: color 0.3s ease;
+}
+
+.section-pip.active .pip-label {
+  color: var(--text);
+}
+
+/* ══════════════════════════════════════
+   Picker Section Groups
+   ══════════════════════════════════════ */
+
+.picker-section {
+  padding: 2px 0;
+}
+
+.picker-section:not(:first-child) {
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+
+.picker-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 8px 16px 4px;
+  opacity: 0.7;
+}
+
+/* ══════════════════════════════════════
+   Loading State
+   ══════════════════════════════════════ */
+
+.ss-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  background: var(--bg);
+}
+
+.ss-loading p {
+  font-size: 14px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+}
+
+.ss-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(99, 102, 241, 0.15);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ss-spin 0.8s linear infinite;
+}
+
+@keyframes ss-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ══════════════════════════════════════
+   Error Overlay
+   ══════════════════════════════════════ */
+
+.ss-error-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: 40px;
+}
+
+.ss-error-box {
+  max-width: 560px;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  border-radius: 16px;
+  padding: 36px 40px;
+  box-shadow: 0 0 60px rgba(244, 63, 94, 0.08), 0 8px 32px rgba(0, 0, 0, 0.4);
+  text-align: left;
+}
+
+.ss-error-box .ss-error-icon {
+  font-size: 32px;
+  margin-bottom: 16px;
+  display: block;
+}
+
+.ss-error-box h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--rose);
+  margin-bottom: 12px;
+  letter-spacing: -0.3px;
+}
+
+.ss-error-box .ss-error-message {
+  font-size: 14px;
+  color: var(--text-dim);
+  line-height: 1.65;
+  margin-bottom: 20px;
+}
+
+.ss-error-box .ss-error-detail {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--rose);
+  background: rgba(244, 63, 94, 0.06);
+  border: 1px solid rgba(244, 63, 94, 0.15);
+  border-radius: 8px;
+  padding: 14px 18px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.ss-error-box .ss-error-source {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.5;
+  margin-top: 16px;
+}
+
+/* ══════════════════════════════════════
+   Inline Editing
+   ══════════════════════════════════════ */
+
+.ss-editable {
+  cursor: text;
+  border-radius: 4px;
+  position: relative;
+  /* NOTE: No transition here — it would override element-specific transitions
+     (e.g. title-item transform/opacity animations). Hover feedback is instant. */
+}
+
+/* Hover hint — editing requires long-press (touch) or double-click (desktop) */
+body:not(.ss-editing-disabled) .ss-editable:hover {
+  background: rgba(99, 102, 241, 0.08);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2);
+}
+
+/* Allow clicking editable elements inside the title scroller — but ONLY when visible.
+   Without :not(.hidden), invisible title items steal clicks from slide content below. */
+body:not(.ss-editing-disabled) .title-scroller:not(.hidden) .ss-editable {
+  pointer-events: auto;
+  cursor: text;
+}
+
+.ss-editable.ss-editing {
+  background: rgba(99, 102, 241, 0.12);
+  box-shadow: 0 0 0 2px var(--accent);
+  outline: none;
+  cursor: text;
+  border-radius: 4px;
+  padding: 1px 3px;
+  margin: -1px -3px;
+  min-width: 20px;
+}
+
+.ss-editable.ss-saved {
+  animation: ss-save-flash 0.8s ease;
+}
+
+@keyframes ss-save-flash {
+  0%   { box-shadow: 0 0 0 2px var(--green); background: rgba(34, 197, 94, 0.15); }
+  100% { box-shadow: none; background: transparent; }
+}
+
+/* Disable hover effects and text selection in fullscreen */
+body.ss-editing-disabled .ss-editable {
+  cursor: default;
+}
+
+body.ss-editing-disabled .deck {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Inline render error (for unknown node types) */
+
+.ss-render-error {
+  display: inline-block;
+  background: rgba(244, 63, 94, 0.08);
+  border: 1px dashed rgba(244, 63, 94, 0.35);
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin: 4px 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--rose);
+  opacity: 0.85;
+}
+
+/* ══════════════════════════════════════
+   Semantic Utility Classes
+   ══════════════════════════════════════ */
+
+/* Colors — !important so utilities always override component defaults (e.g. .card p) */
+.c-accent { color: var(--accent) !important; }
+.c-green { color: var(--green) !important; }
+.c-amber { color: var(--amber) !important; }
+.c-cyan { color: var(--cyan) !important; }
+.c-rose { color: var(--rose) !important; }
+.c-orange { color: var(--orange) !important; }
+.c-purple { color: var(--purple) !important; }
+.c-white { color: #fff !important; }
+.c-dim { color: var(--text-dim) !important; }
+.c-text { color: var(--text) !important; }
+
+/* Text alignment */
+.ta-center { text-align: center; }
+.ta-left { text-align: left; }
+.ta-right { text-align: right; }
+
+/* Font weight */
+.fw-300 { font-weight: 300; }
+.fw-400 { font-weight: 400; }
+.fw-500 { font-weight: 500; }
+.fw-600 { font-weight: 600; }
+.fw-700 { font-weight: 700; }
+.fw-800 { font-weight: 800; }
+
+/* Font family */
+.font-mono { font-family: 'JetBrains Mono', monospace; }
+
+/* Font sizes */
+.sz-xs { font-size: 11px; }
+.sz-sm { font-size: 13px; }
+.sz-md { font-size: 15px; }
+.sz-lg { font-size: 18px; }
+.sz-xl { font-size: 22px; }
+.sz-2xl { font-size: 28px; }
+.sz-3xl { font-size: 38px; }
+.sz-4xl { font-size: 42px; }
+.sz-5xl { font-size: 52px; }
+
+/* Margins */
+.mt-xs { margin-top: 4px; }
+.mt-sm { margin-top: 8px; }
+.mt-md { margin-top: 16px; }
+.mt-lg { margin-top: 24px; }
+.mt-xl { margin-top: 32px; }
+.mt-2xl { margin-top: 40px; }
+
+.mb-xs { margin-bottom: 4px; }
+.mb-sm { margin-bottom: 8px; }
+.mb-md { margin-bottom: 16px; }
+.mb-lg { margin-bottom: 24px; }
+.mb-xl { margin-bottom: 32px; }
+
+/* Gap overrides on grid/flex containers */
+.gap-xs { gap: 6px; }
+.gap-sm { gap: 12px; }
+.gap-md { gap: 20px; }
+.gap-lg { gap: 24px; }
+.gap-xl { gap: 32px; }
+
+/* Line heights */
+.leading-tight { line-height: 1.3; }
+.leading-normal { line-height: 1.6; }
+.leading-relaxed { line-height: 1.8; }
+.leading-loose { line-height: 2.0; }
+.leading-double { line-height: 2.2; }
+
+/* Heading sub */
+.heading-sub { font-size: 14px; font-weight: 400; }
+
+/* ══════════════════════════════════════
+   Stat Block
+   ══════════════════════════════════════ */
+
+.stat-block { text-align: center; padding: 4px 0; }
+.stat-value { font-family: 'Rajdhani', sans-serif; font-size: 42px; font-weight: 700; padding: 4px 0; }
+.stat-label { color: var(--text-dim); margin-bottom: 12px; }
+.stat-sublabel { font-size: 13px; }
+.stat-sublabel strong { color: var(--text); }
+
+.stat-amber .stat-value { color: var(--amber); }
+.stat-cyan .stat-value { color: var(--cyan); }
+.stat-accent .stat-value { color: var(--accent); }
+.stat-green .stat-value { color: var(--green); }
+.stat-orange .stat-value { color: var(--orange); }
+.stat-purple .stat-value { color: var(--purple); }
+.stat-rose .stat-value { color: var(--rose); }
+
+/* ══════════════════════════════════════
+   Spacer
+   ══════════════════════════════════════ */
+
+.spacer-xs { height: 4px; }
+.spacer-sm { height: 8px; }
+.spacer-md { height: 16px; }
+.spacer-lg { height: 24px; }
+.spacer-xl { height: 32px; }
+.spacer-2xl { height: 48px; }
+
+/* ══════════════════════════════════════
+   Align items (for columns, groups)
+   ══════════════════════════════════════ */
+
+.align-start { align-items: start; }
+.align-center { align-items: center; }
+.align-end { align-items: end; }
+.align-stretch { align-items: stretch; }
+
+/* ══════════════════════════════════════
+   Remote Modal
+   ══════════════════════════════════════ */
+
+#ssRemoteModal,
+#ssDriveModal {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* When the visible viewport shrinks (iOS keyboard up), the JS pins this
+     container to visualViewport and the card may be taller than the remaining
+     space. Allow it to scroll, and center via auto-margins so the top is never
+     clipped (a known flexbox issue with align-items:center + overflow). */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 24px;
+}
+
+.remote-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.remote-modal-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 32px;
+  max-width: 400px;
+  width: 100%;
+  margin: auto;
+  box-shadow: 0 8px 48px rgba(0, 0, 0, 0.5);
+}
+
+.remote-modal-card h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.remote-modal-hint {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.remote-modal-url {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  word-break: break-all;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.remote-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.remote-modal-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.remote-modal-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+}
+
+.remote-modal-btn:active {
+  transform: scale(0.97);
+}
+
+.remote-modal-btn-icon {
+  font-size: 16px;
+}
+
+/* ── Google Drive modals ── */
+.ss-drive-card { max-width: 440px; }
+
+.ss-drive-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.ss-drive-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.12s;
+}
+.ss-drive-item:last-child { border-bottom: none; }
+.ss-drive-item:hover { background: rgba(255, 255, 255, 0.05); }
+
+.ss-drive-item-name {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ss-drive-item-time {
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.ss-drive-loading, .ss-drive-empty {
+  padding: 22px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.ss-drive-err { color: #e0a0a0; white-space: pre-wrap; line-height: 1.5; }
+
+.ss-drive-or {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  text-align: center;
+  margin: 6px 0 12px;
+  opacity: 0.7;
+}
+
+.ss-drive-linkrow { display: flex; gap: 8px; }
+
+.ss-drive-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.ss-drive-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.ss-drive-input::placeholder { color: var(--text-dim); opacity: 0.7; }
+
+.ss-drive-go { flex: 0 0 auto; }
+
+.ss-drive-sharebtns { margin-bottom: 14px; }
+.ss-drive-sharebtns .remote-modal-btn { width: 100%; }
+
+/* ── Drive folder browser ── */
+.ss-drive-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+.ss-drive-crumb,
+.ss-crumb {
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 5px;
+  color: var(--accent);
+}
+.ss-drive-crumb:hover,
+.ss-crumb:hover { background: rgba(255, 255, 255, 0.06); }
+.ss-drive-crumb-sep,
+.ss-crumb-sep { opacity: 0.5; }
+
+.ss-drive-browser {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.ss-drive-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.ss-drive-row:last-child { border-bottom: none; }
+.ss-drive-row:hover { background: rgba(255, 255, 255, 0.05); }
+.ss-drive-row-icon { flex: 0 0 auto; font-size: 15px; }
+.ss-drive-row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ss-drive-row-chev { flex: 0 0 auto; color: var(--text-dim); opacity: 0.7; }
+.ss-drive-row-time { flex: 0 0 auto; font-size: 11px; color: var(--text-dim); }
+.ss-drive-file .ss-drive-row-name { color: var(--text); }
+
+.ss-drive-actionsbar { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.ss-drive-savehere { width: 100%; }
+.ss-drive-savehere strong { font-weight: 600; }
+/* Default (pin) + New folder side by side */
+.ss-drive-folderactions { display: flex; gap: 8px; }
+.ss-drive-folderactions .ss-drive-pin,
+.ss-drive-folderactions .ss-drive-newfolder { flex: 1 1 0; }
+/* Inline new-folder form (replaces the actions row while typing) */
+.ss-drive-newfolderform { display: flex; flex-direction: column; gap: 10px; }
+.ss-drive-naming-label { font-size: 13px; color: var(--text-dim); }
+.ss-drive-naming-row { display: flex; gap: 8px; align-items: center; }
+.ss-drive-newfolderform .ss-drive-input { flex: 1 1 auto; }
+.ss-drive-newfolderform .remote-modal-btn { flex: 0 0 auto; }
+
+/* While naming a new folder: collapse the tall body (folder list, crumbs, the
+   trailing Cancel footer) and pin the card to the top of the screen, so the
+   input sits high above the on-screen keyboard. The app is in an iframe where
+   the keyboard does NOT shrink visualViewport, so reflow-around-keyboard is
+   impossible — collapse + top-anchor is the robust fix and avoids scroll jank. */
+.ss-drive-card.ss-drive-naming { margin-top: 0; align-self: flex-start; }
+.ss-drive-card.ss-drive-naming .ss-drive-crumbs,
+.ss-drive-card.ss-drive-naming .ss-drive-browser,
+.ss-drive-card.ss-drive-naming > .remote-modal-actions { display: none; }
+
+.ss-drive-hint-inline {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 4px 0;
+  opacity: 0.8;
+}
+
+/* ══════════════════════════════════════
+   Mobile Responsive
+   ══════════════════════════════════════ */
+
+@media (max-width: 600px) {
+  :root {
+    --slide-pad-top: 36px;
+    --slide-pad-x: 16px;
+    --slide-pad-bottom: 48px;
+    --content-max-w: 100%;
+    --text-max-w: 100%;
+    --section-gap: 14px;
+  }
+
+  /* Allow slides to scroll when content overflows */
+  .slide {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start !important;
+  }
+
+  /* Shrink the Drive folder list on phones so the modal's foot (incl. the
+     inline "new folder" input) stays within the keyboard-reduced viewport. */
+  .ss-drive-browser { max-height: 40vh; }
+  .remote-modal-card { padding: 20px; }
+
+  /* Typography — aggressive scaling for ~393px screens */
+  h1 { font-size: 22px; letter-spacing: -0.5px; margin-bottom: 8px; }
+  h2 { font-size: 18px; letter-spacing: -0.3px; margin-bottom: 4px; }
+  h3 { font-size: 14px; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; line-height: 1.35; }
+
+  /* Title scroller */
+  .title-item { padding: 0 20px !important; }
+  .title-item[data-title="0"] { font-size: 24px !important; }
+  .title-item[data-title="1"] { font-size: 22px !important; }
+  .title-item[data-title="2"] { font-size: 17px !important; }
+  .persistent-title { font-size: 10px; letter-spacing: 1.5px; margin-bottom: 16px; }
+  .persistent-subtitle { font-size: 13px; bottom: 100px; }
+  .floating-asterisk { font-size: 16px; }
+  .results-may-vary { font-size: 10px; }
+
+  /* Section indicator — compact single row */
+  .section-indicator {
+    top: 6px; right: 6px; left: 6px;
+    gap: 2px;
+    justify-content: center;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .section-pip { padding: 2px 5px; gap: 3px; }
+  .pip-dot { width: 5px; height: 5px; }
+  .pip-label { font-size: 8px; letter-spacing: 0; }
+
+  /* Bottom bar — promote menu to a visible FAB on mobile.
+     Lift well above iOS home-indicator swipe zone, and pad the wrapper so
+     near-misses still hit the button (eliminates "ghost" taps that fall
+     through to the slide and navigate instead). */
+  .bottom-bar {
+    /* iOS Safari reserves the leftmost ~20px of the screen for back-swipe
+       gestures — taps that land there are eaten by the system. Push the FAB
+       in far enough that the entire visible button + halo sits clear of that
+       zone. (This is why "only the right side of the button" worked before.) */
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    left: calc(28px + env(safe-area-inset-left, 0px));
+    gap: 6px;
+    padding: 12px;            /* invisible halo around FAB grows hit area */
+    margin: -12px;            /* keep visual position unchanged */
+  }
+  .nav-hint { display: none; }
+  .menu-wrapper {
+    /* Wrapper itself is a tap target larger than the visible circle.
+       cursor:pointer is REQUIRED on iOS — without it Safari drops the
+       synthetic click event for taps that land on the padding (halo)
+       rather than on the actual <button>. */
+    padding: 6px;
+    margin: -6px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .menu-btn {
+    font-size: 24px;
+    padding: 0;
+    width: 56px; height: 56px;        /* bigger visible target */
+    border-radius: 50%;
+    opacity: 1;
+    background: var(--accent);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.15);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.2);
+    display: flex; align-items: center; justify-content: center;
+    touch-action: manipulation;       /* kill 300ms tap delay on iOS */
+    -webkit-tap-highlight-color: rgba(255,255,255,0.25);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .menu-btn:hover, .menu-btn:active {
+    opacity: 1;
+    background: var(--accent);
+    border-color: rgba(255,255,255,0.35);
+    transform: scale(0.96);            /* visible feedback on press */
+  }
+  /* Lift counter & picker above the bigger FAB */
+  .counter { bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important; }
+  .slide-picker { bottom: calc(70px + env(safe-area-inset-bottom, 0px)) !important; }
+
+  /* Counter & picker */
+  .counter { bottom: 14px; right: 14px; font-size: 12px; padding: 6px 10px; opacity: 0.85; }
+  .slide-picker { bottom: 56px; right: 14px; min-width: 200px; max-height: 60vh; }
+  .slide-picker-item { padding: 10px 14px; font-size: 13px; }
+
+  /* Progress */
+  .progress { height: 2px; }
+
+  /* Grids → stack on mobile */
+  .columns,
+  .three-col,
+  .four-col {
+    grid-template-columns: 1fr !important;
+    gap: 10px;
+  }
+
+  /* Cards */
+  .card { padding: 12px; border-radius: 10px; }
+  .card h3 { font-size: 13px; margin-bottom: 4px; }
+  .card p, .card li { font-size: 11px; line-height: 1.45; }
+  .card ul li { padding: 2px 0; padding-left: 14px; }
+
+  .slide.has-card-focus .card.card-focused { transform: scale(1.01); }
+
+  /* Tags */
+  .tag { font-size: 9px; padding: 3px 8px; margin-bottom: 8px; letter-spacing: 0.6px; }
+
+  /* Pipeline */
+  .pipeline {
+    flex-direction: column;
+    gap: 0;
+  }
+  .pipeline-step { padding: 10px 8px; gap: 3px; }
+  .pipeline-step:first-child { border-radius: 10px 10px 0 0; }
+  .pipeline-step:last-child { border-radius: 0 0 10px 10px; }
+  .pipeline-step:not(:last-child)::after {
+    content: '▾'; right: auto; left: 50%;
+    top: auto; bottom: -8px;
+    transform: translateX(-50%);
+  }
+  .pipeline-step .step-icon { font-size: 16px; }
+  .pipeline-step .step-label { font-size: 10px; }
+  .pipeline-step .step-sub { font-size: 9px; }
+  .pipeline-step .step-owner { font-size: 9px; }
+
+  /* Insight */
+  .insight { padding: 10px 14px; margin-top: 12px; }
+  .insight p { font-size: 12px; }
+
+  /* Takeaways */
+  .takeaway-item { gap: 10px; margin-bottom: 10px; padding: 10px 12px; }
+  .takeaway-num { font-size: 18px; min-width: 18px; }
+  .takeaway-item h3 { font-size: 13px; }
+  .takeaway-item p { font-size: 12px; }
+
+  /* Skill chips */
+  .skill-chips { gap: 3px; }
+  .skill-chip { font-size: 9px; padding: 2px 6px; }
+
+  /* Tree */
+  .tree { font-size: 10px; padding: 10px 12px; border-radius: 8px; }
+
+  /* Team badge */
+  .team-badge span { font-size: 10px; }
+  .team-badge .dot { width: 6px; height: 6px; }
+
+  /* Event source flow */
+  .es-flow { font-size: 9px; gap: 3px; }
+  .es-event { padding: 2px 6px; font-size: 9px; }
+
+  /* Icon */
+  .icon-large { font-size: 20px; margin-bottom: 6px; }
+
+  /* Slide header */
+  .slide-header { min-height: 90px; }
+
+  /* Menu dropdown */
+  .menu-dropdown { min-width: 220px; }
+  .menu-item { font-size: 13px; padding: 12px 14px; }
+  .menu-label { font-size: 9px; }
+
+  /* VS label */
+  .vs-label { font-size: 12px; letter-spacing: 1.5px; }
+}
+
+/* ══════════════════════════════════════
+   Landscape phones (short viewports)
+   ══════════════════════════════════════ */
+
+@media (max-height: 500px) and (orientation: landscape) {
+  :root {
+    --slide-pad-top: 28px;
+    --slide-pad-x: 24px;
+    --slide-pad-bottom: 36px;
+    --section-gap: 10px;
+  }
+
+  .slide {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start !important;
+  }
+
+  /* Typography */
+  h1 { font-size: 24px; letter-spacing: -0.5px; margin-bottom: 6px; }
+  h2 { font-size: 20px; letter-spacing: -0.3px; margin-bottom: 4px; }
+  h3 { font-size: 14px; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; line-height: 1.3; }
+
+  /* Title scroller */
+  .title-item { padding: 0 40px !important; }
+  .title-item[data-title="0"] { font-size: 28px !important; }
+  .title-item[data-title="1"] { font-size: 24px !important; }
+  .title-item[data-title="2"] { font-size: 18px !important; }
+  .persistent-title { font-size: 11px; letter-spacing: 2px; margin-bottom: 16px; }
+  .persistent-subtitle { font-size: 15px; bottom: 110px; }
+  .floating-asterisk { font-size: 18px; }
+  .results-may-vary { font-size: 10px; }
+
+  /* Section indicator */
+  .section-indicator { top: 6px; right: 10px; gap: 3px; }
+  .section-pip { padding: 2px 6px; gap: 3px; }
+  .pip-dot { width: 5px; height: 5px; }
+  .pip-label { font-size: 9px; }
+
+  /* Bottom bar — visible FAB in landscape too */
+  .bottom-bar { bottom: 10px; left: 10px; gap: 6px; }
+  .nav-hint { display: none; }
+  .menu-btn {
+    font-size: 18px; width: 40px; height: 40px;
+    padding: 0; border-radius: 50%; opacity: 1;
+    background: var(--accent); color: #fff;
+    border: 1px solid rgba(255,255,255,0.15);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .counter { bottom: 10px; right: 10px; font-size: 11px; padding: 4px 8px; opacity: 0.85; }
+
+  /* Cards */
+  .card { padding: 12px; border-radius: 10px; }
+  .card h3 { font-size: 13px; margin-bottom: 4px; }
+  .card p, .card li { font-size: 11px; line-height: 1.4; }
+
+  /* Grids — use 2 columns in landscape since we have width */
+  .columns { gap: 10px; }
+  .three-col { gap: 10px; }
+  .four-col { grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* Tags */
+  .tag { font-size: 10px; padding: 3px 10px; margin-bottom: 6px; }
+
+  /* Pipeline — keep horizontal but smaller */
+  .pipeline-step { padding: 10px 8px; gap: 3px; }
+  .pipeline-step .step-icon { font-size: 16px; }
+  .pipeline-step .step-label { font-size: 11px; }
+  .pipeline-step .step-sub { font-size: 9px; }
+
+  /* Insight */
+  .insight { padding: 10px 16px; margin-top: 10px; }
+  .insight p { font-size: 13px; }
+
+  /* Takeaways */
+  .takeaway-item { gap: 10px; margin-bottom: 8px; padding: 8px 12px; }
+  .takeaway-num { font-size: 20px; }
+  .takeaway-item h3 { font-size: 13px; }
+  .takeaway-item p { font-size: 12px; }
+
+  /* Skill chips */
+  .skill-chip { font-size: 9px; padding: 2px 6px; }
+
+  /* Tree */
+  .tree { font-size: 11px; padding: 12px 16px; }
+
+  /* Slide header */
+  .slide-header { min-height: 100px; }
+
+  /* Icon */
+  .icon-large { font-size: 20px; margin-bottom: 6px; }
+
+  /* Team badge */
+  .team-badge span { font-size: 11px; }
+  .team-badge .dot { width: 7px; height: 7px; }
+}
+
+/* ═══════════ remote.css (inlined) ═══════════ */
+
+/* ══════════════════════════════════════════════════════
+   Super Slides — Remote (speaker view) styles
+   ══════════════════════════════════════════════════════
+   Self-contained — does NOT depend on the presenter's
+   presentation styles. Just uses the Lucidos theme tokens
+   from sdk-iframe.css (with our own dark fallback).
+   ══════════════════════════════════════════════════════ */
+
+:root {
+  --r-bg: #0a0a0f;
+  --r-surface: #14141c;
+  --r-surface-2: #1c1c28;
+  --r-border: #2a2a38;
+  --r-text: #f0f0f5;
+  --r-text-dim: #9094a8;
+  --r-accent: #6a96e0;
+  --r-success: #22c55e;
+}
+
+html, body.remote-body {
+  height: 100%;
+  margin: 0;
+  background: var(--r-bg);
+  color: var(--r-text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+body.remote-body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+}
+
+/* ── Header ────────────────────────────────────────── */
+
+.remote-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--r-border);
+  background: var(--r-surface);
+}
+
+.remote-meta {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0;
+}
+
+.remote-pres-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--r-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60vw;
+}
+
+.remote-status {
+  font-size: 11px;
+  color: var(--r-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.remote-status[data-ok="1"]::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--r-success);
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.remote-status[data-ok="0"]::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--r-text-dim);
+  margin-right: 6px;
+  vertical-align: middle;
+  animation: pulse-dim 1.4s ease-in-out infinite;
+}
+@keyframes pulse-dim {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.remote-counter {
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--r-text);
+  background: var(--r-surface-2);
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--r-border);
+}
+
+/* ── Main ──────────────────────────────────────────── */
+
+.remote-main {
+  padding: 20px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.remote-slide-info {
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+.remote-section-pill {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--pill-color, var(--r-accent));
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  opacity: 0.85;
+}
+.remote-section-pill::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.remote-slide-title {
+  font-size: clamp(24px, 5vw, 36px);
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--r-text);
+  margin: 0;
+}
+
+.remote-next-up {
+  font-size: 13px;
+  color: var(--r-text-dim);
+  margin: 0;
+}
+.remote-next-up::before {
+  content: '↓ ';
+  opacity: 0.6;
+}
+
+/* ── Notes card ────────────────────────────────────── */
+
+.remote-notes-card {
+  background: var(--r-surface);
+  border: 1px solid var(--r-border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: flex; flex-direction: column;
+  min-height: 200px;
+  overflow-y: auto;
+}
+
+.remote-notes-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--r-text-dim);
+  margin-bottom: 10px;
+}
+
+.remote-notes-body {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--r-text);
+  flex: 1;
+}
+.remote-notes-body p { margin: 0 0 12px; }
+.remote-notes-body p:last-child { margin-bottom: 0; }
+.remote-notes-body strong { color: #fff; }
+.remote-notes-body code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9em;
+  background: var(--r-surface-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.remote-notes-empty {
+  color: var(--r-text-dim);
+  font-style: italic;
+  font-size: 14px;
+}
+
+/* ── Nav ───────────────────────────────────────────── */
+
+.remote-nav {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom, 0));
+  border-top: 1px solid var(--r-border);
+  background: var(--r-surface);
+}
+
+.remote-nav-btn {
+  background: var(--r-surface-2);
+  border: 1px solid var(--r-border);
+  color: var(--r-text);
+  border-radius: 10px;
+  padding: 16px 20px;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.05s;
+  font-family: inherit;
+}
+.remote-nav-btn:hover { background: #232333; }
+.remote-nav-btn:active { transform: scale(0.97); }
+
+.remote-nav-btn-primary {
+  background: var(--r-accent);
+  border-color: var(--r-accent);
+  color: white;
+}
+.remote-nav-btn-primary:hover { background: #4f52e0; }
+
+.remote-nav-picker {
+  font-size: 14px;
+  color: var(--r-text-dim);
+}
+
+/* ── Picker overlay ────────────────────────────────── */
+
+.remote-picker-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 100;
+  display: flex; align-items: flex-end; justify-content: center;
+  animation: fade-in 0.15s ease-out;
+}
+.remote-picker-overlay[hidden] {
+  display: none !important;
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.remote-picker-panel {
+  width: 100%;
+  max-width: 600px;
+  max-height: 80vh;
+  background: var(--r-surface);
+  border-radius: 16px 16px 0 0;
+  border: 1px solid var(--r-border);
+  border-bottom: none;
+  display: flex; flex-direction: column;
+  animation: slide-up 0.2s ease-out;
+}
+@keyframes slide-up {
+  from { transform: translateY(20%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+.remote-picker-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--r-border);
+}
+.remote-picker-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--r-text);
+  margin: 0;
+}
+
+.remote-picker-close {
+  background: none;
+  border: none;
+  color: var(--r-text-dim);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.remote-picker-close:hover { color: var(--r-text); }
+
+.remote-picker-list {
+  overflow-y: auto;
+  padding: 8px 0 16px;
+  flex: 1;
+}
+
+.remote-picker-section-label {
+  padding: 12px 20px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.remote-picker-item {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  color: var(--r-text);
+  text-align: left;
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.remote-picker-item:hover { background: var(--r-surface-2); }
+.remote-picker-item.active {
+  background: var(--r-surface-2);
+  border-left-color: var(--r-accent);
+  color: #fff;
+}
+
+.remote-picker-num {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--r-text-dim);
+  min-width: 24px;
+}
+.remote-picker-item.active .remote-picker-num { color: var(--r-accent); }
+
+.remote-picker-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.remote-picker-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--r-text-dim);
+  font-size: 14px;
+}
+
+/* ── Mobile portrait tweaks ────────────────────────── */
+
+@media (max-width: 480px) {
+  .remote-pres-title { max-width: 50vw; }
+  .remote-slide-title { font-size: 22px; }
+  .remote-nav-btn { padding: 14px 16px; font-size: 16px; }
+}
+</style>
 <script src="/api/v1/sdk.js"></script>
 <script>
   lucidos.ui.applyPreferences && lucidos.ui.applyPreferences();
@@ -57,7 +2079,1105 @@
   </div>
 </div>
 
-<script src="components.js"></script>
-<script src="remote.js"></script>
+<script>
+/* ═══════════ components.js (inlined) ═══════════ */
+/* ══════════════════════════════════════════════
+   Super Slides — Reusable Components
+   ══════════════════════════════════════════════
+   Pure functions returning HTML strings.
+   
+   RULE: .slides files contain ZERO CSS.
+   All styling is handled here and in styles.css.
+   Semantic props (mt, mb, align, color, size, etc.)
+   map to utility classes.
+   ══════════════════════════════════════════════ */
+
+const SS = {};
+
+/* ══════════════════════════════════════════════
+   Workspace-scoped app state (SS.appState)
+   ══════════════════════════════════════════════
+   The app runs in an isolated iframe at an opaque origin, so
+   `localStorage` throws SecurityError — and an unguarded throw
+   takes the rest of the script with it. Everything that used to
+   live there and is a WORKSPACE fact rather than a device fact
+   now lives in one JSON document, read and written over the SDK
+   bridge:
+
+     artifacts/super-slides/state.json
+       presentationId   ← ss-pres
+       slideIndex       ← ss-slide
+       cardIndex        ← ss-card
+       driveFileMap     ← ss-drive-map
+       driveLastFolder  ← ss-drive-last-folder
+
+   Two consequences every caller has to respect:
+
+   1. The read is ASYNCHRONOUS where localStorage was synchronous.
+      `get()` answers from an in-memory mirror that is empty until
+      the document lands, so render a sane default first and apply
+      the restored value inside `ready().then(…)`.
+   2. Writes are DEBOUNCED. A data write makes a git commit, and
+      slide navigation persists on every step.
+
+   `ss-mode` deliberately did NOT move here — it is a per-device
+   fact (presenter on the laptop, remote on the phone). See init.js
+   and remote-mode.js.
+   ══════════════════════════════════════════════ */
+
+SS.appState = (function () {
+  const PATH = 'artifacts/super-slides/state.json';
+  const WRITE_DEBOUNCE_MS = 1500;
+
+  let state = {};        // in-memory mirror — always readable synchronously
+  let loadPromise = null;
+  let writeTimer = null;
+  let writing = false;
+  let dirty = false;
+
+  // Resolves once the document has been read (or has been established as
+  // absent). Safe to call repeatedly — the read happens once.
+  function ready() {
+    if (loadPromise) return loadPromise;
+    loadPromise = (async () => {
+      try {
+        const parsed = JSON.parse(await lucidos.data.read(PATH));
+        if (parsed && typeof parsed === 'object') state = parsed;
+      } catch (e) {
+        // No document yet (404), malformed, or no SDK — start empty.
+        state = {};
+      }
+      return state;
+    })();
+    return loadPromise;
+  }
+
+  function get(key, fallback) {
+    return Object.prototype.hasOwnProperty.call(state, key) ? state[key] : fallback;
+  }
+
+  function set(key, value) {
+    // Cheap no-op guard for scalars; objects are always re-persisted.
+    if (value === null || typeof value !== 'object') {
+      if (state[key] === value) return;
+    }
+    state[key] = value;
+    dirty = true;
+    if (writeTimer) clearTimeout(writeTimer);
+    writeTimer = setTimeout(flush, WRITE_DEBOUNCE_MS);
+  }
+
+  async function flush() {
+    if (writeTimer) { clearTimeout(writeTimer); writeTimer = null; }
+    // A write already in flight will pick up the newer state when it settles.
+    if (!dirty || writing) return;
+    if (!window.lucidos || !lucidos.data) return;
+    dirty = false;
+    writing = true;
+    try {
+      await lucidos.data.write(PATH, JSON.stringify(state, null, 2));
+    } catch (e) {
+      console.warn('[SS] state write failed:', e);
+    } finally {
+      writing = false;
+      if (dirty) writeTimer = setTimeout(flush, WRITE_DEBOUNCE_MS);
+    }
+  }
+
+  // Best-effort: don't drop a debounced write when the page goes away.
+  window.addEventListener('pagehide', () => { flush(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flush();
+  });
+
+  // Start the read immediately — every caller's first paint races it.
+  if (window.lucidos && lucidos.data) ready();
+
+  return { ready, get, set, flush, PATH };
+})();
+
+// ── Custom component registry ──
+
+SS._customComponents = {};
+
+SS.registerComponent = (name, renderFn) => {
+  SS._customComponents[name] = renderFn;
+};
+
+// ── Utility: build class list from semantic props ──
+
+SS._classes = (base, node) => {
+  const c = Array.isArray(base) ? [...base] : [base];
+  if (node.mt) c.push('mt-' + node.mt);
+  if (node.mb) c.push('mb-' + node.mb);
+  if (node.align) c.push('align-' + node.align);
+  if (node.gap) c.push('gap-' + node.gap);
+  return c.filter(Boolean).join(' ');
+};
+
+// ── Editable wrapper: wraps text in a span with edit data attrs ──
+
+SS._editable = (text, path, prop) => {
+  if (!path) return text;
+  return `<span class="ss-editable" data-ss-path="${path}" data-ss-prop="${prop}">${text}</span>`;
+};
+
+// ── Tags ──
+
+SS.tag = (text, color, path) => {
+  const editAttr = path ? ` data-ss-path="${path}" data-ss-prop="text"` : '';
+  const editCls = path ? ' ss-editable' : '';
+  return `<span class="tag tag-${color}${editCls}"${editAttr}>${text}</span>`;
+};
+
+// ── Slide header (tag + h2 + subtitle) ──
+
+SS.slideHeader = (tagHtml, title, subtitle, path) => {
+  const titleAttr = path ? ` data-ss-path="${path}" data-ss-prop="title"` : '';
+  const titleCls = path ? ' ss-editable' : '';
+  const subAttr = path ? ` data-ss-path="${path}" data-ss-prop="subtitle"` : '';
+  const subCls = path ? ' ss-editable' : '';
+  return `<div class="slide-header">
+    ${tagHtml}
+    <h2 class="${titleCls}"${titleAttr}>${title}</h2>
+    <p class="subtitle${subCls}"${subAttr}>${subtitle}</p>
+  </div>`;
+};
+
+// ── Cards ──
+
+SS.card = (content, node = {}) => {
+  const classes = ['card'];
+  if (node.highlight) classes.push('highlight-' + node.highlight);
+  if (node.className) classes.push(node.className);
+  if (node.mt) classes.push('mt-' + node.mt);
+  if (node.mb) classes.push('mb-' + node.mb);
+  if (node.align) classes.push('ta-' + node.align);
+  return `<div class="${classes.join(' ')}">${content}</div>`;
+};
+
+// ── Layout ──
+
+SS.columns = (items, node = {}) =>
+  `<div class="${SS._classes('columns', node)}">${items.join('')}</div>`;
+
+SS.threeCol = (items, node = {}) =>
+  `<div class="${SS._classes('three-col', node)}">${items.join('')}</div>`;
+
+SS.fourCol = (items, node = {}) =>
+  `<div class="${SS._classes('four-col', node)}">${items.join('')}</div>`;
+
+// ── Insight ──
+
+SS.insight = (content, color, path) => {
+  const editAttr = path ? ` data-ss-path="${path}" data-ss-prop="text"` : '';
+  const editCls = path ? ' ss-editable' : '';
+  return `<div class="insight${color ? ' insight-' + color : ''}"><p class="${editCls}"${editAttr}>${content}</p></div>`;
+};
+
+// ── Icon ──
+
+SS.icon = (emoji) =>
+  `<span class="icon-large">${emoji}</span>`;
+
+// ── Unordered list ──
+
+SS.list = (items, path) => {
+  if (path) {
+    return `<ul>${items.map((item, i) =>
+      `<li class="ss-editable" data-ss-path="${path}" data-ss-prop="items[${i}]">${item}</li>`
+    ).join('')}</ul>`;
+  }
+  return `<ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>`;
+};
+
+// ── Skill chips ──
+
+SS.skillChips = (chips, path) => {
+  if (path) {
+    return `<div class="skill-chips">${chips.map((c, i) =>
+      `<span class="skill-chip ss-editable" data-ss-path="${path}" data-ss-prop="chips[${i}]">${c}</span>`
+    ).join('')}</div>`;
+  }
+  return `<div class="skill-chips">${chips.map(c => `<span class="skill-chip">${c}</span>`).join('')}</div>`;
+};
+
+// ── Pipeline ──
+
+SS.pipeline = (steps) =>
+  `<div class="pipeline">${steps.join('')}</div>`;
+
+SS.pipelineStep = (icon, label, ownerClass, ownerLabel, sub, path) =>
+  `<div class="pipeline-step">
+    <span class="step-icon">${SS._editable(icon, path, 'icon')}</span>
+    <span class="step-label">${SS._editable(label, path, 'label')}</span>
+    <span class="step-owner ${ownerClass}">${SS._editable(ownerLabel, path, 'ownerLabel')}</span>
+    <span class="step-sub">${SS._editable(sub, path, 'sub')}</span>
+  </div>`;
+
+// ── Takeaways ──
+
+SS.takeawayList = (items) =>
+  `<div class="takeaway-list">${items.join('')}</div>`;
+
+SS.takeawayItem = (num, title, body, path) =>
+  `<div class="takeaway-item">
+    <span class="takeaway-num">${SS._editable(num, path, 'num')}</span>
+    <div><h3>${SS._editable(title, path, 'title')}</h3><p>${SS._editable(body, path, 'body')}</p></div>
+  </div>`;
+
+// ── Event Sourcing flow ──
+
+SS.esFlow = (events, path) => {
+  if (path) {
+    return `<div class="es-flow">${events.map((e, i) =>
+      (i > 0 ? '<span class="es-arrow">→</span>' : '') +
+      `<span class="es-event ss-editable" data-ss-path="${path}" data-ss-prop="events[${i}]">${e}</span>`
+    ).join('')}</div>`;
+  }
+  return `<div class="es-flow">${events.map((e, i) =>
+    (i > 0 ? '<span class="es-arrow">→</span>' : '') +
+    `<span class="es-event">${e}</span>`
+  ).join('')}</div>`;
+};
+
+// ── Tree / code block ──
+
+SS.tree = (content) =>
+  `<div class="tree">${content}</div>`;
+
+// ── Team badge ──
+
+SS.teamBadge = (text, path) => {
+  const inner = SS._editable(text, path, 'text');
+  return `<div class="team-badge"><div class="dot"></div><span>${inner}</span></div>`;
+};
+
+// ── VS label ──
+
+SS.vsLabel = (text, path, color) => {
+  const editAttr = path ? ` data-ss-path="${path}" data-ss-prop="text"` : '';
+  const editCls = path ? ' ss-editable' : '';
+  const colorCls = color ? ` c-${color}` : '';
+  return `<p class="vs-label${colorCls}${editCls}"${editAttr}>${text}</p>`;
+};
+
+// ── Arch diagram (SVG wrapper) ──
+
+SS.archDiagram = (svgContent) =>
+  `<div class="arch-diagram">${svgContent}</div>`;
+
+// ── Heading ──
+
+SS.heading = (node, path) => {
+  const tag = `h${node.level || 2}`;
+  const classes = [];
+  if (node.color) classes.push('c-' + node.color);
+  if (node.size) classes.push('sz-' + node.size);
+  if (node.mt) classes.push('mt-' + node.mt);
+  if (node.mb) classes.push('mb-' + node.mb);
+  const cls = classes.length ? ` class="${classes.join(' ')}"` : '';
+
+  let content;
+  if (node.sub) {
+    // Wrap text and sub separately for independent editing
+    content = SS._editable(node.text || '', path, 'text');
+    content += ` <span class="heading-sub${node.subColor ? ' c-' + node.subColor : ''}">${SS._editable(node.sub, path, 'sub')}</span>`;
+  } else if (path) {
+    // No sub — make the whole heading editable
+    content = node.text || '';
+    // Add editable attrs to the heading tag itself
+    const editCls = classes.length ? classes.join(' ') + ' ss-editable' : 'ss-editable';
+    return `<${tag} class="${editCls}" data-ss-path="${path}" data-ss-prop="text">${content}</${tag}>`;
+  } else {
+    content = node.text || '';
+  }
+
+  return `<${tag}${cls}>${content}</${tag}>`;
+};
+
+// ── Text ──
+
+SS.text = (node, path) => {
+  const classes = [];
+  if (node.color) classes.push('c-' + node.color);
+  if (node.align) classes.push('ta-' + node.align);
+  if (node.size) classes.push('sz-' + node.size);
+  if (node.font === 'mono') classes.push('font-mono');
+  if (node.weight) classes.push('fw-' + node.weight);
+  if (node.mt) classes.push('mt-' + node.mt);
+  if (node.mb) classes.push('mb-' + node.mb);
+  if (node.leading) classes.push('leading-' + node.leading);
+  if (path) classes.push('ss-editable');
+  const cls = classes.length ? ` class="${classes.join(' ')}"` : '';
+  const editAttr = path ? ` data-ss-path="${path}" data-ss-prop="text"` : '';
+  return `<p${cls}${editAttr}>${node.text || ''}</p>`;
+};
+
+// ── Stat ──
+
+SS.stat = (node, path) => {
+  const colorCls = node.color ? ' stat-' + node.color : '';
+  let html = `<div class="stat-block${colorCls}">`;
+  html += `<p class="stat-value${path ? ' ss-editable' : ''}"${path ? ` data-ss-path="${path}" data-ss-prop="value"` : ''}>${node.value}</p>`;
+  if (node.label) html += `<p class="stat-label${path ? ' ss-editable' : ''}"${path ? ` data-ss-path="${path}" data-ss-prop="label"` : ''}>${node.label}</p>`;
+  if (node.sublabel) html += `<p class="stat-sublabel${path ? ' ss-editable' : ''}"${path ? ` data-ss-path="${path}" data-ss-prop="sublabel"` : ''}>${node.sublabel}</p>`;
+  html += '</div>';
+  return html;
+};
+
+// ── Spacer ──
+
+SS.spacer = (size) =>
+  `<div class="spacer spacer-${size || 'md'}"></div>`;
+
+// ── Node renderer (walks JSON trees → HTML) ──
+// path: JSON path string for this node (e.g. "sections[0].slides[1].content[2]")
+
+SS.renderNode = (node, path) => {
+  if (!node) return '';
+
+  // Check custom registry first
+  if (SS._customComponents[node.type]) {
+    return SS._customComponents[node.type](node, path);
+  }
+
+  const children = (node.children || []).map((child, i) =>
+    SS.renderNode(child, path ? `${path}.children[${i}]` : null)
+  );
+
+  switch (node.type) {
+    case 'slideHeader':
+      return SS.slideHeader(
+        SS.tag(node.tag.text, node.tag.color, path ? `${path}.tag` : null),
+        node.title, node.subtitle, path
+      );
+    case 'card':
+      return SS.card(children.join(''), node);
+    case 'columns':
+      return SS.columns(children, node);
+    case 'threeCol':
+      return SS.threeCol(children, node);
+    case 'fourCol':
+      return SS.fourCol(children, node);
+    case 'insight':
+      return SS.insight(node.text, node.color, path);
+    case 'icon':
+      return SS.icon(node.emoji);
+    case 'list':
+      return SS.list(node.items, path);
+    case 'skillChips':
+      return SS.skillChips(node.chips, path);
+    case 'pipeline':
+      return SS.pipeline(children);
+    case 'pipelineStep':
+      return SS.pipelineStep(node.icon, node.label, node.ownerClass, node.ownerLabel, node.sub, path);
+    case 'takeawayList':
+      return SS.takeawayList(children);
+    case 'takeawayItem':
+      return SS.takeawayItem(node.num, node.title, node.body, path);
+    case 'esFlow':
+      return SS.esFlow(node.events, path);
+    case 'tree':
+      return SS.tree(node.content);
+    case 'teamBadge':
+      return SS.teamBadge(node.text, path);
+    case 'vsLabel':
+      return SS.vsLabel(node.text, path, node.color);
+    case 'archDiagram':
+      return SS.archDiagram(node.content);
+    case 'group': {
+      const cls = SS._classes('group', node);
+      return `<div class="${cls}">${children.join('')}</div>`;
+    }
+
+    // Semantic components
+    case 'heading':
+      return SS.heading(node, path);
+    case 'text':
+      return SS.text(node, path);
+    case 'stat':
+      return SS.stat(node, path);
+    case 'spacer':
+      return SS.spacer(node.size);
+    case 'include':
+      return node._resolved || `<!-- include not loaded: ${node.src} -->`;
+
+    // Escape hatch — should be rare
+    case 'html':
+      return node.content;
+
+    default:
+      console.warn('Unknown node type:', node.type);
+      return `<div class="ss-render-error">Unknown node type: <strong>${node.type || '(empty)'}</strong></div>`;
+  }
+};
+
+// ── Error display ──
+
+SS.showError = (title, message, detail, source) => {
+  const app = document.getElementById('app');
+  const overlay = document.createElement('div');
+  overlay.className = 'ss-error-overlay';
+  overlay.innerHTML = `
+    <div class="ss-error-box">
+      <span class="ss-error-icon">⚠</span>
+      <h2>${title}</h2>
+      <p class="ss-error-message">${message}</p>
+      ${detail ? `<pre class="ss-error-detail">${detail}</pre>` : ''}
+      ${source ? `<p class="ss-error-source">${source}</p>` : ''}
+    </div>`;
+  (app || document.body).appendChild(overlay);
+};
+
+// ── Presentation registry ──
+
+window._superSlidesRegistry = [];
+
+SS.registerPresentation = (presentation) => {
+  window._superSlidesRegistry.push(presentation);
+};
+
+// ── Resolve include nodes (async, called during load) ──
+
+SS._resolveIncludes = async (data, baseDir) => {
+  const promises = [];
+
+  function walk(nodes) {
+    if (!nodes) return;
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      if (node.type === 'include' && node.src) {
+        const idx = i;
+        const arr = nodes;
+        promises.push(
+          lucidos.data.read(`${baseDir}/${node.src}`)
+            .then(html => { arr[idx]._resolved = html; })
+            .catch(() => { arr[idx]._resolved = `<!-- include not found: ${node.src} -->`; })
+        );
+      }
+      if (node.children) walk(node.children);
+    }
+  }
+
+  if (data.sections) {
+    data.sections.forEach(sec => sec.slides.forEach(s => walk(s.content)));
+  } else if (data.slides) {
+    data.slides.forEach(s => walk(s.content));
+  }
+
+  await Promise.all(promises);
+};
+
+// ── Load custom components & styles for a presentation ──
+
+SS._loadCustomAssets = async (presId, baseDir) => {
+  // Clean up previous custom assets
+  document.querySelectorAll('style[data-ss-custom]').forEach(el => el.remove());
+  SS._customComponents = {};
+
+  const presDir = `${baseDir}/${presId}`;
+
+  // Load custom styles
+  try {
+    const css = await lucidos.data.read(`${presDir}/styles.css`);
+    const el = document.createElement('style');
+    el.dataset.ssCustom = presId;
+    el.textContent = css;
+    document.head.appendChild(el);
+  } catch (e) { /* no custom styles */ }
+
+  // Load custom components
+  try {
+    const js = await lucidos.data.read(`${presDir}/components.js`);
+    new Function(js)();
+  } catch (e) { /* no custom components */ }
+};
+
+// ── Load a JSON presentation file ──
+
+SS.loadPresentation = async (path) => {
+  let raw;
+  try {
+    raw = await lucidos.data.read(path);
+  } catch (err) {
+    SS.showError(
+      'Failed to Load',
+      `Could not read presentation file.`,
+      err.message,
+      path
+    );
+    throw err;
+  }
+
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    const match = err.message.match(/position (\d+)/);
+    let detail = err.message;
+    if (match) {
+      const pos = parseInt(match[1]);
+      const snippet = raw.substring(Math.max(0, pos - 60), pos + 60);
+      const arrow = ' '.repeat(Math.min(60, pos)) + '^^^';
+      detail = err.message + '\n\n' + snippet + '\n' + arrow;
+    }
+    SS.showError(
+      'Invalid JSON',
+      'The presentation file contains malformed JSON.',
+      detail,
+      path
+    );
+    throw err;
+  }
+
+  // Resolve base directory for includes and custom assets
+  const baseDir = path.substring(0, path.lastIndexOf('/'));
+
+  // Artifact path for editing — already in SDK format
+  const sourceFile = path;
+
+  // Resolve include nodes
+  await SS._resolveIncludes(data, `${baseDir}/${data.id}`);
+
+  // Load custom components & styles
+  await SS._loadCustomAssets(data.id, baseDir);
+
+  // Build flat slide list with JSON path threading
+  let flatSlides = [];
+  let sections = null;
+
+  if (data.sections && data.sections.length) {
+    sections = [];
+    data.sections.forEach((sec, secIdx) => {
+      const startIndex = flatSlides.length;
+      const rendered = sec.slides.map((s, slideIdx) => ({
+        html: s.content ? s.content.map((n, i) =>
+          SS.renderNode(n, `sections[${secIdx}].slides[${slideIdx}].content[${i}]`)
+        ).join('') : '',
+        hero: s.hero || false,
+        title: s.title || undefined,
+        notes: s.notes || '',
+        cardNotes: Array.isArray(s.cardNotes) ? s.cardNotes.slice() : undefined,
+        path: `sections[${secIdx}].slides[${slideIdx}]`,
+      }));
+      flatSlides.push(...rendered);
+      sections.push({
+        title: sec.title,
+        color: sec.color || 'accent',
+        startIndex,
+        endIndex: flatSlides.length - 1,
+        count: rendered.length,
+      });
+    });
+  } else if (data.slides) {
+    flatSlides = data.slides.map((s, slideIdx) => ({
+      html: s.content ? s.content.map((n, i) =>
+        SS.renderNode(n, `slides[${slideIdx}].content[${i}]`)
+      ).join('') : '',
+      hero: s.hero || false,
+      title: s.title || undefined,
+      notes: s.notes || '',
+      cardNotes: Array.isArray(s.cardNotes) ? s.cardNotes.slice() : undefined,
+      path: `slides[${slideIdx}]`,
+    }));
+  }
+
+  const pres = {
+    id: data.id,
+    title: data.title,
+    subtitle: data.subtitle,
+    titleScroller: data.titleScroller,
+    slides: flatSlides,
+    sections: sections,
+    sourceFile: sourceFile,
+    rawData: data,
+    sourceUrl: path,
+  };
+
+  SS.registerPresentation(pres);
+  return pres;
+};
+</script>
+<script>
+/* ═══════════ remote.js (inlined) ═══════════ */
+/* ══════════════════════════════════════════════════════
+   Super Slides — Remote (speaker view)
+   ══════════════════════════════════════════════════════
+   A stripped-down companion UI that:
+   - Shows current slide title, section, and speaker notes
+   - Sends SlideRemoteCommand events to drive the presenter
+   - Listens for SlidePresenterState to mirror live position
+   ══════════════════════════════════════════════════════ */
+
+(function () {
+  const STATE = {
+    presentationId: null,
+    presentationTitle: null,
+    slideIndex: 0,
+    slideCount: 0,
+    cardIndex: -1,
+    presentation: null,    // full loaded presentation (for notes, picker)
+  };
+
+  function showRemoteError(msg) {
+    els.notesBody.innerHTML =
+      `<div style="color:var(--rose,#f87171);white-space:pre-wrap;font-size:.85rem;line-height:1.5;">${
+        msg.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))
+      }</div>`;
+    els.slideTitle.textContent = 'Error loading presentation';
+    els.pickerBtn.disabled = true;
+  }
+
+  // Match the presenter's persisted position — a sensible default when the
+  // remote opens before the presenter has broadcast. It lives in the workspace
+  // state document now (localStorage throws in the isolated app frame), so the
+  // read is ASYNCHRONOUS: these start empty and init() fills them in after
+  // painting the shell.
+  let SAVED_PRES_ID = null;
+  let SAVED_SLIDE   = 0;
+
+  const els = {
+    presTitle: document.getElementById('presTitle'),
+    connStatus: document.getElementById('connStatus'),
+    counter: document.getElementById('counter'),
+    sectionPill: document.getElementById('sectionPill'),
+    slideTitle: document.getElementById('slideTitle'),
+    nextUp: document.getElementById('nextUp'),
+    notesBody: document.getElementById('notesBody'),
+    prevBtn: document.getElementById('prevBtn'),
+    nextBtn: document.getElementById('nextBtn'),
+    pickerBtn: document.getElementById('pickerBtn'),
+    pickerOverlay: document.getElementById('pickerOverlay'),
+    pickerCloseBtn: document.getElementById('pickerCloseBtn'),
+    pickerList: document.getElementById('pickerList'),
+  };
+
+  /* ── Load a presentation file directly (for notes + picker) ────────── */
+
+  // Maintain our own registry; SS.loadPresentation appends to the global one.
+  async function ensurePresentationLoaded(presentationId) {
+    const reg = window._superSlidesRegistry || [];
+    let pres = reg.find(p => p.id === presentationId);
+    if (pres) return pres;
+
+    const errors = [];
+
+    // Try direct load first — fast, no glob needed
+    const directPath = `artifacts/presentations/${presentationId}.slides`;
+    try {
+      await SS.loadPresentation(directPath);
+      pres = (window._superSlidesRegistry || []).find(p => p.id === presentationId);
+      if (pres) return pres;
+    } catch (e) {
+      errors.push(`Direct load failed (${directPath}): ${e.message}`);
+    }
+
+    // Fall back to listing all presentations
+    let files = [];
+    try {
+      files = await lucidos.data.list('artifacts/presentations/*.slides');
+    } catch (e) {
+      errors.push(`Could not list presentations: ${e.message}`);
+    }
+    for (const path of files) {
+      try {
+        await SS.loadPresentation(path);
+      } catch (e) {
+        errors.push(`Failed to load ${path}: ${e.message}`);
+      }
+    }
+    pres = (window._superSlidesRegistry || []).find(p => p.id === presentationId) || null;
+    if (!pres) {
+      const knownIds = (window._superSlidesRegistry || []).map(p => p.id);
+      const errMsg = `Could not load presentation "${presentationId}".\n` +
+        (errors.length ? errors.join('\n') : 'No errors, but ID not found.') +
+        (knownIds.length ? `\nLoaded IDs: ${knownIds.join(', ')}` : '\nNo presentations loaded.');
+      console.error('[remote]', errMsg);
+      showRemoteError(errMsg);
+    }
+    return pres;
+  }
+
+  /* ── Find which section a flat slide index belongs to ──────────────── */
+
+  function getSectionFor(pres, idx) {
+    if (!pres || !pres.sections) return null;
+    for (let i = pres.sections.length - 1; i >= 0; i--) {
+      if (idx >= pres.sections[i].startIndex) return pres.sections[i];
+    }
+    return null;
+  }
+
+  function slideTitleFor(pres, idx) {
+    if (!pres || !pres.slides[idx]) return `Slide ${idx + 1}`;
+    const s = pres.slides[idx];
+    if (s.title) return s.title;
+    const m = (s.html || '').match(/<h[12][^>]*>(.*?)<\/h[12]>/);
+    if (m) return m[1].replace(/<[^>]+>/g, '');
+    return idx === 0 ? 'Title' : `Slide ${idx + 1}`;
+  }
+
+  /* ── Render the remote UI for the current state ────────────────────── */
+
+  function render() {
+    const pres = STATE.presentation;
+    els.presTitle.textContent = STATE.presentationTitle || (pres && pres.title) || '—';
+
+    const total = STATE.slideCount || (pres ? pres.slides.length : 0);
+    els.counter.textContent = total
+      ? `${STATE.slideIndex + 1} / ${total}`
+      : '— / —';
+
+    // Re-enable controls once presentation loads (clears any earlier error state)
+    els.pickerBtn.disabled = !pres;
+
+    if (pres) {
+      const sec = getSectionFor(pres, STATE.slideIndex);
+      if (sec) {
+        els.sectionPill.hidden = false;
+        els.sectionPill.textContent = sec.title;
+        els.sectionPill.style.setProperty('--pill-color', `var(--${sec.color || 'accent'})`);
+      } else {
+        els.sectionPill.hidden = true;
+      }
+      els.slideTitle.textContent = slideTitleFor(pres, STATE.slideIndex);
+
+      const next = STATE.slideIndex + 1;
+      if (next < pres.slides.length) {
+        els.nextUp.textContent = `Next: ${slideTitleFor(pres, next)}`;
+        els.nextUp.hidden = false;
+      } else {
+        els.nextUp.hidden = true;
+      }
+
+      const slide = pres.slides[STATE.slideIndex];
+      let notes = '';
+      if (STATE.cardIndex >= 0 && slide?.cardNotes?.[STATE.cardIndex]) {
+        notes = slide.cardNotes[STATE.cardIndex].trim();
+      } else if (slide?.notes) {
+        notes = slide.notes.trim();
+      }
+      if (notes) {
+        // Notes may contain simple inline markup; treat as semi-trusted (presenter's own file).
+        // Convert plain newlines to <br> for readability.
+        els.notesBody.innerHTML = notes
+          .split(/\n{2,}/)
+          .map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`)
+          .join('');
+      } else {
+        els.notesBody.innerHTML = '<em class="remote-notes-empty">No notes for this slide.</em>';
+      }
+    } else {
+      els.sectionPill.hidden = true;
+      els.slideTitle.textContent = STATE.presentationTitle ? 'Loading…' : 'Waiting for presenter';
+      els.nextUp.hidden = true;
+      els.notesBody.innerHTML = '<em class="remote-notes-empty">No notes for this slide.</em>';
+    }
+
+    // Picker (rebuild if open)
+    if (!els.pickerOverlay.hidden) buildPicker();
+  }
+
+  /* ── Slide picker ──────────────────────────────────────────────────── */
+
+  function buildPicker() {
+    const pres = STATE.presentation;
+    if (!pres) {
+      els.pickerList.innerHTML = '<div class="remote-picker-empty">No presentation loaded.</div>';
+      return;
+    }
+    let html = '';
+    if (pres.sections) {
+      pres.sections.forEach(sec => {
+        html += `<div class="remote-picker-section-label" style="color: var(--${sec.color || 'accent'})">${sec.title}</div>`;
+        for (let i = sec.startIndex; i <= sec.endIndex; i++) {
+          html += pickerItem(pres, i);
+        }
+      });
+    } else {
+      pres.slides.forEach((_, i) => { html += pickerItem(pres, i); });
+    }
+    els.pickerList.innerHTML = html;
+    const active = els.pickerList.querySelector('.remote-picker-item.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  }
+
+  function pickerItem(pres, i) {
+    const isActive = i === STATE.slideIndex;
+    return `<button class="remote-picker-item${isActive ? ' active' : ''}" data-slide="${i}">
+      <span class="remote-picker-num">${i + 1}</span>
+      <span class="remote-picker-title">${escapeHtml(slideTitleFor(pres, i))}</span>
+    </button>`;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  function openPicker() {
+    buildPicker();
+    els.pickerOverlay.hidden = false;
+  }
+  function closePicker() {
+    els.pickerOverlay.hidden = true;
+  }
+
+  /* ── Commands → presenter ──────────────────────────────────────────── */
+
+  // Absolute-state protocol: every command carries the full target state.
+  function sendState(extra) {
+    const payload = Object.assign({
+      summary: 'Remote: setState',
+      action: 'setState',
+      presentationId: STATE.presentationId,
+      slideIndex: STATE.slideIndex,
+      cardIndex: STATE.cardIndex,
+    }, extra || {});
+    lucidos.events.emit('SlideRemoteCommand', payload, { transient: true }).catch(err => {
+      console.warn('[remote] send failed:', err);
+    });
+  }
+
+  function next() {
+    const target = STATE.slideIndex + 1;
+    if (STATE.slideCount && target >= STATE.slideCount) return;
+    pendingGoto = target;
+    pendingTime = Date.now();
+    STATE.slideIndex = target;
+    STATE.cardIndex = -1;
+    render();
+    sendState();
+  }
+  function prev() {
+    const target = STATE.slideIndex - 1;
+    if (target < 0) return;
+    pendingGoto = target;
+    pendingTime = Date.now();
+    STATE.slideIndex = target;
+    STATE.cardIndex = -1;
+    render();
+    sendState();
+  }
+  let pendingGoto = null;
+  let pendingTime = 0;
+  const PENDING_TIMEOUT = 3000; // accept presenter state after 3s even if unacknowledged
+
+  function goto(idx) {
+    // Optimistic update so the UI feels responsive
+    pendingGoto = idx;
+    pendingTime = Date.now();
+    STATE.slideIndex = idx;
+    STATE.cardIndex = -1;
+    render();
+    sendState();
+  }
+
+  /* ── Wire up controls ──────────────────────────────────────────────── */
+
+  els.nextBtn.addEventListener('click', next);
+  els.prevBtn.addEventListener('click', prev);
+  els.pickerBtn.addEventListener('click', openPicker);
+  els.pickerCloseBtn.addEventListener('click', closePicker);
+  els.pickerOverlay.addEventListener('click', (e) => {
+    if (e.target === els.pickerOverlay) closePicker();
+  });
+  els.pickerList.addEventListener('click', (e) => {
+    const btn = e.target.closest('.remote-picker-item');
+    if (!btn) return;
+    const idx = parseInt(btn.dataset.slide);
+    goto(idx);
+    closePicker();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    // Don't intercept while typing in inputs (none today, but future-proof)
+    if (e.target.matches('input, textarea, [contenteditable]')) return;
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+      e.preventDefault(); next();
+    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+      e.preventDefault(); prev();
+    } else if (e.key === 'Escape' && !els.pickerOverlay.hidden) {
+      e.preventDefault(); closePicker();
+    } else if (e.key === 'g') {
+      e.preventDefault(); openPicker();
+    }
+  });
+
+  // Touch swipes for phone use
+  let touchStartX = 0, touchStartY = 0, touchMoved = false;
+  document.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.remote-nav, .remote-picker-overlay, button')) return;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchMoved = false;
+  }, { passive: true });
+  document.addEventListener('touchmove', () => { touchMoved = true; }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (e.target.closest('.remote-nav, .remote-picker-overlay, button')) return;
+    if (!touchMoved) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      dx < 0 ? next() : prev();
+    }
+  });
+
+  /* ── State sync via SSE ────────────────────────────────────────────── */
+
+  function setStatus(text, ok) {
+    els.connStatus.textContent = text;
+    els.connStatus.dataset.ok = ok ? '1' : '0';
+  }
+
+  async function applyPresenterState(data) {
+    if (!data) return;
+    setStatus('connected', true);
+
+    // If we have a pending goto, check whether this state confirms or conflicts
+    if (pendingGoto !== null) {
+      const elapsed = Date.now() - pendingTime;
+      if (typeof data.slideIndex === 'number' && data.slideIndex === pendingGoto) {
+        // Presenter confirmed our goto — clear pending
+        pendingGoto = null;
+      } else if (elapsed < PENDING_TIMEOUT) {
+        // Stale heartbeat from before the goto reached the presenter — ignore
+        return;
+      } else {
+        // Timed out — accept the presenter's authoritative state
+        pendingGoto = null;
+      }
+    }
+
+    const presChanged = data.presentationId && data.presentationId !== STATE.presentationId;
+    STATE.presentationId    = data.presentationId    || STATE.presentationId;
+    STATE.presentationTitle = data.presentationTitle || STATE.presentationTitle;
+    STATE.slideIndex        = typeof data.slideIndex === 'number' ? data.slideIndex : STATE.slideIndex;
+    STATE.slideCount        = data.slideCount        || STATE.slideCount;
+    STATE.cardIndex         = typeof data.cardIndex === 'number' ? data.cardIndex : -1;
+
+    if (presChanged || !STATE.presentation || STATE.presentation.id !== STATE.presentationId) {
+      try {
+        STATE.presentation = await ensurePresentationLoaded(STATE.presentationId);
+      } catch (e) {
+        showRemoteError(`Failed to load presentation: ${e.message}`);
+        return;
+      }
+    }
+    render();
+  }
+
+  lucidos.sse.connect();
+
+  // Debounce incoming state events — SSE may replay a burst of stored events
+  // on connect. We only care about the latest one.
+  let pendingStateData = null;
+  let stateDebounce = null;
+  lucidos.sse.on('SlidePresenterState', (data) => {
+    pendingStateData = data;
+    if (!stateDebounce) {
+      stateDebounce = setTimeout(() => {
+        stateDebounce = null;
+        applyPresenterState(pendingStateData);
+        pendingStateData = null;
+      }, 150);
+    }
+  });
+
+  // Ask the presenter to re-broadcast — handles "remote opened after presenter"
+  function pingPresenter() {
+    lucidos.events.emit('SlidePresenterPing', {
+      summary: 'Remote requesting presenter state',
+    }, { transient: true }).catch(() => {});
+  }
+
+  /* ── Bootstrap ─────────────────────────────────────────────────────── */
+
+  let connected = false;
+  let connectTimeout = null;
+
+  // Override setStatus to track connection
+  const _origSetStatus = setStatus;
+  setStatus = function(text, ok) {
+    if (ok) {
+      connected = true;
+      if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
+    }
+    _origSetStatus(text, ok);
+  };
+
+  (async function init() {
+    setStatus('connecting…', false);
+    // Paint the empty shell first — the saved-position read below is async.
+    render();
+
+    // Pick up the presenter's persisted position, if the state document has one.
+    try {
+      await SS.appState.ready();
+      SAVED_PRES_ID = SS.appState.get('presentationId', null);
+      const savedSlide = SS.appState.get('slideIndex', 0);
+      SAVED_SLIDE = Number.isInteger(savedSlide) ? savedSlide : 0;
+    } catch (e) {
+      // No saved position — wait for the presenter's broadcast instead.
+    }
+
+    // Optimistically load the last presentation the user had open
+    if (SAVED_PRES_ID) {
+      STATE.presentationId = SAVED_PRES_ID;
+      STATE.slideIndex = SAVED_SLIDE;
+      try {
+        STATE.presentation = await ensurePresentationLoaded(SAVED_PRES_ID);
+      } catch (e) {
+        showRemoteError(`Bootstrap load failed: ${e.message}`);
+      }
+      if (STATE.presentation) {
+        STATE.presentationTitle = STATE.presentation.title;
+        STATE.slideCount = STATE.presentation.slides.length;
+        render();
+      }
+    } else {
+      render();
+    }
+
+    // Ask the live presenter for authoritative state via ping
+    // (SlidePresenterState is transient — no stored events to query)
+    pingPresenter();
+    setTimeout(pingPresenter, 800); // retry once in case SSE was still connecting
+
+    // If no presenter responds within 5s, show a helpful message
+    connectTimeout = setTimeout(() => {
+      if (!connected) {
+        setStatus = _origSetStatus; // restore
+        _origSetStatus('no presenter found', false);
+        els.slideTitle.textContent = 'Presenter not detected';
+        els.notesBody.innerHTML =
+          '<p style="color:var(--text-dim);">Make sure Super Slides is open in another window or tab.</p>' +
+          '<p style="margin-top:.75rem"><button id="retryBtn" style="' +
+            'background:var(--accent);color:#fff;border:none;padding:.5rem 1.25rem;' +
+            'border-radius:.5rem;font-size:.95rem;cursor:pointer">Retry</button></p>';
+        document.getElementById('retryBtn').addEventListener('click', () => {
+          connected = false;
+          _origSetStatus('connecting…', false);
+          els.slideTitle.textContent = 'Reconnecting…';
+          els.notesBody.innerHTML = '<em class="remote-notes-empty">No notes for this slide.</em>';
+          pingPresenter();
+          setTimeout(pingPresenter, 800);
+          connectTimeout = setTimeout(() => {
+            if (!connected) {
+              _origSetStatus('no presenter found', false);
+              els.slideTitle.textContent = 'Presenter not detected';
+              els.notesBody.innerHTML =
+                '<p style="color:var(--text-dim);">Still no presenter. Check that Super Slides is open.</p>' +
+                '<p style="margin-top:.75rem"><button onclick="location.reload()" style="' +
+                  'background:var(--accent);color:#fff;border:none;padding:.5rem 1.25rem;' +
+                  'border-radius:.5rem;font-size:.95rem;cursor:pointer">Reload</button></p>';
+            }
+          }, 5000);
+        });
+      }
+    }, 5000);
+  })();
+})();
+</script>
 </body>
 </html>

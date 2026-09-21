@@ -16,25 +16,42 @@ SS.initEditing = function () {
   let activeEditor = null;
   let isFullscreen = false;
 
-  // Detect fullscreen (native + pseudo) — must check parent since app runs in iframe
-  const parentDoc = window.parent !== window ? window.parent.document : document;
-
+  // Detect fullscreen (native + pseudo) on the frame's OWN document.
+  //
+  // This used to reach into `window.parent.document`. The app runs in an
+  // isolated iframe at an opaque origin, so reading the host realm throws —
+  // and the throw killed the rest of this module, taking inline editing with
+  // it. Everything below now works against the local document.
+  //
+  // MIGRATION REVIEW: two of the old checks genuinely needed the HOST
+  // document and have no local equivalent, so fullscreen driven by the host
+  // shell is no longer detected and editing stays enabled during it:
+  //   1. `parentDoc.documentElement[data-pseudo-fullscreen]` — the host sets
+  //      that attribute on its own <html> (the iOS / no-Fullscreen-API path).
+  //      It is never present on the frame's <html>.
+  //   2. `parentDoc.fullscreenElement` — when the host calls
+  //      requestFullscreen() on the iframe ELEMENT, the frame's own
+  //      document.fullscreenElement stays null and no fullscreenchange fires
+  //      here.
+  // Needs a host→frame fullscreen signal (an SDK affordance or a postMessage
+  // the shell already sends) rather than a workaround invented in the app.
+  // The local checks below still cover the case the app can see: the app
+  // putting its OWN content into native fullscreen.
   function checkFullscreen() {
     isFullscreen = !!(
       document.fullscreenElement ||
       document.webkitFullscreenElement ||
-      parentDoc.fullscreenElement ||
-      parentDoc.webkitFullscreenElement ||
-      parentDoc.documentElement.hasAttribute('data-pseudo-fullscreen')
+      document.documentElement.hasAttribute('data-pseudo-fullscreen')
     );
     document.body.classList.toggle('ss-editing-disabled', isFullscreen);
   }
 
   document.addEventListener('fullscreenchange', checkFullscreen);
   document.addEventListener('webkitfullscreenchange', checkFullscreen);
-  parentDoc.addEventListener('fullscreenchange', checkFullscreen);
-  parentDoc.addEventListener('webkitfullscreenchange', checkFullscreen);
-  new MutationObserver(checkFullscreen).observe(parentDoc.documentElement, {
+  // Kept pointed at the local <html>: nothing sets the attribute there today
+  // (see the MIGRATION REVIEW note above), but this picks it up for free the
+  // day a pseudo-fullscreen signal reaches the frame.
+  new MutationObserver(checkFullscreen).observe(document.documentElement, {
     attributes: true, attributeFilter: ['data-pseudo-fullscreen']
   });
   checkFullscreen();

@@ -26,10 +26,13 @@
     els.pickerBtn.disabled = true;
   }
 
-  // Match the presenter's persistence key — we use it as a sensible default
-  // when the remote opens before the presenter has broadcast.
-  const SAVED_PRES_ID = localStorage.getItem('ss-pres');
-  const SAVED_SLIDE   = parseInt(localStorage.getItem('ss-slide')) || 0;
+  // Match the presenter's persisted position — a sensible default when the
+  // remote opens before the presenter has broadcast. It lives in the workspace
+  // state document now (localStorage throws in the isolated app frame), so the
+  // read is ASYNCHRONOUS: these start empty and init() fills them in after
+  // painting the shell.
+  let SAVED_PRES_ID = null;
+  let SAVED_SLIDE   = 0;
 
   const els = {
     presTitle: document.getElementById('presTitle'),
@@ -402,6 +405,18 @@
 
   (async function init() {
     setStatus('connecting…', false);
+    // Paint the empty shell first — the saved-position read below is async.
+    render();
+
+    // Pick up the presenter's persisted position, if the state document has one.
+    try {
+      await SS.appState.ready();
+      SAVED_PRES_ID = SS.appState.get('presentationId', null);
+      const savedSlide = SS.appState.get('slideIndex', 0);
+      SAVED_SLIDE = Number.isInteger(savedSlide) ? savedSlide : 0;
+    } catch (e) {
+      // No saved position — wait for the presenter's broadcast instead.
+    }
 
     // Optimistically load the last presentation the user had open
     if (SAVED_PRES_ID) {

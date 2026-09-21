@@ -18,6 +18,36 @@ app. Do not add the prefs/iframe-css tags to `index.html`. The companion
 `remote.html` *does* load them — it's a normal control UI and should respect the
 user's prefs.
 
+## App-frame isolation — read before touching `index.html` / `remote.html`
+
+The app runs in an isolated iframe at an opaque origin. Three consequences,
+all of them already handled in the code — don't undo them:
+
+1. **The app's own CSS and JS are INLINED into `index.html` and `remote.html`.**
+   Behind a gateway the frame sends no device credential with a subresource, so
+   a `<link>`/`<script src>` pointing at one of the app's own files answers 401
+   and the app renders unstyled or dead. Only `/api/v1/sdk*.js` and
+   `/api/v1/sdk-iframe.css` are exempt and stay external tags. `sdk.js` must
+   load **before** the inlined app scripts.
+   *There is no build step:* the sibling `.js` / `.css` files are kept (the test
+   page loads `drive.js` and `nav-logic.js` directly) but the HTML holds copies.
+   **Edit the source file AND the copy in the HTML**, or the app and the tests
+   drift. Adding a new module means adding a new inline `<script>` block, never
+   a `<script src>`.
+
+2. **No host-realm reads.** `window.parent.document` throws. `editing.js` carries
+   a `// MIGRATION REVIEW:` note for the fullscreen detection this cost us.
+
+3. **No `localStorage`** — an unguarded call throws `SecurityError` and takes the
+   rest of the script with it. Workspace-scoped state (resume position, Drive
+   deck→file map, last Drive folder) lives in `artifacts/super-slides/state.json`
+   behind `SS.appState` (`components.js`). Two rules for callers: the read is
+   **asynchronous**, so paint a default and reconcile in `ready().then(…)`; and
+   writes are **debounced**, because a data write makes a git commit.
+   `ss-mode` (presenter vs remote) is the one exception — it is genuinely
+   per-device, so it stays in `localStorage`, wrapped in `try/catch`, and is
+   simply not remembered inside the frame.
+
 ## Core Rules
 
 1. **Always confirm which presentation the user is talking about** before making any edits. There are multiple `.slides` files — never assume. Check the app UI to see which presentation is currently open, or ask the user. Editing the wrong file means a revert and wasted time.
