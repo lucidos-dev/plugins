@@ -45,6 +45,9 @@ global.clearTimeout = ()=>{};
 globalThis.__store = [];   // newest-first rows the fake event store returns
 globalThis.__fetchFail = false;
 globalThis.__fetchCalls = 0;
+globalThis.__queryCalls = 0;
+globalThis.__queryFail = false;
+globalThis.__modelsFail = false;
 global.fetch = async (u) => {
   globalThis.__fetchCalls++;
   if (globalThis.__fetchFail) throw new Error('offline');
@@ -67,7 +70,25 @@ global.lucidos = {
   ui:{ applyPreferences(){}, watchPreferences(){}, enhanceSelects(){}, toast(){},
        Select:{ create:(o)=>({element:mkEl('sel'), getValue:()=>o.value, setValue(){}, setOptions(){}, destroy(){}}) } },
   data:{ read: async (p)=> p.includes('pricing') ? pricingRaw : JSON.stringify(daily), write: async()=>({success:true}), url:(p)=> p.startsWith('system-knowhow/') ? '/dev/api/v1/data/'+p : '/dev/data/'+p },
-  events:{}, sse:{ connect(){}, on(){} },
+  events:{
+    // The catch-up pager reads the store through here, not a raw fetch: an app
+    // frame has an opaque origin (ADR 0227), so a direct fetch of the engine is
+    // CORS-refused and the SDK bridge is the only path. Mirrors the engine's
+    // /events/query: newest-first, filtered by `since` and the exclusive
+    // `before_event_id` cursor, clamped to `limit`.
+    query: async ({ since, limit, before_event_id } = {}) => {
+      globalThis.__queryCalls++;
+      if (globalThis.__queryFail) throw new Error('offline');
+      const from = new Date(since).getTime();
+      let rows = globalThis.__store.filter(r => new Date(r.created).getTime() >= from);
+      if (before_event_id) { const i = rows.findIndex(r=>r.id===before_event_id); rows = i<0?rows:rows.slice(i+1); }
+      return rows.slice(0, limit);
+    },
+  },
+  // `/models` has no SDK namespace, so it goes through the generic bridged
+  // call. Same reason: this frame's own fetch cannot reach the engine.
+  request: async () => { if (globalThis.__modelsFail) throw new Error('offline'); return []; },
+  sse:{ connect(){}, on(){} },
   utils:{ escapeHtml:(s)=>String(s), timeAgo:()=>'1m ago' },
 };
 
@@ -79,7 +100,7 @@ const harness = src + `
   setDaily(d){ daily = d; }, setPricing(p){ pricing = p; },
   get daily(){ return daily; },
   get metaText(){ return document.getElementById('meta').textContent; },
-  resetLive(){ live=[]; seenSeq=new Set(); liveRevision++; }, setSseOpenedAt(t){ sseOpenedAt=t; }, resetHealth(){ streamMissed=0; lastCatchUpFailed=false; lastCatchUpError=null; lastCatchUpAt=0; }, catchUp, eventsEndpoint, get lastCatchUpFailed(){return lastCatchUpFailed;}, get streamMissed(){return streamMissed;}, isStale, get feedRows(){ return document.getElementById('feed').children.map(c=>c.dataset.at); }, renderFeed,
+  resetLive(){ live=[]; seenSeq=new Set(); liveRevision++; }, setSseOpenedAt(t){ sseOpenedAt=t; }, resetHealth(){ streamMissed=0; lastCatchUpFailed=false; lastCatchUpError=null; lastCatchUpAt=0; }, catchUp, get lastCatchUpFailed(){return lastCatchUpFailed;}, get streamMissed(){return streamMissed;}, isStale, get feedRows(){ return document.getElementById('feed').children.map(c=>c.dataset.at); }, renderFeed,
 };
 `;
 new Function(harness)();
@@ -152,12 +173,12 @@ await tc.catchUp();
 ok(tc.countedLive().length===4, 'the reconcile fills the hole between them, got '+tc.countedLive().length);
 
 console.log('\n15. a failing reconcile says so instead of going quiet');
-globalThis.__fetchFail = true;
+globalThis.__queryFail = true;
 await tc.catchUp();
 ok(tc.lastCatchUpFailed===true, 'the failure is recorded');
 ok(tc.isStale()===true, 'and the dashboard reads as stale');
 ok(/not reaching the event store \(.+\)/.test(tc.metaText), 'the header says so: '+tc.metaText);
-globalThis.__fetchFail = false;
+globalThis.__queryFail = false;
 await tc.catchUp();
 ok(tc.lastCatchUpFailed===false, 'recovery clears it');
 ok(!tc.metaText.includes('not reaching'), 'and the header stops warning: '+tc.metaText);
@@ -184,31 +205,18 @@ globalThis.__store = [row(700, new Date(now - 20*3600*1000).toISOString(),'main_
 await tc.catchUp();
 ok(tc.countedLive().length===1, 'a call from 20h ago, older than midnight, is recovered');
 
-console.log('\n19. the events endpoint carries the workspace prefix');
-ok(tc.eventsEndpoint().pathname==='/dev/api/v1/events/query',
-   'via lucidos.apiUrl it resolves to the workspace route, got '+tc.eventsEndpoint().pathname);
-ok(!tc.eventsEndpoint().pathname.includes('/app/'),
-   'and never nests under the app path (the 404 that froze the dashboard)');
-const savedSdk = global.window.lucidos;
-global.window.lucidos = undefined;
-let threw = null;
-try { tc.eventsEndpoint(); } catch (e) { threw = e; }
-ok(threw !== null && /SDK not loaded/.test(threw.message),
-   'with no SDK it throws instead of deriving a URL that would 404, got '+(threw ? threw.message : 'no throw'));
-global.window.lucidos = savedSdk;
-ok(tc.eventsEndpoint().pathname==='/dev/api/v1/events/query',
-   'and it resolves again once the SDK is back, got '+tc.eventsEndpoint().pathname);
-
-console.log('\n20. the URL actually requested is the prefixed one');
+console.log('\n19. the catch-up pager goes through the SDK, never a raw fetch');
 tc.setDaily({...empty, days:{}});
 tc.resetLive(); tc.resetHealth();
-globalThis.__store = [];
-let requested = null;
+globalThis.__store = [row(800, new Date(now).toISOString(),'main_llm',[80,0,0,8])];
+globalThis.__queryCalls = 0;
+let rawEventsFetch = false;
 const realFetch = global.fetch;
-global.fetch = async (u) => { requested = String(u); return realFetch(u); };
+global.fetch = async (u) => { if (String(u).includes('/events/query')) rawEventsFetch = true; return realFetch(u); };
 await tc.catchUp();
-ok(requested && new URL(requested).pathname==='/dev/api/v1/events/query',
-   'fetch hit '+(requested?new URL(requested).pathname:'nothing'));
+ok(globalThis.__queryCalls > 0, 'it reads the store via lucidos.events.query, got '+globalThis.__queryCalls+' calls');
+ok(rawEventsFetch === false, 'and never raw-fetches /events/query, the CORS-refused path that froze the dashboard in a frame');
+ok(tc.countedLive().length===1, 'and still recovers the call, got '+tc.countedLive().length);
 global.fetch = realFetch;
 
 console.log('\n'+pass+' passed, '+fail+' failed');

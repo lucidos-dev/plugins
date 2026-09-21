@@ -49,13 +49,18 @@ const daily = JSON.parse(fs.readFileSync(P('data/artifacts/token-cost/daily.json
 const pricingRaw = fs.readFileSync(P('data/artifacts/token-cost/pricing.json'),'utf8');
 
 global.lucidos = {
-  // The app resolves its events endpoint through the SDK and throws without
-  // one, so the harness has to provide it the same way freshness.test.mjs does.
+  // Both engine calls go over the SDK bridge now: the pager through
+  // lucidos.events.query and /models through lucidos.request. An app frame
+  // runs at an opaque origin, so its own fetch of the engine is CORS-refused.
   apiUrl: (s) => '/dev/api/v1' + (s.startsWith('/') ? s : '/' + s),
   ui:{ applyPreferences(){}, watchPreferences(){}, enhanceSelects(){}, toast(){},
        Select:{ create:(o)=>({element:mkEl('sel'), getValue:()=>o.value, setValue(){}, setOptions(){}, destroy(){}}) } },
   data:{ read: async (p)=> p.includes('pricing') ? pricingRaw : JSON.stringify(daily), write: async()=>({success:true}), url:(p)=> p.startsWith('system-knowhow/') ? '/dev/api/v1/data/'+p : '/dev/data/'+p },
-  events:{}, sse:{ connect(){}, on(){} },
+  // The pager goes through lucidos.events.query; stubbed empty here because
+  // these tests drive the accounting directly via pushLive. `/models` goes
+  // through the generic bridged call, which has no labels to give.
+  events:{ query: async () => [] }, request: async () => [],
+  sse:{ connect(){}, on(){} },
   utils:{ escapeHtml:(s)=>String(s), timeAgo:()=>'1m ago' },
 };
 

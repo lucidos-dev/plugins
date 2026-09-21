@@ -3227,8 +3227,8 @@ SS.initEditing = function () {
    ══════════════════════════════════════════════════════
    Save / Open / Share .slides decks via Google Drive.
 
-   Auth: every call goes through the `google` entry in
-   data/config/apis.json via lucidos.proxy('google').fetch(). The engine
+   Auth: every call goes through the `google-drive` entry in
+   data/config/apis.json via lucidos.proxy('google-drive').fetch(). The engine
    forwards server-side and attaches the connected Google account's
    access token, so no credential is ever read, held or sent from this
    iframe — and mixed-content / CORS never enter into it. The app rides
@@ -3245,7 +3245,7 @@ SS.initEditing = function () {
    ══════════════════════════════════════════════════════ */
 
 SS.drive = (function () {
-  // Paths, not absolute URLs: every call below goes through the `google`
+  // Paths, not absolute URLs: every call below goes through the `google-drive`
   // engine proxy, which owns the base URL and injects the access token
   // server-side. The credential never enters this iframe.
   const DRIVE = '/drive/v3';
@@ -3274,7 +3274,7 @@ SS.drive = (function () {
   function knownFileId(presId) { return loadMap()[presId] || null; }
 
   /* ── transport ──
-     Every Drive call goes through the `google` proxy entry in
+     Every Drive call goes through the `google-drive` proxy entry in
      data/config/apis.json. The engine forwards server-side and attaches the
      connected Google account's access token, so no token is read, held or
      sent from here. `path` is Drive-relative, e.g. `${DRIVE}/files/<id>`. */
@@ -3284,22 +3284,35 @@ SS.drive = (function () {
     }
     let res;
     try {
-      res = await lucidos.proxy('google').fetch(path, init);
+      res = await lucidos.proxy('google-drive').fetch(path, init);
     } catch (err) {
       throw new Error('Could not reach Google Drive: ' + (err && (err.message || err)));
     }
-    if (res.status === 404 && !init) {
-      // A proxy with no connected account answers 404 before Drive is reached.
-      // Drive's own 404s carry a JSON error body; the proxy's does not.
+    if (res.status === 404) {
+      // Two different 404s arrive here and they need different advice.
+      // Drive's own 404 ("no such file") carries a JSON error body. The
+      // engine's 404 ("proxy 'google-drive' is not configured") is plain
+      // text, and means the workspace never got the apis.json entry.
       const peek = res.clone();
       let body = '';
       try { body = await peek.text(); } catch (e) { /* ignore */ }
       if (!body || body.indexOf('"error"') === -1) {
         throw new Error(
-          'No Google account is connected to this workspace. ' +
-          'Connect one in Settings → Accounts (or ask Lucidos to "connect my Google account"), then try again.'
+          'Google Drive is not set up in this workspace. It needs a ' +
+          "`google-drive` entry in data/config/apis.json and a connected " +
+          'Google account. Ask Lucidos to "set up Super Slides Drive access" ' +
+          'and it will wire both.'
         );
       }
+    }
+    if (res.status === 502) {
+      // The proxy entry exists but its auth layer could not mint a header,
+      // which is what an absent or unauthorized Google account looks like.
+      throw new Error(
+        'No Google account is connected to this workspace. ' +
+        'Connect one in Settings → Accounts (or ask Lucidos to "connect my ' +
+        'Google account"), then try again.'
+      );
     }
     if (!res.ok) {
       let detail = '';
