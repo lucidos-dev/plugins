@@ -23,17 +23,17 @@ user's prefs.
 The app runs in an isolated iframe at an opaque origin. Three consequences,
 all of them already handled in the code — don't undo them:
 
-1. **The app's own CSS and JS are INLINED into `index.html` and `remote.html`.**
-   Behind a gateway the frame sends no device credential with a subresource, so
-   a `<link>`/`<script src>` pointing at one of the app's own files answers 401
-   and the app renders unstyled or dead. Only `/api/v1/sdk*.js` and
-   `/api/v1/sdk-iframe.css` are exempt and stay external tags. `sdk.js` must
-   load **before** the inlined app scripts.
-   *There is no build step:* the sibling `.js` / `.css` files are kept (the test
-   page loads `drive.js` and `nav-logic.js` directly) but the HTML holds copies.
-   **Edit the source file AND the copy in the HTML**, or the app and the tests
-   drift. Adding a new module means adding a new inline `<script>` block, never
-   a `<script src>`.
+1. **The app's own CSS and JS load as ordinary `<link>` and `<script src>` tags.**
+   The host stamps a short-lived read-only capability into the frame's base
+   href, so a subresource pointing at one of the app's own files is admitted.
+   Adding a module means adding a `<script src>` beside the others, and
+   `sdk.js` must still load **before** the app scripts.
+   *This needs Lucidos 0.39.1 or newer.* On 0.39.0 the frame sent no device
+   credential with a subresource, every one of them answered 401, and the app
+   rendered unstyled or dead. Versions 0.5.3 and 0.5.4 of this plugin worked
+   around that by inlining copies of every file into the HTML, with no build
+   step keeping the two honest. The capability made that unnecessary and 0.6.0
+   removed it.
 
 2. **No host-realm reads.** `window.parent.document` throws. `editing.js` carries
    a `// MIGRATION REVIEW:` note for the fullscreen detection this cost us.
