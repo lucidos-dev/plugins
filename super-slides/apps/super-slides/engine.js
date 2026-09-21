@@ -29,6 +29,20 @@ SS.initEngine = function() {
   let focusedCardIndex = -1;
   let stateSeq = 0;
 
+  // The resume position lives in the workspace state document (SS.appState) —
+  // localStorage throws in the isolated app frame. That read is ASYNCHRONOUS,
+  // so persistence stays off until the saved position has been applied:
+  // writing before then would overwrite the very position we're restoring.
+  // See restoreSavedPosition() in the Init section.
+  let persistEnabled = false;
+
+  function persistPosition() {
+    if (!persistEnabled) return;
+    if (currentPres && currentPres.id) SS.appState.set('presentationId', currentPres.id);
+    SS.appState.set('slideIndex', current);
+    SS.appState.set('cardIndex', focusedCardIndex);
+  }
+
   // DOM refs populated after render
   let deck, progress, counter, scroller, titleItems, disclaimer, slidePicker, sectionIndicator;
 
@@ -211,9 +225,7 @@ SS.initEngine = function() {
     focusedCardIndex = -1;
 
     // Persist active presentation by ID (index is non-deterministic due to parallel loading)
-    if (pres.id) localStorage.setItem('ss-pres', pres.id);
-    localStorage.setItem('ss-slide', String(current));
-    localStorage.setItem('ss-card', '-1');
+    persistPosition();
 
     // Clear timers from previous presentation
     clearAllTimers();
@@ -592,7 +604,6 @@ SS.initEngine = function() {
     if (n < 0 || n >= slides.length || n === current) return;
     const oldSlide = slides[current];
     focusedCardIndex = -1;
-    localStorage.setItem('ss-card', '-1');
     oldSlide.classList.remove('active');
     setTimeout(() => {
       oldSlide.classList.remove('has-card-focus', 'insight-focused');
@@ -600,7 +611,7 @@ SS.initEngine = function() {
       oldSlide.querySelectorAll('.card-focused').forEach(c => c.classList.remove('card-focused'));
     }, 450);
     current = n;
-    localStorage.setItem('ss-slide', current);
+    persistPosition();
     slides[current].classList.add('active');
     if (slidePicker) slidePicker.classList.remove('open');
     updateTitleScroller(current);
@@ -645,7 +656,7 @@ SS.initEngine = function() {
     delete slide.dataset.cardFocus;
     slide.querySelectorAll('.card-focused').forEach(c => c.classList.remove('card-focused'));
     focusedCardIndex = -1;
-    localStorage.setItem('ss-card', '-1');
+    persistPosition();
   }
 
   function focusCard(index) {
@@ -659,7 +670,7 @@ SS.initEngine = function() {
     items.forEach(c => c.classList.remove('card-focused'));
     items[index].classList.add('card-focused');
     focusedCardIndex = index;
-    localStorage.setItem('ss-card', index);
+    persistPosition();
 
     if (items[index].classList.contains('insight')) {
       slide.classList.add('insight-focused');
@@ -760,26 +771,64 @@ SS.initEngine = function() {
 
   buildMenu();
 
-  // Restore saved state (saved by presentation ID, not index)
-  const savedPresId = localStorage.getItem('ss-pres');
-  const savedSlide = parseInt(localStorage.getItem('ss-slide')) || 0;
-  const savedCard = parseInt(localStorage.getItem('ss-card'));
-  const startPres = savedPresId
-    ? Math.max(0, registry.findIndex(p => p.id === savedPresId))
-    : 0;
+  // Apply the persisted resume position (saved by presentation ID, not index)
+  // once SS.appState has read the state document. That read is ASYNCHRONOUS,
+  // so the caller below paints a default deck first and this reconciles after.
+  // If the user (or a remote) has already moved off that first paint by the
+  // time the document lands, their position wins — we leave them where they
+  // are and simply start persisting from there.
+  async function restoreSavedPosition() {
+    const paintedPres  = currentPres;
+    const paintedSlide = current;
+    const paintedCard  = focusedCardIndex;
 
-  loadPresentation(registry[startPres], savedSlide);
+    try {
+      await SS.appState.ready();
+    } catch (err) {
+      console.warn('[SS] could not read the saved position:', err);
+    }
 
-  if (startPres > 0) {
-    menuItems.querySelectorAll('.menu-item').forEach((el, i) => {
-      if (el.dataset.action) return;
-      el.classList.toggle('active', i === startPres);
-    });
+    const moved = currentPres !== paintedPres ||
+                  current !== paintedSlide ||
+                  focusedCardIndex !== paintedCard;
+
+    try {
+      if (!moved) {
+        const savedPresId = SS.appState.get('presentationId', null);
+        const rawSlide    = SS.appState.get('slideIndex', 0);
+        const rawCard     = SS.appState.get('cardIndex', -1);
+        const savedSlide  = Number.isInteger(rawSlide) ? rawSlide : 0;
+        const savedCard   = Number.isInteger(rawCard) ? rawCard : -1;
+
+        const foundIdx  = savedPresId ? registry.findIndex(p => p.id === savedPresId) : -1;
+        const startPres = foundIdx >= 0 ? foundIdx : 0;
+
+        if (startPres !== 0 || savedSlide !== 0) {
+          loadPresentation(registry[startPres], savedSlide);
+          menuItems.querySelectorAll('.menu-item').forEach((el, i) => {
+            if (el.dataset.action) return;
+            el.classList.toggle('active', i === startPres);
+          });
+        }
+
+        if (savedCard >= 0) focusCard(savedCard);
+      }
+    } catch (err) {
+      // A bad saved position must not leave the app un-persisting forever —
+      // stay on the first paint and carry on.
+      console.warn('[SS] could not apply the saved position:', err);
+    }
+
+    // From here on, navigation persists.
+    persistEnabled = true;
+    persistPosition();
+    if (SS._broadcastState) SS._broadcastState();
   }
 
-  if (savedCard >= 0) {
-    focusCard(savedCard);
-  }
+  // First paint: the default deck at slide 0, rendered synchronously so the
+  // app is never blank while the saved position is in flight.
+  loadPresentation(registry[0]);
+  restoreSavedPosition();
 
   /* ══════════════════════════════════════
      Remote control via SSE

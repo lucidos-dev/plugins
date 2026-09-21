@@ -88,7 +88,16 @@
   }
 
   // Phase 4: Restore device mode
-  if (localStorage.getItem('ss-mode') === 'remote' && SS.toggleRemoteMode) {
-    SS.toggleRemoteMode();
+  // `ss-mode` is deliberately PER-DEVICE — presenter on the laptop, remote on
+  // the phone — so it must NOT move into the workspace-wide SS.appState
+  // document, which every device shares. localStorage throws SecurityError in
+  // the isolated app frame, so this is guarded and simply degrades to "start
+  // in presenter mode" until Lucidos grows a per-device storage affordance.
+  try {
+    if (localStorage.getItem('ss-mode') === 'remote' && SS.toggleRemoteMode) {
+      SS.toggleRemoteMode();
+    }
+  } catch (err) {
+    // No storage in this frame — start in presenter mode.
   }
 })();

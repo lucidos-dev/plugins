@@ -11,6 +11,108 @@
 
 const SS = {};
 
+/* ══════════════════════════════════════════════
+   Workspace-scoped app state (SS.appState)
+   ══════════════════════════════════════════════
+   The app runs in an isolated iframe at an opaque origin, so
+   `localStorage` throws SecurityError — and an unguarded throw
+   takes the rest of the script with it. Everything that used to
+   live there and is a WORKSPACE fact rather than a device fact
+   now lives in one JSON document, read and written over the SDK
+   bridge:
+
+     artifacts/super-slides/state.json
+       presentationId   ← ss-pres
+       slideIndex       ← ss-slide
+       cardIndex        ← ss-card
+       driveFileMap     ← ss-drive-map
+       driveLastFolder  ← ss-drive-last-folder
+
+   Two consequences every caller has to respect:
+
+   1. The read is ASYNCHRONOUS where localStorage was synchronous.
+      `get()` answers from an in-memory mirror that is empty until
+      the document lands, so render a sane default first and apply
+      the restored value inside `ready().then(…)`.
+   2. Writes are DEBOUNCED. A data write makes a git commit, and
+      slide navigation persists on every step.
+
+   `ss-mode` deliberately did NOT move here — it is a per-device
+   fact (presenter on the laptop, remote on the phone). See init.js
+   and remote-mode.js.
+   ══════════════════════════════════════════════ */
+
+SS.appState = (function () {
+  const PATH = 'artifacts/super-slides/state.json';
+  const WRITE_DEBOUNCE_MS = 1500;
+
+  let state = {};        // in-memory mirror — always readable synchronously
+  let loadPromise = null;
+  let writeTimer = null;
+  let writing = false;
+  let dirty = false;
+
+  // Resolves once the document has been read (or has been established as
+  // absent). Safe to call repeatedly — the read happens once.
+  function ready() {
+    if (loadPromise) return loadPromise;
+    loadPromise = (async () => {
+      try {
+        const parsed = JSON.parse(await lucidos.data.read(PATH));
+        if (parsed && typeof parsed === 'object') state = parsed;
+      } catch (e) {
+        // No document yet (404), malformed, or no SDK — start empty.
+        state = {};
+      }
+      return state;
+    })();
+    return loadPromise;
+  }
+
+  function get(key, fallback) {
+    return Object.prototype.hasOwnProperty.call(state, key) ? state[key] : fallback;
+  }
+
+  function set(key, value) {
+    // Cheap no-op guard for scalars; objects are always re-persisted.
+    if (value === null || typeof value !== 'object') {
+      if (state[key] === value) return;
+    }
+    state[key] = value;
+    dirty = true;
+    if (writeTimer) clearTimeout(writeTimer);
+    writeTimer = setTimeout(flush, WRITE_DEBOUNCE_MS);
+  }
+
+  async function flush() {
+    if (writeTimer) { clearTimeout(writeTimer); writeTimer = null; }
+    // A write already in flight will pick up the newer state when it settles.
+    if (!dirty || writing) return;
+    if (!window.lucidos || !lucidos.data) return;
+    dirty = false;
+    writing = true;
+    try {
+      await lucidos.data.write(PATH, JSON.stringify(state, null, 2));
+    } catch (e) {
+      console.warn('[SS] state write failed:', e);
+    } finally {
+      writing = false;
+      if (dirty) writeTimer = setTimeout(flush, WRITE_DEBOUNCE_MS);
+    }
+  }
+
+  // Best-effort: don't drop a debounced write when the page goes away.
+  window.addEventListener('pagehide', () => { flush(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flush();
+  });
+
+  // Start the read immediately — every caller's first paint races it.
+  if (window.lucidos && lucidos.data) ready();
+
+  return { ready, get, set, flush, PATH };
+})();
+
 // ── Custom component registry ──
 
 SS._customComponents = {};
