@@ -1595,46 +1595,6 @@
         }
       }
 
-      /** Reconcile against the event store: everything that landed after the
-       *  rollup's cursor and is not already folded in.
-       *
-       *  This is the dashboard's source of truth, and SSE is only an
-       *  accelerator on top of it. That inversion is the whole point. `live`
-       *  used to hold only what arrived over SSE while the tab was open, so
-       *  every way the stream can quietly stop (a suspended laptop, a dropped
-       *  EventSource, a proxy idle timeout, a backgrounded phone) left the
-       *  numbers frozen with no sign anything was wrong. The page looked
-       *  connected, the rollup timestamp looked recent, and the figures were
-       *  simply old. Clicking Refresh appeared to fix it because a reload was
-       *  the only thing that ever re-read the store.
-       *
-       *  Now it runs on load, on a timer while the tab is visible, whenever
-       *  the tab is shown again, and whenever the network comes back. It is
-       *  idempotent: rows are deduped by sequence in `pushLive`, so the timer
-       *  and the stream racing over the same call count it once.
-       *
-       *  Deliberately not a spinner or a blocking step: it runs after the
-       *  first render, so the dashboard paints from the rollup immediately and
-       *  the recent tail fills in behind it. */
-      /** The engine's event-query endpoint, under this workspace's prefix.
-       *
-       *  `lucidos.apiUrl` is the SDK's sanctioned answer for an engine
-       *  endpoint no SDK method covers, and it exists because getting this
-       *  wrong is what froze this dashboard: an app iframe is served at
-       *  `/<workspace>/app/<id>/` with no `<base href>`, so a hand-written
-       *  `/api/v1/...` either nests under the app path or makes the gateway
-       *  read `api` as a workspace name. Both 404, silently.
-       *
-       *  This app loads sdk.js in its <head>, so the global is always there;
-       *  a missing `apiUrl` means the SDK failed to load and every other
-       *  `lucidos.*` call is broken too. Fail loudly rather than deriving a
-       *  URL that would silently 404. */
-      function eventsEndpoint() {
-        const apiUrl = window.lucidos?.apiUrl;
-        if (!apiUrl) throw new Error('Lucidos SDK not loaded: cannot resolve the events endpoint');
-        return new URL(apiUrl('/events/query'), location.origin);
-      }
-
       /** Raw model id -> the display label the picker already shows.
        *
        *  The engine's registry carries a `label` for every model, which is
@@ -1669,13 +1629,11 @@
       }
 
       async function loadModelLabels() {
-        const apiUrl = window.lucidos?.apiUrl;
-        if (!apiUrl) return;
         try {
-          const res = await fetch(new URL(apiUrl('/models'), location.origin),
-                                  { headers: { Accept: 'application/json' } });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const body = await res.json();
+          // `/models` has no SDK namespace of its own, so it goes through
+          // `lucidos.request`, which carries the call over the app bridge.
+          // A `fetch` from this frame cannot reach the engine at all.
+          const body = await lucidos.request('/models', { headers: { Accept: 'application/json' } });
           const rows = Array.isArray(body) ? body : (body.models || body.data || []);
           const next = {};
           const nextNoAlias = {};
@@ -1712,6 +1670,27 @@
         }
       }
 
+      /** Reconcile against the event store: everything that landed after the
+       *  rollup's cursor and is not already folded in.
+       *
+       *  This is the dashboard's source of truth, and SSE is only an
+       *  accelerator on top of it. That inversion is the whole point. `live`
+       *  used to hold only what arrived over SSE while the tab was open, so
+       *  every way the stream can quietly stop (a suspended laptop, a dropped
+       *  EventSource, a proxy idle timeout, a backgrounded phone) left the
+       *  numbers frozen with no sign anything was wrong. The page looked
+       *  connected, the rollup timestamp looked recent, and the figures were
+       *  simply old. Clicking Refresh appeared to fix it because a reload was
+       *  the only thing that ever re-read the store.
+       *
+       *  Now it runs on load, on a timer while the tab is visible, whenever
+       *  the tab is shown again, and whenever the network comes back. It is
+       *  idempotent: rows are deduped by sequence in `pushLive`, so the timer
+       *  and the stream racing over the same call count it once.
+       *
+       *  Deliberately not a spinner or a blocking step: it runs after the
+       *  first render, so the dashboard paints from the rollup immediately and
+       *  the recent tail fills in behind it. */
       async function reconcile(opts) {
         const cursor = daily.last_sequence || 0;
         // The window has to cover every call the rollup has not absorbed, not
@@ -1733,13 +1712,16 @@
         // limit=1000 call looked fine on a quiet morning and would have
         // silently truncated a busy one: the peak measured here is 2,415 calls
         // in one hour, and a whole day runs to 17,600.
-        // NOTE: `lucidos.events.query` builds its querystring from event_type /
-        // since / until / limit only, so it silently DROPS before_event_id and
-        // every page would come back identical. The engine endpoint does
-        // support the cursor, so this goes straight at it, via
-        // `eventsEndpoint()` above. Switch back to the SDK if it ever forwards
-        // the cursor.
-        const base = eventsEndpoint();
+        //
+        // The store is read through `lucidos.events.query`, which carries the
+        // call over the app bridge to the engine. This page runs in an iframe
+        // at an opaque origin, so its own `fetch` of the engine is refused by
+        // CORS however the URL is built — WebKit calls that `Load failed` and
+        // Chromium a `TypeError`, and the catch below turns either one into a
+        // fallback, which is exactly how this dashboard sat frozen for weeks.
+        // `lucidos.apiUrl` resolves the address correctly and changes nothing
+        // about that: it is for a markup `src`/`href`, not for a call.
+        // The SDK forwards the `before_event_id` cursor, so paging works.
         const collected = [];
         let before = null;
         let reachedRollup = false;
@@ -1747,14 +1729,12 @@
         for (let page = 0; page < 40 && !reachedRollup; page++) {
           let rows;
           try {
-            const u = new URL(base);
-            u.searchParams.set('event_type', 'ContextCaptured');
-            u.searchParams.set('since', since.toISOString());
-            u.searchParams.set('limit', String(PAGE));
-            if (before) u.searchParams.set('before_event_id', before);
-            const res = await fetch(u, { headers: { Accept: 'application/json' } });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            rows = await res.json();
+            rows = await lucidos.events.query({
+              event_type: 'ContextCaptured',
+              since: since.toISOString(),
+              limit: PAGE,
+              ...(before ? { before_event_id: before } : {}),
+            });
           } catch (e) {
             // Kept, and shown. "Something went wrong, retrying" is the kind of
             // message that let this sit broken for weeks: the failure was a
