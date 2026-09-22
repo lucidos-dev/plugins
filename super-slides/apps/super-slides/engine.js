@@ -109,9 +109,9 @@ SS.initEngine = function() {
           <button class="remote-modal-btn" data-action="copy">
             <span class="remote-modal-btn-icon">📋</span> Copy Link
           </button>
-          ${navigator.share ? `<button class="remote-modal-btn" data-action="share">
+          <button class="remote-modal-btn" data-action="share">
             <span class="remote-modal-btn-icon">↗</span> Share
-          </button>` : ''}
+          </button>
         </div>
       </div>
     `;
@@ -129,10 +129,12 @@ SS.initEngine = function() {
       });
     });
 
-    // Share (fallback — still available if user wants it)
+    // Share — opens the link through the host. The frame isn't granted the
+    // web-share permission, so the browser's own share API would silently
+    // reject here.
     const shareBtn = modal.querySelector('[data-action="share"]');
     if (shareBtn) shareBtn.addEventListener('click', () => {
-      navigator.share({ title: 'Speaker Remote', url }).catch(() => {});
+      lucidos.ui.openExternal(url);
       modal.remove();
     });
   }

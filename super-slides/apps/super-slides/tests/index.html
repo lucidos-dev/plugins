@@ -44,6 +44,10 @@
 <script src="../drive.js"></script>
 <!-- Pure nav-logic module under test (defines SS.navLogic; no side effects). -->
 <script src="../nav-logic.js"></script>
+<!-- Real production module under test (defines SS.initEngine; no
+     top-level DOM side effects — everything runs inside the function,
+     only invoked when a test calls SS.initEngine()). -->
+<script src="../engine.js"></script>
 
 <!-- Test suites -->
 <script src="test-sync.js"></script>
@@ -56,6 +60,11 @@
 <script src="test-menu-toggle.js"></script>
 <script src="test-drive-save.js"></script>
 <script src="test-nav.js"></script>
+<!-- Runs last: calls the real SS.initEngine(), which attaches document-level
+     click listeners it never tears down (it's a startup-only function).
+     Keeping this suite last means those leftover listeners can't affect
+     any other suite. -->
+<script src="test-storage-guards.js"></script>
 
 <script>
   bootstrap('results');
