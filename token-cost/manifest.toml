@@ -1,5 +1,5 @@
 id = "token-cost"
-version = "0.2.1"
+version = "0.2.2"
 name = "Token Cost"
 description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, cache-hit share, context-size distribution, and per-model/per-producer cost from a pricing table you edit in the app's own Settings tab. A dead stream, a gap behind it, or a stale rollup are each detected and named in the header instead of quietly showing plausible wrong numbers. Ships an incremental rollup script; ask Lucidos to set up an hourly rollup trigger after install."
 source = "https://github.com/lucidos-dev/plugins/tree/main/token-cost"
@@ -7,7 +7,8 @@ engine = ">=0.27.0"
 categories = ["developer-tools", "data"]
 
 setup = """
-This plugin needs one thing wired up: a schedule for its rollup script.
+This plugin needs two things wired up: a schedule for its rollup script, and
+the proxy entry its currency refresh uses.
 
 1. Ask the user how often they want the rollup to run. Hourly at five past
    (`0 5 * * * *`) is a good default: the dashboard folds live SSE calls on top
@@ -15,7 +16,18 @@ This plugin needs one thing wired up: a schedule for its rollup script.
 2. Create a **script** trigger with that cron, `app_id = "token-cost"`, running
    `apps/token-cost/scripts/rollup.py`. Leave `go_to_review` off, it is silent
    housekeeping. The script prints one line and notifies nothing.
-3. Run it once so the dashboard has history immediately, then tell the user it
+3. Check that `data/config/apis.json` has a `frankfurter` entry. The Settings
+   tab's **Update rates** button fetches exchange rates through
+   `lucidos.proxy('frankfurter')`, because an app frame cannot fetch a third-party
+   host itself. If the entry is missing, add it (no auth, the API needs no key):
+
+   ```json
+   "frankfurter": { "base_url": "https://api.frankfurter.dev/v1" }
+   ```
+
+   Without it everything else works; only the currency refresh fails, with a
+   toast that says so.
+4. Run the rollup once so the dashboard has history immediately, then tell the user it
    is done and link the app. The first run reads every `ContextCaptured` row in
    the store and can take a few seconds; later runs resume from the recorded
    sequence.
@@ -26,5 +38,7 @@ script. It writes `artifacts/token-cost/daily.json`.
 
 No credentials, no API keys, nothing to connect. Pricing rates are built into
 the app and editable under its Settings tab, which writes
-`artifacts/token-cost/pricing.json` on first save.
+`artifacts/token-cost/pricing.json` on first save. Model display labels need
+engine 0.39.0 or later (`lucidos.request`); on an older engine the dashboard
+shows raw model ids and says the labels are unavailable.
 """

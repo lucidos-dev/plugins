@@ -434,6 +434,7 @@
            position held both the running total and the rows it is made of. -->
       <section class="block">
         <h2 class="sec">By model</h2>
+        <p class="sec-note dirty-dot" id="model-label-note" hidden>Model names could not be loaded from the registry, so the rows below show raw model ids, not their display labels.</p>
         <div class="card">
           <table class="model-table">
             <thead>
@@ -490,7 +491,7 @@
             <table class="price-table">
               <thead>
                 <tr>
-                  <th>Model</th><th>Fresh in</th><th>Cache write</th><th>Cache read</th><th>Output</th><th></th>
+                  <th>Model</th><th>Fresh in</th><th>Cache write</th><th>Cache read</th><th>Output</th><th>Per minute</th><th></th>
                 </tr>
               </thead>
               <tbody id="price-body"></tbody>
@@ -610,52 +611,124 @@
 
       const DAILY = 'artifacts/token-cost/daily.json';
       const PRICING = 'artifacts/token-cost/pricing.json';
+      // Small per-app UI state that used to live in localStorage, one key each:
+      // the sound toggle, the chosen sound, the uploaded clip, and the display
+      // currency. Now one JSON object in the workspace store. See loadUiState.
+      const UI_STATE = 'artifacts/token-cost/ui-state.json';
+      let uiState = {};
 
       // Used only until the editable pricing file exists. USD per 1M tokens.
       const DEFAULT_PRICING = {
         currency: 'USD',
         models: {
+          // The fallback every unlisted model uses: the Opus card, which is the
+          // most expensive thing this workspace runs at volume. An unpriced model
+          // should look too expensive rather than free.
           'default': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
+
+          // ANTHROPIC, docs.claude.com/en/docs/about-claude/pricing (2026-09-15).
+          // Opus 4.6 and later carry no long-context premium, so every [1m] call
+          // is the flat rate. Opus 4.1 predates the repricing and keeps the old card.
+          'claude-fable-5': { uncached_in: 10.0, cache_write: 12.5, cache_read: 1.0, out: 50.0 },
+          // Fable 5.1 (and Mythos 5.1) launched with the same base card as Fable 5
+          // but a 75% cheaper cache read: 0.25 rather than 1.00, i.e. 0.025x input
+          // instead of the usual 0.1x. The cut did NOT reach Fable 5, which keeps 1.00.
+          'claude-fable-5-1': { uncached_in: 10.0, cache_write: 12.5, cache_read: 0.25, out: 50.0 },
+          // Opus 5.5 (2026-09-23 docs): cheaper than Opus 5 across the board, and its
+          // cache hit is 0.05x input (0.20), not the usual 0.1x. Before this row it
+          // fell back to the Opus 5 default and read 25% high, cache reads 2.5x high.
+          'claude-opus-5-5': { uncached_in: 4.0, cache_write: 5.0, cache_read: 0.2, out: 20.0 },
           'claude-opus-5': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
           'claude-opus-4-8': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
           'claude-opus-4-7': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
-          'opus': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
-          // Opus 4.1 predates the Opus 4.6 repricing and keeps the old card.
+          'claude-opus-4-6': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
+          'claude-opus-4-5': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
           'claude-opus-4-1': { uncached_in: 15.0, cache_write: 18.75, cache_read: 1.5, out: 75.0 },
-          // Corrected 2026-08-24. Sonnet 5 carried Sonnet 4.6's $3/$15 and
-          // Haiku 4.5 carried Haiku 3.5's $0.80/$4.00. Sonnet 5 is $2/$10, and
-          // the increase to $3/$15 announced for 2026-09-01 was cancelled.
-          // Haiku 4.5 is $1/$5. Sonnet 4.6 and Fable 5 keep $3/$15.
           'claude-sonnet-5': { uncached_in: 2.0, cache_write: 2.5, cache_read: 0.2, out: 10.0 },
           'claude-sonnet-4-6': { uncached_in: 3.0, cache_write: 3.75, cache_read: 0.3, out: 15.0 },
-          'sonnet': { uncached_in: 2.0, cache_write: 2.5, cache_read: 0.2, out: 10.0 },
-          'claude-fable-5': { uncached_in: 3.0, cache_write: 3.75, cache_read: 0.3, out: 15.0 },
           'claude-haiku-4-5-20251001': { uncached_in: 1.0, cache_write: 1.25, cache_read: 0.1, out: 5.0 },
+          'opus': { uncached_in: 5.0, cache_write: 6.25, cache_read: 0.5, out: 25.0 },
+          'sonnet': { uncached_in: 2.0, cache_write: 2.5, cache_read: 0.2, out: 10.0 },
           'haiku': { uncached_in: 1.0, cache_write: 1.25, cache_read: 0.1, out: 5.0 },
-          // OpenAI does not bill a cache write. Prefix caching there is
-          // automatic, so there is no breakpoint to create and nothing to
-          // charge for; `cache_creation_tokens` is always None on that path.
-          // The rate is 0 so a stray non-zero write can never invent spend.
-          // Every id the picker offers is listed: an unlisted one falls
-          // through to `default`, which is the Opus card, and a mini model
-          // priced as Opus overstates by more than an order of magnitude.
-          'gpt-5.5': { uncached_in: 5.0, cache_write: 0.0, cache_read: 0.5, out: 30.0 },
-          'gpt-5.6-sol': { uncached_in: 5.0, cache_write: 0.0, cache_read: 0.5, out: 30.0 },
-          'gpt-5.6-terra': { uncached_in: 2.0, cache_write: 0.0, cache_read: 0.2, out: 12.0 },
-          'gpt-5.6-luna': { uncached_in: 0.2, cache_write: 0.0, cache_read: 0.02, out: 1.2 },
-          'gpt-5.4': { uncached_in: 2.5, cache_write: 0.0, cache_read: 0.25, out: 15.0 },
+
+          // OPENAI, developers.openai.com/api/docs/pricing (2026-09-15). No cache
+          // write is billed on the 5.x generation: prefix caching there is automatic,
+          // so there is no breakpoint to create, and `cache_creation_tokens` is always
+          // None on that path. GPT-6 Astra and the 5.6 family DO bill one. The `long`
+          // tier starts at 272k and replaces the base rates outright.
+          'gpt-6-astra': { uncached_in: 10.0, cache_write: 12.5, cache_read: 1.0, out: 50.0, long: { threshold_tokens: 272000, uncached_in: 20.0, cache_write: 25.0, cache_read: 2.0, out: 75.0 } },
+          'gpt-5.6-sol': { uncached_in: 4.0, cache_write: 5.0, cache_read: 0.4, out: 20.0, long: { threshold_tokens: 272000, uncached_in: 8.0, cache_write: 10.0, cache_read: 0.8, out: 30.0 } },
+          'gpt-5.6-terra': { uncached_in: 2.0, cache_write: 2.5, cache_read: 0.2, out: 12.0, long: { threshold_tokens: 272000, uncached_in: 4.0, cache_write: 5.0, cache_read: 0.4, out: 18.0 } },
+          'gpt-5.6-luna': { uncached_in: 0.2, cache_write: 0.25, cache_read: 0.02, out: 1.2, long: { threshold_tokens: 272000, uncached_in: 0.4, cache_write: 0.5, cache_read: 0.04, out: 1.8 } },
+          'gpt-5.5': { uncached_in: 5.0, cache_write: 0.0, cache_read: 0.5, out: 30.0, long: { threshold_tokens: 272000, uncached_in: 10.0, cache_write: 0.0, cache_read: 1.0, out: 45.0 } },
+          'gpt-5.5-pro': { uncached_in: 30.0, cache_write: 0.0, cache_read: 0.0, out: 180.0, long: { threshold_tokens: 272000, uncached_in: 60.0, cache_write: 0.0, cache_read: 0.0, out: 270.0 } },
+          'gpt-5.4': { uncached_in: 2.5, cache_write: 0.0, cache_read: 0.25, out: 15.0, long: { threshold_tokens: 272000, uncached_in: 5.0, cache_write: 0.0, cache_read: 0.5, out: 22.5 } },
           'gpt-5.4-mini': { uncached_in: 0.75, cache_write: 0.0, cache_read: 0.075, out: 4.5 },
-          'gemini-3.5-flash': { uncached_in: 0.3, cache_write: 0.3, cache_read: 0.075, out: 2.5 },
-          'gemini-3.1-pro-preview': { uncached_in: 1.25, cache_write: 1.25, cache_read: 0.31, out: 10.0 },
-          // Local models run on this machine, so nobody bills for them. Listed
-          // explicitly so they do not fall through to `default` and invent spend.
-          'muse-glimmer:30b-mlx': { uncached_in: 0, cache_write: 0, cache_read: 0, out: 0 },
+          'gpt-5.3-codex': { uncached_in: 1.75, cache_write: 0.0, cache_read: 0.175, out: 14.0 },
+          'gpt-5.3-codex-spark': { uncached_in: 1.75, cache_write: 0.0, cache_read: 0.175, out: 14.0 },
+          'gpt-5.2-codex': { uncached_in: 1.75, cache_write: 0.0, cache_read: 0.175, out: 14.0 },
+
+          // OpenAI voice. Realtime bills per modality and audio dominates a call in
+          // both directions, so this carries the audio rates ($4/$24 text against
+          // $32/$64 audio); the leftover text tokens are the smaller error. GPT-Live
+          // is different in kind: it reports every token count as zero and bills
+          // $0.05 per minute of call, which is what `per_minute` prices.
+          'gpt-realtime': { uncached_in: 32.0, cache_write: 0.0, cache_read: 0.4, out: 64.0 },
+          'gpt-realtime-2.1': { uncached_in: 32.0, cache_write: 0.0, cache_read: 0.4, out: 64.0 },
+          'gpt-live-1': { uncached_in: 0.0, cache_write: 0.0, cache_read: 0.0, out: 0.0, per_minute: 0.05 },
+          'gpt-live-transcribe': { uncached_in: 0.0, cache_write: 0.0, cache_read: 0.0, out: 0.0, per_minute: 0.017 },
+          'gpt-4o-mini-transcribe': { uncached_in: 1.25, cache_write: 0.0, cache_read: 0.0, out: 5.0 },
+          'gpt-image-2': { uncached_in: 8.0, cache_write: 0.0, cache_read: 2.0, out: 30.0 },
+
+          // GOOGLE, ai.google.dev/gemini-api/docs/pricing (2026-09-15). Gemini bills
+          // a cache STORAGE rate per hour, which no usage row here can see, so only
+          // the read rate is carried. Pro's long tier starts at 200k.
+          'gemini-3.5-flash': { uncached_in: 1.5, cache_write: 0.0, cache_read: 0.15, out: 9.0 },
+          'gemini-3.1-pro-preview': { uncached_in: 2.0, cache_write: 0.0, cache_read: 0.2, out: 12.0, long: { threshold_tokens: 200000, uncached_in: 4.0, cache_write: 0.0, cache_read: 0.4, out: 18.0 } },
+          'gemini-3-flash-preview': { uncached_in: 0.5, cache_write: 0.0, cache_read: 0.05, out: 3.0 },
+
+          // xAI, docs.x.ai/developers/pricing (2026-09-15). Long context starts at
+          // 200k and doubles every rate. The x-ai/* twins are the same models reached
+          // through OpenRouter, which passes the xAI price through.
+          'grok-4.6': { uncached_in: 2.0, cache_write: 0.0, cache_read: 0.5, out: 6.0, long: { threshold_tokens: 200000, uncached_in: 4.0, cache_write: 0.0, cache_read: 1.0, out: 12.0 } },
+          'x-ai/grok-4.6': { uncached_in: 2.0, cache_write: 0.0, cache_read: 0.5, out: 6.0, long: { threshold_tokens: 200000, uncached_in: 4.0, cache_write: 0.0, cache_read: 1.0, out: 12.0 } },
+          'grok-4.5': { uncached_in: 2.0, cache_write: 0.0, cache_read: 0.3, out: 6.0, long: { threshold_tokens: 200000, uncached_in: 4.0, cache_write: 0.0, cache_read: 0.6, out: 12.0 } },
+          'grok-4.20': { uncached_in: 1.25, cache_write: 0.0, cache_read: 0.2, out: 2.5, long: { threshold_tokens: 200000, uncached_in: 2.5, cache_write: 0.0, cache_read: 0.4, out: 5.0 } },
+          'x-ai/grok-4.20': { uncached_in: 1.25, cache_write: 0.0, cache_read: 0.2, out: 2.5, long: { threshold_tokens: 200000, uncached_in: 2.5, cache_write: 0.0, cache_read: 0.4, out: 5.0 } },
+          'grok-4.3': { uncached_in: 1.25, cache_write: 0.0, cache_read: 0.2, out: 2.5, long: { threshold_tokens: 200000, uncached_in: 2.5, cache_write: 0.0, cache_read: 0.4, out: 5.0 } },
+
+          // OpenRouter. GLM 5.2 from its live model list; ox-alpha is a stealth
+          // model served free while it is unnamed.
+          'z-ai/glm-5.2': { uncached_in: 1.4, cache_write: 0.0, cache_read: 0.14, out: 4.4 },
+          'stealth/ox-alpha': { uncached_in: 0.0, cache_write: 0.0, cache_read: 0.0, out: 0.0 },
+
+          // TYPESAFE, docs.typesafe.ai/models.md (2026-09-22). Jev bills INPUT ONLY,
+          // at $42 per BILLION input tokens, which is $0.042 per 1M in the unit every
+          // card here uses. Output tokens are free, so `out` is a real 0 and not a
+          // missing figure. There is no cache tier: the same state sent twice is
+          // billed twice, which is why batching questions into one call is the whole
+          // cost lever. Left unlisted these would fall through to `default` and read
+          // 120x too expensive.
+          'jev-1.13.0': { uncached_in: 0.042, cache_write: 0.0, cache_read: 0.042, out: 0.0 },
+          'jev-latest': { uncached_in: 0.042, cache_write: 0.0, cache_read: 0.042, out: 0.0 },
+          'jev-preview': { uncached_in: 0.042, cache_write: 0.0, cache_read: 0.042, out: 0.0 },
+
+          // Free tiers and local models: nobody bills for these. Listed explicitly
+          // so they cannot fall through to `default` and invent spend.
+          'laguna-s-2.1-free': { uncached_in: 0.0, cache_write: 0.0, cache_read: 0.0, out: 0.0 },
+          'nemotron-3.5-lightning-free': { uncached_in: 0.0, cache_write: 0.0, cache_read: 0.0, out: 0.0 },
+          'x-preview-f-free': { uncached_in: 0.0, cache_write: 0.0, cache_read: 0.0, out: 0.0 },
+          'nemotron-3-ultra-free': { uncached_in: 0.0, cache_write: 0.0, cache_read: 0.0, out: 0.0 },
+          'muse-spark-1.2-contributor-free': { uncached_in: 0.0, cache_write: 0.0, cache_read: 0.0, out: 0.0 },
+          'hy3-free': { uncached_in: 0.0, cache_write: 0.0, cache_read: 0.0, out: 0.0 },
+          'muse-glimmer:30b-mlx': { uncached_in: 0.0, cache_write: 0.0, cache_read: 0.0, out: 0.0 },
         },
         long_context_multiplier: { threshold_tokens: 200000, in_multiplier: 1.0, out_multiplier: 1.0 },
         producers: {
           main_llm: 'Lucidos Agent',
           claude_code: 'Claude Code',
           codex: 'Codex',
+          jev_browser: 'Jev Browser',
         },
         // Units of each currency per 1 unit of `currency`. Seeded from the ECB
         // daily reference rates so a fresh workspace converts before it has
@@ -789,15 +862,16 @@
       let producerSelect = null;
 
       // ---- Ca-ching ---------------------------------------------------------
-      // Off by default and remembered per device: this dashboard is open all day
-      // while agents run, so audio has to be something the user asks for. The
-      // toggle click is the gesture that unlocks the AudioContext, which is why
-      // there is no way to enable sound without one.
-      const SOUND_KEY = 'token-cost:sound';
-      const PICK_KEY = 'token-cost:sound-id';
-      const CUSTOM_KEY = 'token-cost:sound-custom';
+      // Off by default and remembered for the workspace: this dashboard is open
+      // all day while agents run, so audio has to be something the user asks
+      // for. The toggle click is the gesture that unlocks the AudioContext,
+      // which is why there is no way to enable sound without one.
+      //
+      // The toggle, the chosen sound and the uploaded clip persist in
+      // lucidos.data (see loadUiState below), not localStorage: an app frame
+      // has an opaque origin (ADR 0227), so localStorage throws there and every
+      // read returned the default while every write was dropped, silently.
       let soundOn = false;
-      try { soundOn = localStorage.getItem(SOUND_KEY) === '1'; } catch (e) { /* private mode */ }
 
       /** The built-in pack. Each entry ships in apps/token-cost/sounds/ and is
        *  trimmed to about a second, so a ring never outlasts the call that
@@ -814,15 +888,46 @@
 
       let soundId = DEFAULT_SOUND;
       let customSound = null;   // { name, path } for an uploaded clip
-      try {
-        const p = localStorage.getItem(PICK_KEY);
-        if (p) soundId = p;
-        const c = localStorage.getItem(CUSTOM_KEY);
-        if (c) customSound = JSON.parse(c);
-      } catch (e) { /* private mode */ }
-      if (soundId === 'custom' && !customSound) soundId = DEFAULT_SOUND;
-      // A pick stored before a sound was retired would leave no card selected.
-      if (soundId !== 'custom' && !SOUNDS.some((s) => s.id === soundId)) soundId = DEFAULT_SOUND;
+      // The three sound fields start on their defaults so the first paint is
+      // correct, then loadUiState() fills in whatever the workspace remembered.
+
+      /** Read the remembered UI state, then repaint the sound controls with it.
+       *  A missing file is the ordinary first run, so it falls back to the
+       *  defaults above rather than reporting a fault. Runs before load() so the
+       *  display currency is known by the time load() resolves it against the
+       *  pricing table. */
+      async function loadUiState() {
+        try {
+          uiState = JSON.parse(await lucidos.data.read(UI_STATE)) || {};
+        } catch (e) {
+          uiState = {};
+          console.info('token-cost: no saved ui-state yet', e && e.message);
+        }
+        if (typeof uiState.sound === 'boolean') soundOn = uiState.sound;
+        if (typeof uiState.soundId === 'string') soundId = uiState.soundId;
+        if (uiState.soundCustom && typeof uiState.soundCustom === 'object') {
+          customSound = uiState.soundCustom;
+        }
+        if (soundId === 'custom' && !customSound) soundId = DEFAULT_SOUND;
+        // A pick stored before a sound was retired would leave no card selected.
+        if (soundId !== 'custom' && !SOUNDS.some((s) => s.id === soundId)) soundId = DEFAULT_SOUND;
+        renderSoundBtn();
+        renderSoundGrid();
+      }
+
+      /** Persist the whole object. The fields are tiny and rarely change, and
+       *  the app is effectively one writer per session, so writing the file
+       *  whole is simpler than a per-field edit and never leaves a half-written
+       *  key. A failed write is logged, never surfaced: it only means this
+       *  preference is not remembered next open, which must not break the
+       *  dashboard for something decorative. */
+      async function saveUiState() {
+        try {
+          await lucidos.data.write(UI_STATE, JSON.stringify(uiState, null, 2));
+        } catch (e) {
+          console.warn('token-cost: could not save ui-state', e && e.message);
+        }
+      }
 
       let audioCtx = null;
       // Decoded samples by url, and the in-flight fetches, so a burst of calls
@@ -1010,7 +1115,8 @@
           return;
         }
         soundId = id;
-        try { localStorage.setItem(PICK_KEY, id); } catch (e) { /* private mode */ }
+        uiState.soundId = id;
+        saveUiState();
         renderSoundGrid();
         const now = document.querySelector(`.sound-card[data-sound="${id}"]`) || card;
         if (now) {
@@ -1041,10 +1147,9 @@
           if (ac) await loadSound(ac, dataUrl(path));
           customSound = { name: file.name, path };
           soundId = 'custom';
-          try {
-            localStorage.setItem(CUSTOM_KEY, JSON.stringify(customSound));
-            localStorage.setItem(PICK_KEY, 'custom');
-          } catch (e) { /* private mode */ }
+          uiState.soundCustom = customSound;
+          uiState.soundId = 'custom';
+          saveUiState();
           renderSoundGrid();
           lucidos.ui.toast(`${file.name} is now the ring sound`, 'success', { key: 'tc-sound', durationMs: 2500 });
           playCaChing(true);
@@ -1058,7 +1163,6 @@
       // on the dashboard is converted at paint time. Nothing stored is ever
       // converted: switching display currency must never rewrite a rate the
       // user typed, or a round trip through two currencies would erode it.
-      const DISPLAY_CCY_KEY = 'token-cost:currency';
       let displayCcy = null;   // null until load() resolves it against the table
       let currencySelect = null;
 
@@ -1093,6 +1197,14 @@
       const ccyLabel = (code) => (CURRENCY_NAMES[code] ? `${code} · ${CURRENCY_NAMES[code]}` : code);
 
       const fmtInt = (n) => new Intl.NumberFormat().format(Math.round(n));
+      /** Voice seconds as something a person reads. Under a minute stays in
+       *  seconds, because "0.3 min" of a 20-second call is worse than useless. */
+      const fmtMinutes = (secs) => {
+        const s = Math.round(secs || 0);
+        if (s < 60) return s + 's';
+        const m = Math.floor(s / 60);
+        return m + 'm ' + String(s % 60).padStart(2, '0') + 's';
+      };
       const fmtTok = (n) => {
         if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
         if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
@@ -1145,14 +1257,42 @@
         return m[baseModel(model)] || m.default || { uncached_in: 0, cache_write: 0, cache_read: 0, out: 0 };
       }
 
-      /** Cost of one usage bundle. `longShare` splits out the portion of tokens
-       *  that came from calls over the long-context threshold, which Anthropic
-       *  bills at a premium on the [1m] models. */
+      /** The long-context threshold this model is priced at, in prompt tokens.
+       *
+       *  Per provider, not per workspace: OpenAI's premium tier starts at 272k,
+       *  xAI's and Gemini Pro's at 200k, and Anthropic charges no premium at
+       *  all. A single global threshold priced a 240k GPT-5.5 call at the long
+       *  rate it is not billed at. The rollup splits each model's tokens at
+       *  THIS number, so the two have to agree: change one and rerun the
+       *  rollup with TOKEN_COST_REBUILD=1. */
+      function longThreshold(model) {
+        const t = rateFor(model).long?.threshold_tokens;
+        return t || pricing?.long_context_multiplier?.threshold_tokens || 200000;
+      }
+
+      /** Cost of one usage bundle. `long` is the share of those tokens that
+       *  came from calls at or over the model's long-context threshold.
+       *
+       *  Two ways a provider prices that share, and a card picks one. A `long`
+       *  block on the card is a full second rate card, which REPLACES the base
+       *  rates for every token of a long call: that is how OpenAI, xAI and
+       *  Gemini Pro word it. Otherwise the global multiplier applies, which is
+       *  the Anthropic [1m] form and is currently 1.0 (no premium).
+       *
+       *  `per_minute` is the third shape: a model billed by wall-clock time
+       *  rather than tokens, priced off the session seconds the rollup
+       *  records. GPT-Live reports every token count as zero, so without this
+       *  a voice call costs a confident $0.00. */
       function costOf(model, u, long) {
         const r = rateFor(model);
+        const minutes = (u.seconds || 0) / 60;
+        if (r.per_minute) return minutes * r.per_minute;
+
         const lc = pricing?.long_context_multiplier || { in_multiplier: 1, out_multiplier: 1 };
-        const mulIn = isLongCtxModel(model) ? (lc.in_multiplier || 1) : 1;
-        const mulOut = isLongCtxModel(model) ? (lc.out_multiplier || 1) : 1;
+        const tier = r.long;
+        const mulIn = !tier && isLongCtxModel(model) ? (lc.in_multiplier || 1) : 1;
+        const mulOut = !tier && isLongCtxModel(model) ? (lc.out_multiplier || 1) : 1;
+        const lr = tier || r;
 
         const L = long || { in: 0, out: 0, cache_read: 0, cache_write: 0 };
         const lFresh = Math.max(0, (L.in || 0) - (L.cache_read || 0) - (L.cache_write || 0));
@@ -1165,10 +1305,10 @@
 
         const per = 1e6;
         return (
-          (nFresh * r.uncached_in + lFresh * r.uncached_in * mulIn) / per +
-          (nWrite * r.cache_write + (L.cache_write || 0) * r.cache_write * mulIn) / per +
-          (nRead * r.cache_read + (L.cache_read || 0) * r.cache_read * mulIn) / per +
-          (nOut * r.out + (L.out || 0) * r.out * mulOut) / per
+          (nFresh * r.uncached_in + lFresh * lr.uncached_in * mulIn) / per +
+          (nWrite * r.cache_write + (L.cache_write || 0) * lr.cache_write * mulIn) / per +
+          (nRead * r.cache_read + (L.cache_read || 0) * lr.cache_read * mulIn) / per +
+          (nOut * r.out + (L.out || 0) * lr.out * mulOut) / per
         );
       }
 
@@ -1202,12 +1342,14 @@
       }
 
       const emptyU = () => ({ calls: 0, in: 0, cache_read: 0, cache_write: 0, out: 0,
+                              seconds: 0,
                               buckets: [0, 0, 0, 0, 0, 0],
                               long: { in: 0, out: 0, cache_read: 0, cache_write: 0 } });
 
       function addU(a, b) {
         a.calls += b.calls; a.in += b.in; a.cache_read += b.cache_read;
         a.cache_write += b.cache_write; a.out += b.out;
+        a.seconds += b.seconds || 0;
         for (let i = 0; i < 6; i++) a.buckets[i] += (b.buckets?.[i] || 0);
         const L = b.long || {};
         a.long.in += L.in || 0; a.long.out += L.out || 0;
@@ -1263,7 +1405,7 @@
         addU(b, {
           calls: 1, in: c.in, cache_read: c.cache_read, cache_write: c.cache_write, out: c.out,
           buckets: [0, 0, 0, 0, 0, 0].map((_, i) => (i === bi ? 1 : 0)),
-          long: c.in >= (pricing?.long_context_multiplier?.threshold_tokens || 200000)
+          long: c.in >= longThreshold(c.model)
             ? { in: c.in, out: c.out, cache_read: c.cache_read, cache_write: c.cache_write }
             : { in: 0, out: 0, cache_read: 0, cache_write: 0 },
         });
@@ -1404,6 +1546,17 @@
         for (const r of rows) {
           const fresh = Math.max(0, r.u.in - r.u.cache_read - r.u.cache_write);
           const tr = document.createElement('tr');
+          // A voice model billed by the minute reports every token count as
+          // zero, so its row would read as four dashes and a cost with nothing
+          // behind it. Spanning the token columns with the minutes it WAS
+          // charged for says where the money went.
+          const minuteRow = !!rateFor(r.model).per_minute;
+          const tokenCells = minuteRow
+            ? `<td class="num" colspan="4" data-label="Voice">${fmtMinutes(r.u.seconds)} of call</td>`
+            : `<td class="num" data-label="Fresh in">${fmtTok(fresh)}</td>` +
+              `<td class="num" data-label="Cache write">${fmtTok(r.u.cache_write)}</td>` +
+              `<td class="num muted" data-label="Cache read">${fmtTok(r.u.cache_read)}</td>` +
+              `<td class="num" data-label="Out">${fmtTok(r.u.out)}</td>`;
           tr.innerHTML =
             // data-label is what the narrow-viewport CSS prints above each
             // number, so the layout is driven entirely by the media query and
@@ -1411,10 +1564,7 @@
             `<td class="row-head">${lucidos.utils.escapeHtml(modelName(r.model))}</td>` +
             `<td class="row-sub muted">${lucidos.utils.escapeHtml(producerLabel[r.producer] || r.producer)}</td>` +
             `<td class="num" data-label="Calls">${fmtInt(r.u.calls)}</td>` +
-            `<td class="num" data-label="Fresh in">${fmtTok(fresh)}</td>` +
-            `<td class="num" data-label="Cache write">${fmtTok(r.u.cache_write)}</td>` +
-            `<td class="num muted" data-label="Cache read">${fmtTok(r.u.cache_read)}</td>` +
-            `<td class="num" data-label="Out">${fmtTok(r.u.out)}</td>` +
+            tokenCells +
             `<td class="money" data-label="Cost">${fmtMoney(r.cost)}</td>`;
           tbody.appendChild(tr);
         }
@@ -1430,6 +1580,10 @@
           `<td class="num" data-label="Cache read">${fmtTok(total.cache_read)}</td>` +
           `<td class="num" data-label="Out">${fmtTok(total.out)}</td>` +
           `<td class="money" data-label="Cost">${fmtMoney(totalCost)}</td></tr>`;
+
+        // Say so when the rows above show raw ids, not registry labels.
+        const labelNote = document.getElementById('model-label-note');
+        if (labelNote) labelNote.hidden = !modelLabelsUnavailable;
 
         // Histogram
         const edges = daily.bucket_edges;
@@ -1590,7 +1744,7 @@
             `<div class="feed-time">${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}</div>` +
             `<div class="feed-model">${lucidos.utils.escapeHtml(modelName(call.model))}</div>` +
             `<div class="feed-tok">${fmtTok(fresh)} fresh · ${fmtTok(call.cache_read)} cached · ${fmtTok(call.out)} out</div>` +
-            `<div class="feed-cost">${fmtMoney(costOf(call.model, { in: call.in, cache_read: call.cache_read, cache_write: call.cache_write, out: call.out }, call.in >= (pricing?.long_context_multiplier?.threshold_tokens || 2e5) ? { in: call.in, out: call.out, cache_read: call.cache_read, cache_write: call.cache_write } : null))}</div>`;
+            `<div class="feed-cost">${fmtMoney(costOf(call.model, { in: call.in, cache_read: call.cache_read, cache_write: call.cache_write, out: call.out }, call.in >= longThreshold(call.model) ? { in: call.in, out: call.out, cache_read: call.cache_read, cache_write: call.cache_write } : null))}</div>`;
           feed.appendChild(row);
         }
       }
@@ -1610,6 +1764,9 @@
        *  its id is honest; printing nothing, or dropping the row, is not. */
       let modelLabels = {};
       let modelLabelsNoAlias = {};
+      // True when the registry could not be reached, so the table shows raw ids
+      // and says so rather than passing an id off as the registry's label.
+      let modelLabelsUnavailable = false;
 
       /** `claude-opus-5@default[1m]` -> `claude-opus-5[1m]`.
        *
@@ -1628,6 +1785,15 @@
         return String(id).replace(/@[^[\]]*/, '');
       }
 
+      /** Load the registry's model labels from /models.
+       *
+       *  `/models` has no SDK namespace, so it travels over `lucidos.request`,
+       *  the bridged call ADR 0231 added. A raw fetch cannot stand in for it: an
+       *  app frame has an opaque origin (ADR 0227), so CORS refuses the engine's
+       *  answer however the URL is built. On an engine without `lucidos.request`
+       *  the call throws, `modelLabelsUnavailable` is set, and the note under
+       *  "By model" says the labels are unavailable, so a reader never takes a
+       *  raw id like `claude-opus-5@default[1m]` for what the registry calls it. */
       async function loadModelLabels() {
         try {
           // `/models` has no SDK namespace of its own, so it goes through
@@ -1647,9 +1813,13 @@
           }
           modelLabels = next;
           modelLabelsNoAlias = nextNoAlias;
+          modelLabelsUnavailable = false;
         } catch (e) {
-          // Non-fatal by design: the dashboard's job is the numbers, and it
-          // shows every one of them with ids if the registry is unreachable.
+          // Surfaced, not swallowed. The dashboard still shows every number
+          // with raw ids, but a silent fallback is exactly what hid this: a
+          // reader would read the id as the registry's label. The note under
+          // "By model" now says the labels are unavailable.
+          modelLabelsUnavailable = true;
           console.warn('token-cost: could not load model labels', e);
         }
       }
@@ -1712,16 +1882,13 @@
         // limit=1000 call looked fine on a quiet morning and would have
         // silently truncated a busy one: the peak measured here is 2,415 calls
         // in one hour, and a whole day runs to 17,600.
-        //
-        // The store is read through `lucidos.events.query`, which carries the
-        // call over the app bridge to the engine. This page runs in an iframe
-        // at an opaque origin, so its own `fetch` of the engine is refused by
-        // CORS however the URL is built — WebKit calls that `Load failed` and
-        // Chromium a `TypeError`, and the catch below turns either one into a
-        // fallback, which is exactly how this dashboard sat frozen for weeks.
-        // `lucidos.apiUrl` resolves the address correctly and changes nothing
-        // about that: it is for a markup `src`/`href`, not for a call.
-        // The SDK forwards the `before_event_id` cursor, so paging works.
+        // Paged through lucidos.events.query, which carries before_event_id
+        // over the host bridge and returns the same newest-first rows. A raw
+        // fetch of the engine cannot stand in for it here: an app frame has an
+        // opaque origin (ADR 0227), so the engine is cross-origin and CORS
+        // refuses the answer, however the URL is built. The SDK method also
+        // brings the timeout, the error shape and the response parsing a bare
+        // fetch does not.
         const collected = [];
         let before = null;
         let reachedRollup = false;
@@ -1737,9 +1904,8 @@
             });
           } catch (e) {
             // Kept, and shown. "Something went wrong, retrying" is the kind of
-            // message that let this sit broken for weeks: the failure was a
-            // 404 on a malformed URL the whole time, and nothing on screen
-            // could have told anyone that.
+            // message that let this sit broken for weeks. Now the header names
+            // the real error, so a stalled catch-up can never go silent again.
             console.warn('token-cost: catch-up failed', e);
             lastCatchUpError = (e && e.message) ? e.message : String(e);
             failed = true;
@@ -1840,12 +2006,12 @@
         if (!pricing.fx.rates || typeof pricing.fx.rates !== 'object') pricing.fx.rates = {};
         pricing.fx.rates[pricing.currency] = 1;
 
-        // Display currency is per device, so it is read from localStorage, not
-        // from the shared file. A stored code the table no longer carries falls
-        // back to the base rather than showing every figure unconverted.
-        let stored = null;
-        try { stored = localStorage.getItem(DISPLAY_CCY_KEY); } catch (e) { /* private mode */ }
-        displayCcy = stored && fxRate(stored) !== null ? stored.toUpperCase() : pricing.currency;
+        // Display currency is remembered in the workspace ui-state file, which
+        // loadUiState() read before this ran. A stored code the table no longer
+        // carries falls back to the base rather than showing every figure
+        // unconverted.
+        const stored = uiState.currency;
+        displayCcy = stored && fxRate(stored) !== null ? String(stored).toUpperCase() : pricing.currency;
 
         try {
           daily = JSON.parse(await lucidos.data.read(DAILY));
@@ -1924,7 +2090,8 @@
             value: displayCcy || base,
             onChange: (v) => {
               displayCcy = v;
-              try { localStorage.setItem(DISPLAY_CCY_KEY, v); } catch (e) { /* private mode */ }
+              uiState.currency = v;
+              saveUiState();
               render();
             },
           });
@@ -1989,8 +2156,13 @@
         if (!draft || saving) return;
         saving = true;
         const payload = {
-          _comment: 'Model rates are per 1,000,000 tokens, in the currency named by \u2018currency\u2019. Edited from the Token Cost app\u2019s Settings tab, or by hand. A model id not listed here falls back to \u2018default\u2019. \u2018fx.rates\u2019 is units of each currency per 1 unit of the base, used for display conversion only.',
+          _comment: 'Model rates are per 1,000,000 tokens, in the currency named by \u2018currency\u2019. Edited from the Token Cost app\u2019s Settings tab, or by hand. A model id not listed here falls back to \u2018default\u2019. A card may carry two optional extras. \u2018long\u2019 is the provider\u2019s long-context tier: its four rates replace the base ones for every token of a call whose PROMPT reached \u2018threshold_tokens\u2019. \u2018per_minute\u2019 prices a model billed by wall-clock time rather than tokens, and a card with it set ignores its token rates. \u2018fx.rates\u2019 is units of each currency per 1 unit of the base, used for display conversion only.',
           _updated: localDay(new Date()),
+          // Where the numbers came from, carried through untouched. An edit
+          // here is the user's own, so the block stops being the whole truth,
+          // but dropping it would lose the provenance of every row they did
+          // not touch.
+          ...(pricing?._sources ? { _sources: pricing._sources } : {}),
           currency: (draft.currency || 'USD').toUpperCase(),
           models: draft.models,
           long_context_multiplier: draft.long_context_multiplier,
@@ -2075,7 +2247,12 @@
           `Rates per 1,000,000 tokens, in <strong>${lucidos.utils.escapeHtml(draft.currency)}</strong>. ` +
           'Every cost on the dashboard is computed from these numbers in the browser, so an edit ' +
           're-prices your whole history as soon as it lands. A model the engine reports that is not ' +
-          'listed here falls back to the <strong>default</strong> row.';
+          'listed here falls back to the <strong>default</strong> row. ' +
+          '<strong>Per minute</strong> is for a voice model billed by the clock rather than by tokens: ' +
+          'set it and this row is priced from call duration alone. A model with a long-context tier ' +
+          'carries it in the JSON as <code>long</code>, and a change there needs the rollup rerun ' +
+          'with <code>TOKEN_COST_REBUILD=1</code>, because the split between short and long tokens ' +
+          'happens there.';
         document.getElementById('fx-base-label').textContent = draft.currency;
 
         // Model rates. `default` is the fallback row every unlisted model uses,
@@ -2111,6 +2288,21 @@
             td.appendChild(numInput(rate[key], (v) => { rate[key] = isNaN(v) ? 0 : v; }));
             tr.appendChild(td);
           }
+
+          // Per-minute rate. Blank for the ordinary token-priced model, which
+          // is nearly all of them; a number here takes over pricing for that
+          // model entirely, because a provider that bills by the clock does not
+          // also bill for the tokens.
+          const perMin = document.createElement('td');
+          const pm = numInput(rate.per_minute ?? '', (v) => {
+            if (isNaN(v) || v <= 0) delete rate.per_minute; else rate.per_minute = v;
+          });
+          pm.step = '0.001';
+          pm.placeholder = '\u2013';
+          pm.title = 'Price per minute of wall clock, for a voice model billed by time. '
+                   + 'Set, it replaces the token rates on this row.';
+          perMin.appendChild(pm);
+          tr.appendChild(perMin);
 
           const actions = document.createElement('td');
           if (id !== 'default') {
@@ -2287,9 +2479,11 @@
         btn.disabled = true;
         status.textContent = 'Fetching…';
         try {
-          const url = `https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(base)}` +
+          const path = `/latest?base=${encodeURIComponent(base)}` +
             `&symbols=${encodeURIComponent(wanted.join(','))}`;
-          const res = await fetch(url, { headers: { Accept: 'application/json' } });
+          const res = await lucidos.proxy('frankfurter').fetch(path, {
+            headers: { Accept: 'application/json' },
+          });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
           const got = data && data.rates ? data.rates : {};
@@ -2334,7 +2528,8 @@
 
       document.getElementById('btn-sound').addEventListener('click', () => {
         soundOn = !soundOn;
-        try { localStorage.setItem(SOUND_KEY, soundOn ? '1' : '0'); } catch (e) { /* private mode */ }
+        uiState.sound = soundOn;
+        saveUiState();
         renderSoundBtn();
         if (!soundOn) return;
         // The click IS the gesture that unlocks audio, so ring immediately: it
@@ -2403,9 +2598,19 @@
         if (String(d?.path || d?.event?.path || '').includes('token-cost/daily.json')) load();
       });
 
+      // The first paint shows the sound controls on their defaults, then the
+      // remembered UI state loads and repaints them. Both reads come from
+      // lucidos.data now, not localStorage, so they are async: the defaults are
+      // what the first frame shows, never `undefined`. loadUiState runs before
+      // load() so the display currency is known by the time load() resolves it
+      // against the pricing table. load() still runs even if the state read
+      // throws, so a bad ui-state file can never keep the dashboard dark.
       renderSoundBtn();
       renderSoundGrid();
-      load();
+      (async () => {
+        try { await loadUiState(); } catch (e) { console.warn('token-cost: ui-state load failed', e); }
+        await load();
+      })();
 
       // ---- Staying current --------------------------------------------------
       // Nothing below assumes the stream is alive. Each of these is a way the

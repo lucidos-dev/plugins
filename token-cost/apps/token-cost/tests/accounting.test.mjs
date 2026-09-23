@@ -49,13 +49,13 @@ const daily = JSON.parse(fs.readFileSync(P('data/artifacts/token-cost/daily.json
 const pricingRaw = fs.readFileSync(P('data/artifacts/token-cost/pricing.json'),'utf8');
 
 global.lucidos = {
-  // Both engine calls go over the SDK bridge now: the pager through
+  // Both engine calls go over the SDK bridge: the pager through
   // lucidos.events.query and /models through lucidos.request. An app frame
   // runs at an opaque origin, so its own fetch of the engine is CORS-refused.
   apiUrl: (s) => '/dev/api/v1' + (s.startsWith('/') ? s : '/' + s),
   ui:{ applyPreferences(){}, watchPreferences(){}, enhanceSelects(){}, toast(){},
        Select:{ create:(o)=>({element:mkEl('sel'), getValue:()=>o.value, setValue(){}, setOptions(){}, destroy(){}}) } },
-  data:{ read: async (p)=> p.includes('pricing') ? pricingRaw : JSON.stringify(daily), write: async()=>({success:true}), url:(p)=> p.startsWith('system-knowhow/') ? '/dev/api/v1/data/'+p : '/dev/data/'+p },
+  data:{ read: async (p)=> p.includes('pricing') ? pricingRaw : p.includes('ui-state') ? '{}' : JSON.stringify(daily), write: async()=>({success:true}), url:(p)=> p.startsWith('system-knowhow/') ? '/dev/api/v1/data/'+p : '/dev/data/'+p },
   // The pager goes through lucidos.events.query; stubbed empty here because
   // these tests drive the accounting directly via pushLive. `/models` goes
   // through the generic bridged call, which has no labels to give.
@@ -68,7 +68,7 @@ global.lucidos = {
 const harness = src + `
 ;globalThis.__tc = {
   pushLive, render, get live(){return live;}, countedLive, get seenSeq(){return seenSeq;},
-  seriesForDay, selectedDays, knownDays, localDay, costOf,
+  seriesForDay, selectedDays, knownDays, localDay, costOf, longThreshold, rateFor,
   setDaily(d){ daily = d; }, setPricing(p){ pricing = p; },
   get daily(){ return daily; },
   get metaText(){ return document.getElementById('meta').textContent; },
@@ -178,6 +178,48 @@ const shuffled = totalFor([calls[2],calls[0],calls[3],calls[1]]);
 ok(inOrder===3, 'in order: 3 priced calls, got '+inOrder);
 ok(reversed===inOrder, 'reversed delivery gives the same total, got '+reversed);
 ok(shuffled===inOrder, 'shuffled delivery gives the same total, got '+shuffled);
+
+console.log('\n11. a voice model billed by the minute');
+tc.setPricing({
+  currency:'USD',
+  models:{
+    'default': { uncached_in:5, cache_write:6.25, cache_read:0.5, out:25 },
+    'gpt-live-1': { uncached_in:0, cache_write:0, cache_read:0, out:0, per_minute:0.05 },
+    'gpt-5.5': { uncached_in:5, cache_write:0, cache_read:0.5, out:30,
+                 long:{ threshold_tokens:272000, uncached_in:10, cache_write:0, cache_read:1, out:45 } },
+    'claude-opus-5': { uncached_in:5, cache_write:6.25, cache_read:0.5, out:25 },
+  },
+  long_context_multiplier:{ threshold_tokens:200000, in_multiplier:1, out_multiplier:1 },
+  producers:{}, fx:{ rates:{USD:1} },
+});
+const zeroTokens = { calls:1, in:0, cache_read:0, cache_write:0, out:0, seconds:120,
+                     long:{in:0,out:0,cache_read:0,cache_write:0} };
+ok(Math.abs(tc.costOf('gpt-live-1', zeroTokens, zeroTokens.long) - 0.10) < 1e-9,
+   'two minutes of GPT-Live costs $0.10, not $0.00, got '+tc.costOf('gpt-live-1', zeroTokens, zeroTokens.long));
+const noSeconds = { ...zeroTokens, seconds:0 };
+ok(tc.costOf('gpt-live-1', noSeconds, noSeconds.long) === 0, 'a session with no duration costs nothing');
+// A per-minute card must not also charge for whatever tokens happen to arrive.
+const withTokens = { calls:1, in:10000, cache_read:0, cache_write:0, out:5000, seconds:60,
+                     long:{in:0,out:0,cache_read:0,cache_write:0} };
+ok(Math.abs(tc.costOf('gpt-live-1', withTokens, withTokens.long) - 0.05) < 1e-9,
+   'per_minute replaces the token rates rather than adding to them');
+
+console.log('\n12. the long-context tier is the provider\'s, not one global number');
+// 240k on GPT-5.5 is under OpenAI's 272k tier, so it is priced at the short rate
+// even though it is over the 200k the global multiplier used to split at.
+const short240 = { calls:1, in:240000, cache_read:0, cache_write:0, out:1000, seconds:0,
+                   long:{in:0,out:0,cache_read:0,cache_write:0} };
+const expShort = (240000*5 + 1000*30)/1e6;
+ok(Math.abs(tc.costOf('gpt-5.5', short240, short240.long) - expShort) < 1e-9,
+   'a 240k GPT-5.5 call is priced short, got '+tc.costOf('gpt-5.5', short240, short240.long).toFixed(4)+' want '+expShort.toFixed(4));
+ok(tc.longThreshold('gpt-5.5') === 272000, 'GPT-5.5 splits at 272k, got '+tc.longThreshold('gpt-5.5'));
+ok(tc.longThreshold('claude-opus-5[1m]') === 200000, 'a card with no tier falls back to the global split');
+// Over the tier, every token of the call takes the long rate.
+const long300 = { calls:1, in:300000, cache_read:0, cache_write:0, out:1000, seconds:0,
+                  long:{in:300000,out:1000,cache_read:0,cache_write:0} };
+const expLong = (300000*10 + 1000*45)/1e6;
+ok(Math.abs(tc.costOf('gpt-5.5', long300, long300.long) - expLong) < 1e-9,
+   'a 300k GPT-5.5 call takes the long card whole, got '+tc.costOf('gpt-5.5', long300, long300.long).toFixed(4));
 
 console.log('\n'+pass+' passed, '+fail+' failed');
 process.exit(fail?1:0);

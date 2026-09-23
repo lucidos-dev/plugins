@@ -42,22 +42,19 @@ global.localStorage = { getItem:()=>null, setItem(){}, };
 global.setInterval = ()=>0;
 global.setTimeout = (f)=>{ return 0; };
 global.clearTimeout = ()=>{};
-globalThis.__store = [];   // newest-first rows the fake event store returns
+globalThis.__store = [];         // newest-first rows the fake event store returns
+globalThis.__queryFail = false;  // when set, lucidos.events.query throws
+globalThis.__queryCalls = 0;
+globalThis.__modelsFail = false; // when set, lucidos.request('/models') throws
 globalThis.__fetchFail = false;
 globalThis.__fetchCalls = 0;
-globalThis.__queryCalls = 0;
-globalThis.__queryFail = false;
-globalThis.__modelsFail = false;
-global.fetch = async (u) => {
+// Nothing in the app should raw-fetch the engine any more: the pager reads the
+// store through lucidos.events.query and /models goes through lucidos.request,
+// both stubbed below. The stub counts calls so a test can assert there are none.
+global.fetch = async () => {
   globalThis.__fetchCalls++;
-  if (globalThis.__fetchFail) throw new Error('offline');
-  const url = new URL(u);
-  const since = new Date(url.searchParams.get('since')).getTime();
-  const limit = Number(url.searchParams.get('limit'));
-  const before = url.searchParams.get('before_event_id');
-  let rows = globalThis.__store.filter(r => new Date(r.created).getTime() >= since);
-  if (before) { const i = rows.findIndex(r=>r.id===before); rows = i<0?rows:rows.slice(i+1); }
-  return { ok:true, json: async()=>rows.slice(0,limit) };
+  if (globalThis.__fetchFail) throw new TypeError('Load failed');
+  return { ok:true, json: async()=>[] };
 };
 global.URL = URL;
 global.Intl = Intl;
@@ -69,13 +66,13 @@ global.lucidos = {
   apiUrl: (s) => '/dev/api/v1' + (s.startsWith('/') ? s : '/' + s),
   ui:{ applyPreferences(){}, watchPreferences(){}, enhanceSelects(){}, toast(){},
        Select:{ create:(o)=>({element:mkEl('sel'), getValue:()=>o.value, setValue(){}, setOptions(){}, destroy(){}}) } },
-  data:{ read: async (p)=> p.includes('pricing') ? pricingRaw : JSON.stringify(daily), write: async()=>({success:true}), url:(p)=> p.startsWith('system-knowhow/') ? '/dev/api/v1/data/'+p : '/dev/data/'+p },
+  data:{ read: async (p)=> p.includes('pricing') ? pricingRaw : p.includes('ui-state') ? '{}' : JSON.stringify(daily), write: async()=>({success:true}), url:(p)=> p.startsWith('system-knowhow/') ? '/dev/api/v1/data/'+p : '/dev/data/'+p },
   events:{
-    // The catch-up pager reads the store through here, not a raw fetch: an app
-    // frame has an opaque origin (ADR 0227), so a direct fetch of the engine is
-    // CORS-refused and the SDK bridge is the only path. Mirrors the engine's
-    // /events/query: newest-first, filtered by `since` and the exclusive
-    // `before_event_id` cursor, clamped to `limit`.
+    // The catch-up pager reads the store through here now, not a raw fetch: an
+    // app frame has an opaque origin (ADR 0227), so a direct fetch of the
+    // engine is CORS-refused, and the SDK bridge is the only path. Mirrors the
+    // engine's /events/query: newest-first, filtered by `since` and the
+    // exclusive `before_event_id` cursor, clamped to `limit`.
     query: async ({ since, limit, before_event_id } = {}) => {
       globalThis.__queryCalls++;
       if (globalThis.__queryFail) throw new Error('offline');
@@ -100,7 +97,7 @@ const harness = src + `
   setDaily(d){ daily = d; }, setPricing(p){ pricing = p; },
   get daily(){ return daily; },
   get metaText(){ return document.getElementById('meta').textContent; },
-  resetLive(){ live=[]; seenSeq=new Set(); liveRevision++; }, setSseOpenedAt(t){ sseOpenedAt=t; }, resetHealth(){ streamMissed=0; lastCatchUpFailed=false; lastCatchUpError=null; lastCatchUpAt=0; }, catchUp, get lastCatchUpFailed(){return lastCatchUpFailed;}, get streamMissed(){return streamMissed;}, isStale, get feedRows(){ return document.getElementById('feed').children.map(c=>c.dataset.at); }, renderFeed,
+  resetLive(){ live=[]; seenSeq=new Set(); liveRevision++; }, setSseOpenedAt(t){ sseOpenedAt=t; }, resetHealth(){ streamMissed=0; lastCatchUpFailed=false; lastCatchUpError=null; lastCatchUpAt=0; }, catchUp, loadModelLabels, get modelLabelsUnavailable(){return modelLabelsUnavailable;}, get lastCatchUpFailed(){return lastCatchUpFailed;}, get streamMissed(){return streamMissed;}, isStale, get feedRows(){ return document.getElementById('feed').children.map(c=>c.dataset.at); }, renderFeed,
 };
 `;
 new Function(harness)();
@@ -218,6 +215,18 @@ ok(globalThis.__queryCalls > 0, 'it reads the store via lucidos.events.query, go
 ok(rawEventsFetch === false, 'and never raw-fetches /events/query, the CORS-refused path that froze the dashboard in a frame');
 ok(tc.countedLive().length===1, 'and still recovers the call, got '+tc.countedLive().length);
 global.fetch = realFetch;
+
+console.log('\n20. an unreachable model registry is surfaced, not hidden');
+globalThis.__modelsFail = true;
+await tc.loadModelLabels();
+tc.render();
+ok(tc.modelLabelsUnavailable===true, 'the failure is recorded');
+ok(document.getElementById('model-label-note').hidden===false, 'the "By model" note is shown');
+globalThis.__modelsFail = false;
+await tc.loadModelLabels();
+tc.render();
+ok(tc.modelLabelsUnavailable===false, 'a reachable registry clears it');
+ok(document.getElementById('model-label-note').hidden===true, 'and the note is hidden again');
 
 console.log('\n'+pass+' passed, '+fail+' failed');
 process.exit(fail?1:0);
