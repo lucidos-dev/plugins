@@ -45,15 +45,20 @@ payload = json.loads(os.environ.get("TRIGGER_EVENT_PAYLOAD", "{}"))
 thread_id = os.environ.get("TRIGGER_EVENT_THREAD_ID")
 event_id = os.environ.get("TRIGGER_EVENT_ID")
 
-# State lives beside the script under data/, anchored on LUCIDOS_WORKSPACE.
-# __file__ is NOT safe here: the engine copies the source into
-# .lucidos/exhaust/<run-id>/ and runs that copy, so a __file__-relative path
-# writes to a phantom directory. See knowhow/script-state-paths.md.
+# State lives under data/artifacts/, anchored on LUCIDOS_WORKSPACE.
+# Don't derive it from __file__: the engine runs trigger scripts in place, but
+# a copy run by hand or from a worktree would then write state somewhere
+# wrong. The __file__ fallback below only matches the installed layout
+# (data/triggers/.../scripts -> data/artifacts/). See knowhow/script-state-paths.md.
+# A missing file is treated as empty state (see already_pushed).
 _WS = os.environ.get("LUCIDOS_WORKSPACE")
 _STATE_DIR = (
-    os.path.join(_WS, "data", "triggers", "notify-when-needed", "state")
+    os.path.join(_WS, "data", "artifacts", "notify-when-needed")
     if _WS
-    else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "state")
+    else os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "..", "..", "artifacts", "notify-when-needed",
+    )
 )
 _SEEN_PATH = os.path.join(_STATE_DIR, "seen.json")
 
