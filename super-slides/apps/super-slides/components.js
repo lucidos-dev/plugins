@@ -157,7 +157,7 @@ SS.slideHeader = (tagHtml, title, subtitle, path) => {
   return `<div class="slide-header">
     ${tagHtml}
     <h2 class="${titleCls}"${titleAttr}>${title}</h2>
-    <p class="subtitle${subCls}"${subAttr}>${subtitle}</p>
+    ${subtitle ? `<p class="subtitle${subCls}"${subAttr}>${subtitle}</p>` : ''}
   </div>`;
 };
 
