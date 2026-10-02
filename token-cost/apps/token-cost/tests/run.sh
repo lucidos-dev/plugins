@@ -12,12 +12,18 @@
 #               and the total does not depend on delivery order
 #   freshness   a dead stream, a hole behind it, and a failing reconcile are
 #               all recovered from and reported
+#   defaults    missing built-in rows are added to pricing.json, and the
+#               built-in sounds play without a fetch the frame is refused
+#   rollup      the daily rollup splits long context at the same card the
+#               app prices with (python3, no database)
 set -euo pipefail
 cd "$(dirname "$0")"
 export TZ="${TZ:-Europe/Oslo}"
 fail=0
-for t in accounting.test.mjs freshness.test.mjs; do
+for t in accounting.test.mjs freshness.test.mjs defaults-and-sounds.test.mjs; do
   echo "== $t"
   if ! node "$t"; then fail=1; echo "   ^ $t FAILED"; fi
 done
+echo "== rollup.test.py"
+if ! python3 rollup.test.py; then fail=1; echo "   ^ rollup.test.py FAILED"; fi
 exit $fail

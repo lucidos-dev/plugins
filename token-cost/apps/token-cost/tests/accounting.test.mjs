@@ -4,7 +4,9 @@ const WS = process.env.LUCIDOS_WORKSPACE ||
   path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..');
 const P = (p) => path.join(WS, p);
 
-const html = fs.readFileSync(P('data/apps/token-cost/index.html'),'utf8');
+// The app under test is the one beside this file, not the workspace's live
+// copy: run from a worktree, the live copy is the code BEFORE the change.
+const html = fs.readFileSync(new URL('../index.html', import.meta.url),'utf8');
 const src = html.match(/<script>([\s\S]*)<\/script>\s*<\/body>/)[1];
 
 // --- minimal DOM / SDK stubs -------------------------------------------------
@@ -68,7 +70,7 @@ global.lucidos = {
 const harness = src + `
 ;globalThis.__tc = {
   pushLive, render, get live(){return live;}, countedLive, get seenSeq(){return seenSeq;},
-  seriesForDay, selectedDays, knownDays, localDay, costOf, longThreshold, rateFor,
+  seriesForDay, selectedDays, knownDays, localDay, costOf, longThreshold, rateFor, dayZoneLabel,
   setDaily(d){ daily = d; }, setPricing(p){ pricing = p; },
   get daily(){ return daily; },
   get metaText(){ return document.getElementById('meta').textContent; },
@@ -220,6 +222,105 @@ const long300 = { calls:1, in:300000, cache_read:0, cache_write:0, out:1000, sec
 const expLong = (300000*10 + 1000*45)/1e6;
 ok(Math.abs(tc.costOf('gpt-5.5', long300, long300.long) - expLong) < 1e-9,
    'a 300k GPT-5.5 call takes the long card whole, got '+tc.costOf('gpt-5.5', long300, long300.long).toFixed(4));
+
+// --- unpriced models -----------------------------------------------------------
+// A gateway's own model ids used to fall to a `default` row holding the Opus 5
+// card. That priced an undated Haiku 5x high and looked exactly like a real
+// rate, which is how this dashboard read higher than the gateway's ledger.
+const OPUS5 = { uncached_in:5, cache_write:6.25, cache_read:0.5, out:25 };
+const storedWithDefault = () => ({
+  currency:'USD',
+  models:{
+    'default': OPUS5,
+    'claude-opus-5': OPUS5,
+    'claude-haiku-4-5-20251001': { uncached_in:1, cache_write:1.25, cache_read:0.1, out:5 },
+    'gpt-5.5': { uncached_in:5, cache_write:0, cache_read:0.5, out:30,
+                 long:{ threshold_tokens:272000, uncached_in:10, cache_write:0, cache_read:1, out:45 } },
+    'x-ai/grok-4.6': { uncached_in:2, cache_write:0, cache_read:0.5, out:6 },
+  },
+  long_context_multiplier:{ threshold_tokens:200000, in_multiplier:1, out_multiplier:1 },
+  producers:{}, fx:{ rates:{USD:1} },
+});
+const oneM = { calls:1, in:1e6, cache_read:0, cache_write:0, out:1e6, seconds:0,
+               long:{in:0,out:0,cache_read:0,cache_write:0} };
+const priceOf = (m) => tc.costOf(m, oneM, oneM.long);
+
+console.log('\n13. an unknown model is unpriced, never priced as Opus');
+tc.setPricing(storedWithDefault());
+ok(tc.rateFor('acme-mystery-7b') === null, 'an unknown id has no card, even with a `default` row stored');
+ok(priceOf('acme-mystery-7b') === null, 'and costOf says null, not a number');
+ok(tc.rateFor('default') === null, 'the `default` row is not a card for a model literally called default');
+
+console.log('\n14. gateway decorations resolve to the real card');
+const haiku = 1 + 5;
+for (const id of ['claude-haiku-4-5', 'anthropic/claude-haiku-4-5', 'anthropic.claude-haiku-4-5-20251001-v1:0',
+                  'us.anthropic.claude-haiku-4-5-20251001-v1:0', 'anthropic/claude-haiku-4.5',
+                  'claude-haiku-4-5@20251001', 'Claude-Haiku-4-5']) {
+  ok(priceOf(id) === haiku, `${id} prices as Haiku 4.5 ($${haiku}), got ${priceOf(id)}`);
+}
+ok(priceOf('openai/gpt-5.5') === 35, 'openai/gpt-5.5 prices as GPT-5.5');
+ok(tc.longThreshold('openai/gpt-5.5') === 272000, 'and keeps its 272k long tier');
+ok(priceOf('x-ai/grok-4.6') === 8, 'a key that IS a prefixed id still matches literally');
+ok(priceOf('claude-opus-5@default[1m]') === 30, 'the engine\'s own decorations still strip');
+
+console.log('\n15. Sonnet 5.5 and the built-in cards');
+// The stored table above predates Sonnet 5.5 and has no row for it. The
+// built-in card must reach it, or every existing pricing.json stays wrong.
+ok(priceOf('claude-sonnet-5-5') === 12, 'Sonnet 5.5 takes the built-in $2/$10 card, got '+priceOf('claude-sonnet-5-5'));
+ok(priceOf('claude-sonnet-5-5[1m]') === 12, 'and so does its [1m] variant');
+ok(priceOf('anthropic/claude-sonnet-5.5') === 12, 'and a gateway spelling of it');
+const custom = storedWithDefault();
+custom.models['claude-sonnet-5-5'] = { uncached_in:1.5, cache_write:0, cache_read:0, out:7.5 };
+tc.setPricing(custom);
+ok(priceOf('claude-sonnet-5-5') === 9, 'a stored rate beats the built-in one');
+
+console.log('\n16. an empty card is unpriced, a partial one is priced');
+const blank = storedWithDefault();
+blank.models['acme-mystery-7b'] = {};
+blank.models['acme-half'] = { uncached_in:2 };
+tc.setPricing(blank);
+ok(priceOf('acme-mystery-7b') === null, 'a row "Add rate" left empty prices nothing');
+ok(priceOf('acme-half') === 2, 'a blank field on a priced row counts as 0, not NaN, got '+priceOf('acme-half'));
+
+console.log('\n17. the totals leave unpriced spend out and say so');
+tc.setPricing(storedWithDefault());
+const bucket = (calls, inT, out) => ({ calls, in:inT, cache_read:0, cache_write:0, out, seconds:0,
+  buckets:[calls,0,0,0,0,0], long:{in:0,out:0,cache_read:0,cache_write:0} });
+tc.resetLive();
+tc.setDaily({ ...empty, days:{ [today]: {
+  'main_llm|claude-opus-5': bucket(2, 1e6, 0),          // $5.00
+  'main_llm|acme-mystery-7b': bucket(3, 2e6, 1e6),      // unpriced: $35 at the Opus card
+}}, hours:{} });
+tc.render();
+const hero = document.getElementById('hero-cost').querySelector('.live').textContent;
+ok(hero === '$5.00', 'the hero is the priced spend only, got '+hero);
+ok(document.getElementById('hero-unpriced').hidden === false, 'the unpriced note is shown');
+const note = document.getElementById('hero-unpriced-text').textContent;
+ok(/3 calls on 1 unpriced model/.test(note), 'and counts the calls left out: '+note);
+ok(document.getElementById('hero-unpriced-btn').dataset.addRate === 'acme-mystery-7b',
+   'its button offers a rate for that model');
+ok(/\$2\.50 per call/.test(document.getElementById('hero-sub').textContent),
+   'per call averages over priced calls only: '+document.getElementById('hero-sub').textContent);
+const rowsHtml = document.getElementById('tbody').children.map((r) => r.innerHTML);
+ok(/data-add-rate="acme-mystery-7b"/.test(rowsHtml[0]) && /Unpriced/.test(rowsHtml[0]),
+   'the unpriced row leads the table with an Add rate button');
+ok(/\$5\.00/.test(rowsHtml[1]), 'the priced row keeps its cost');
+const foot = document.getElementById('tfoot').innerHTML;
+ok(/Total.*priced.*\$5\.00/.test(foot) && /Unpriced.*not in total/.test(foot), 'the footer splits priced and unpriced');
+ok(!/\$40\.00/.test(foot), 'and nothing anywhere folds the unpriced calls in at the Opus card');
+tc.setDaily({ ...empty, days:{ [today]: { 'main_llm|claude-opus-5': bucket(2, 1e6, 0) } }, hours:{} });
+tc.render();
+ok(document.getElementById('hero-unpriced').hidden === true, 'with every model priced the note hides');
+ok(!/Unpriced/.test(document.getElementById('tfoot').innerHTML), 'and the footer is one row again');
+
+console.log('\n18. the day selector names the zone days are cut in');
+// run.sh pins TZ=Europe/Oslo.
+ok(tc.dayZoneLabel(new Date('2026-07-01T12:00:00Z')) === 'Days in Europe/Oslo (UTC+2)',
+   'summer: '+tc.dayZoneLabel(new Date('2026-07-01T12:00:00Z')));
+ok(tc.dayZoneLabel(new Date('2026-01-15T12:00:00Z')) === 'Days in Europe/Oslo (UTC+1)',
+   'winter: '+tc.dayZoneLabel(new Date('2026-01-15T12:00:00Z')));
+ok(document.getElementById('tz-note').textContent.startsWith('Days in Europe/Oslo'),
+   'render writes it next to the selector');
 
 console.log('\n'+pass+' passed, '+fail+' failed');
 process.exit(fail?1:0);

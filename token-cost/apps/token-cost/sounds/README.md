@@ -44,3 +44,17 @@ Add the file here, add a row to `SOUNDS` in `index.html` (id, label, note, file,
 gain), add a 24x24 stroke icon under the same id in `SOUND_ICONS`, and record
 its provenance in the table above. Anything a user picks themselves is uploaded
 to `artifacts/imported/` instead and never lands in this folder.
+
+## Bundled copy
+
+`sounds.js` holds the same three clips as base64. The app plays the built-ins
+from it, because an app frame has an opaque origin and cannot `fetch()` its own
+files. Regenerate it whenever a clip changes:
+
+```sh
+cd apps/token-cost/sounds
+{ echo '// GENERATED from the .m4a files beside this one. Do not edit by hand.'
+  echo 'window.TC_SOUND_DATA = {'
+  for f in arcade register coinbox; do printf "  '%s.m4a': '%s',\n" "$f" "$(base64 -i $f.m4a | tr -d '\n')"; done
+  echo '};'; } > sounds.js
+```

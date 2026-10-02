@@ -73,6 +73,14 @@ apps/token-cost/tests/run.sh
 Lucidos 0.27.0 or newer. The app resolves the workspace-prefixed events endpoint
 through `lucidos.apiUrl`, which earlier engines do not expose.
 
+## Updating
+
+Nothing to do by hand. The app adds a rate for every model it knows to
+`artifacts/token-cost/pricing.json` when it opens, and leaves every row you
+already have alone. When an update changes how the rollup sums a day,
+`daily.json` carries an older `rollup_version`, and the next scheduled run
+rebuilds every day once. Set `TOKEN_COST_REBUILD=1` to force one yourself.
+
 ## After install
 
 Ask Lucidos to set up the rollup trigger; the plugin's setup step walks it

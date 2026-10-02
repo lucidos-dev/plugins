@@ -85,6 +85,7 @@ knowhow/script-state-paths.md).
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -224,6 +225,37 @@ def fold_jev(days: dict, hours: dict, keep_hours: set) -> tuple:
     return calls_total, tokens_total
 
 
+# The app's built-in cards, for a model pricing.json does not list. The app
+# prices such a model from its built-in card, long tier included, so the split
+# here has to use that card's threshold too.
+APP_HTML = pathlib.Path(__file__).resolve().parent.parent / "index.html"
+
+
+def builtin_long_thresholds() -> dict:
+    """Model id -> long-tier threshold, from DEFAULT_PRICING in the app.
+
+    Read from index.html rather than copied here, so the two cannot drift.
+    Each card there sits on one line, which is what the pattern relies on.
+    A missing or reshaped file gives {} and every model falls back to the
+    stored table or 200k, as before.
+    """
+    try:
+        html = APP_HTML.read_text()
+        block = html[html.index("const DEFAULT_PRICING = {"):]
+        block = block[: block.index("long_context_multiplier:")]
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for m in re.finditer(r"^\s*'([^']+)':\s*\{.*$", block, re.M):
+        t = re.search(r"threshold_tokens:\s*(\d+)", m.group(0))
+        out[m.group(1)] = int(t.group(1)) if t else None
+    return out
+
+
+# The fields that make a card priced, as the app's isPricedCard() reads them.
+RATE_FIELDS = ("uncached_in", "cache_write", "cache_read", "out", "per_minute")
+
+
 def long_thresholds() -> dict:
     """Base model id -> the prompt size its long-context tier starts at.
 
@@ -233,19 +265,43 @@ def long_thresholds() -> dict:
     One global 200k split filed every 200k-272k GPT call as long and the app
     then priced it at a rate OpenAI does not charge.
 
-    Missing or unreadable pricing.json is not fatal: every model falls back to
-    200k, which is what this script did before.
+    A model pricing.json does not list takes the app's built-in card, the same
+    rule the app's rateFor() applies. A stored card with a rate wins, with or
+    without a tier, so a tier removed by hand stays removed. A stored card
+    with no rate at all is skipped, as the app skips it.
+
+    Missing or unreadable pricing.json is not fatal: the built-in cards still
+    apply, and any other model falls back to 200k.
+
+    Every model is returned, at 200k when its card has no tier, because
+    long_cutoff_sql() needs to know which cards shadow a tier.
     """
+    merged = builtin_long_thresholds()
     try:
         cards = json.loads(PRICING.read_text()).get("models", {})
     except (OSError, ValueError):
-        return {}
-    out = {}
+        cards = {}
     for model, card in cards.items():
-        t = (card or {}).get("long", {}).get("threshold_tokens")
-        if t and int(t) != LONG_CTX_THRESHOLD:
-            out[model] = int(t)
-    return out
+        if not isinstance(card, dict) or not any(
+            isinstance(card.get(k), (int, float)) for k in RATE_FIELDS
+        ):
+            continue
+        merged[model] = (card.get("long") or {}).get("threshold_tokens")
+    return {
+        m: int(t) if t else LONG_CTX_THRESHOLD
+        for m, t in merged.items() if m != "default"
+    }
+
+
+def gateway_id(model: str) -> str:
+    """The app's modelKeys() normalisation, as far as a long tier needs it.
+
+    A gateway prefixes the ids it passes through (`openai/gpt-5.5`), and the
+    app resolves those to the plain card. Only the provider prefix matters
+    here: the providers with a long tier are not reached under Bedrock's
+    `anthropic.` names, and Anthropic itself has no tier.
+    """
+    return re.sub(r"^(?:[a-z0-9_-]+/)+", "", model.lower())
 
 
 def long_cutoff_sql(column: str) -> str:
@@ -253,18 +309,37 @@ def long_cutoff_sql(column: str) -> str:
 
     The stored id carries the engine's decorations (`claude-opus-5@default[1m]`),
     and pricing keys on the bare model, so both sides are stripped the same way
-    the app's `baseModel()` does it.
+    the app's `baseModel()` does it. The literal id is tried first, then the
+    id with its gateway prefix removed, matching the order the app looks up in.
     """
     bare = (
         f"regexp_replace(regexp_replace({column}, '\\[1m\\]$', ''), '@[^\\[\\]]*$', '')"
     )
+    plain = f"regexp_replace(lower({bare}), '^([a-z0-9_-]+/)+', '')"
     rows = long_thresholds()
-    if not rows:
+    # The second pass keys on table ids that carry no prefix, lowercased: the
+    # app strips the prefix from the id it looks up, never from the table.
+    plain_rows = {}
+    for m, t in sorted(rows.items()):
+        if gateway_id(m) == m.lower() and t != LONG_CTX_THRESHOLD:
+            plain_rows.setdefault(m.lower(), t)
+    # A literal match also has to pin 200k when a tier-less card would
+    # otherwise fall through to a tier under its plain id.
+    literal_rows = {
+        m: t for m, t in rows.items()
+        if t != LONG_CTX_THRESHOLD or gateway_id(m) in plain_rows
+    }
+    if not literal_rows and not plain_rows:
         return str(LONG_CTX_THRESHOLD)
-    whens = " ".join(
-        f"WHEN '{m}' THEN {t}" for m, t in sorted(rows.items())
+    q = lambda s: "'" + s.replace("'", "''") + "'"
+    whens = lambda d: " ".join(f"WHEN {q(m)} THEN {t}" for m, t in sorted(d.items()))
+    inner = (
+        f"CASE {plain} {whens(plain_rows)} ELSE {LONG_CTX_THRESHOLD} END"
+        if plain_rows else str(LONG_CTX_THRESHOLD)
     )
-    return f"(CASE {bare} {whens} ELSE {LONG_CTX_THRESHOLD} END)"
+    if not literal_rows:
+        return f"({inner})"
+    return f"(CASE {bare} {whens(literal_rows)} ELSE {inner} END)"
 
 
 LONG_CUTOFF = long_cutoff_sql("payload->>'model'")
@@ -444,11 +519,36 @@ COPY (
 )
 
 
-def main() -> None:
-    rebuild = os.environ.get("TOKEN_COST_REBUILD") == "1"
+# Bump this whenever the aggregation changes in a way that makes days already
+# in daily.json wrong. The incremental path only revisits days that gained
+# rows, so without it an install keeps its old numbers for every past day.
+# A file stamped lower (or not at all) gets one full rebuild on the next run,
+# with nothing for the user to do. History:
+#   1  everything before the stamp existed
+#   2  2026-10-02: long-context split uses the same card the app prices with
+ROLLUP_VERSION = 2
 
-    if OUT.exists() and not rebuild:
-        state = json.loads(OUT.read_text())
+
+def needs_rebuild(state: dict | None, env: dict) -> str | None:
+    """Why this run must rebuild every day, or None to run incrementally."""
+    if env.get("TOKEN_COST_REBUILD") == "1":
+        return "TOKEN_COST_REBUILD=1"
+    if state is None:
+        return None
+    have = int(state.get("rollup_version", 1) or 1)
+    if have < ROLLUP_VERSION:
+        return f"daily.json is from rollup version {have}, this is {ROLLUP_VERSION}"
+    return None
+
+
+def main() -> None:
+    existing = json.loads(OUT.read_text()) if OUT.exists() else None
+    why = needs_rebuild(existing, os.environ)
+    if why:
+        print(f"rebuilding every day: {why}")
+
+    if existing is not None and not why:
+        state = existing
     else:
         state = {"last_sequence": 0, "days": {}}
 
@@ -548,6 +648,7 @@ def main() -> None:
     payload = {
         "generated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "last_sequence": max(max_seq, since),
+        "rollup_version": ROLLUP_VERSION,
         "bucket_edges": BUCKET_EDGES,
         "timezone": TZ,
         "hours_days": HOURS_DAYS,
@@ -575,8 +676,13 @@ def main() -> None:
         "hours": hours,
     }
 
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(payload, separators=(",", ":")))
+    # Write through the CLI so the engine stages, commits and announces the file.
+    w = subprocess.run(
+        ["lucidos", "data", "write", "artifacts/token-cost/daily.json", "--from", "-"],
+        input=json.dumps(payload, separators=(",", ":")), capture_output=True, text=True,
+    )
+    if w.returncode != 0:
+        sys.exit(f"lucidos data write failed: {w.stderr.strip()[:400]}")
     print(
         f"rolled up {len(touched)} day(s) {touched[0]}..{touched[-1]}, "
         f"seq {since} -> {max_seq}, kept {kept} of {raw_rows} rows "

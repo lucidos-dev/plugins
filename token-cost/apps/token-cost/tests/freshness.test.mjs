@@ -4,7 +4,9 @@ const WS = process.env.LUCIDOS_WORKSPACE ||
   path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..');
 const P = (p) => path.join(WS, p);
 
-const html = fs.readFileSync(P('data/apps/token-cost/index.html'),'utf8');
+// The app under test is the one beside this file, not the workspace's live
+// copy: run from a worktree, the live copy is the code BEFORE the change.
+const html = fs.readFileSync(new URL('../index.html', import.meta.url),'utf8');
 const src = html.match(/<script>([\s\S]*)<\/script>\s*<\/body>/)[1];
 
 // --- minimal DOM / SDK stubs -------------------------------------------------
