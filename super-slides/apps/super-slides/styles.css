@@ -33,7 +33,16 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-#app { height: 100vh; touch-action: manipulation; }
+:root { --ss-zoom: 1; }
+#app { height: calc(100vh / var(--ss-zoom)); zoom: var(--ss-zoom); touch-action: manipulation; }
+
+.ss-zoom-ctl { display: flex; align-items: center; gap: 2px; opacity: 0.4; transition: opacity 0.2s; }
+.ss-zoom-ctl:hover { opacity: 1; }
+.ss-zoom-ctl button {
+  background: none; border: 1px solid transparent; color: var(--text-dim);
+  font: inherit; font-size: 13px; cursor: pointer; padding: 2px 7px; border-radius: 6px;
+}
+.ss-zoom-ctl button:hover { border-color: var(--text-dim); }
 
 body {
   font-family: 'Exo 2', system-ui, sans-serif;
@@ -583,6 +592,35 @@ h3 { font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 600; let
   flex-shrink: 0;
 }
 
+/* Content slides: header aligns to the left edge of the content column.
+   Hero slides keep the centered poster look. */
+.slide:not(.slide-hero) .slide-header {
+  max-width: var(--content-max-w);
+  margin-left: auto;
+  margin-right: auto;
+  align-items: flex-start;
+  text-align: left;
+}
+
+/* Per-slide override: "headerAlign" in the .slides file */
+.slide.header-left .slide-header {
+  max-width: var(--content-max-w);
+  margin-left: auto;
+  margin-right: auto;
+  align-items: flex-start;
+  text-align: left;
+}
+.slide.header-center .slide-header {
+  max-width: none;
+  align-items: center;
+  text-align: center;
+}
+
+/* The tag pill stays centered, even when the title and subtitle are left-aligned. */
+.slide-header .tag {
+  align-self: center;
+}
+
 .arch-diagram {
   width: 100%; max-width: var(--content-max-w); margin-top: var(--section-gap);
 }
@@ -721,7 +759,11 @@ h3 { font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 600; let
 .section-indicator {
   position: fixed;
   top: 16px;
-  right: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 4rem);
+  overflow-x: auto;
+  scrollbar-width: none;
   display: flex;
   gap: 6px;
   z-index: 100;

@@ -38,7 +38,10 @@
 
 <!-- Minimal global the real drive.js attaches to (the app defines this in
      components.js; the test page only needs the namespace object). -->
-<script>var SS = window.SS || {}; window.SS = SS;</script>
+<script>var SS = window.SS || {}; window.SS = SS;
+/* Stub for SS.appState (the real one lives in components.js and writes to the
+   data layer). engine.js persists position through it on init. */
+SS.appState = SS.appState || { _d: {}, set(k, v) { this._d[k] = v; }, get(k) { return this._d[k]; }, ready() { return Promise.resolve(); } };</script>
 <!-- Real production module under test (defines SS.drive / SS.driveUI; no
      top-level DOM side effects, safe to load here). -->
 <script src="../drive.js"></script>

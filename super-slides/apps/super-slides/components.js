@@ -573,6 +573,7 @@ SS.loadPresentation = async (path) => {
           SS.renderNode(n, `sections[${secIdx}].slides[${slideIdx}].content[${i}]`)
         ).join('') : '',
         hero: s.hero || false,
+        headerAlign: s.headerAlign || undefined,
         title: s.title || undefined,
         notes: s.notes || '',
         cardNotes: Array.isArray(s.cardNotes) ? s.cardNotes.slice() : undefined,
@@ -593,6 +594,7 @@ SS.loadPresentation = async (path) => {
         SS.renderNode(n, `slides[${slideIdx}].content[${i}]`)
       ).join('') : '',
       hero: s.hero || false,
+      headerAlign: s.headerAlign || undefined,
       title: s.title || undefined,
       notes: s.notes || '',
       cardNotes: Array.isArray(s.cardNotes) ? s.cardNotes.slice() : undefined,

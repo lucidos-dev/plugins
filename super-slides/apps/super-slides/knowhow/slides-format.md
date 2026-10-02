@@ -70,6 +70,7 @@ all of them already handled in the code — don't undo them:
         {
           "title": "Slide Title",  // Used in slide picker
           "hero": false,           // Centers content vertically
+          "headerAlign": "left",   // Optional: "left" or "center". Overrides the header default for this slide only
           "notes": "Speaker notes", // Plain text, shown in remote view; \n\n splits paragraphs
           "cardNotes": ["Card 0 notes", "Card 1 notes"], // Per-card notes shown when card is focused
           "content": [ ... ]       // Array of component nodes
@@ -271,6 +272,44 @@ Open `tests/index.html` via the data API:
 ### Available assertions
 
 `assert(cond, msg)`, `assertEqual(a, b, label)`, `assertNotEqual(a, b, label)`, `assertDeepEqual(a, b, label)`, `assertGreater(a, b, label)`, `assertGreaterOrEqual(a, b, label)`
+
+## Header alignment
+
+- The app sets the default in `styles.css`. Content slides left-align the title and subtitle in the content column. The tag pill and the section bar stay centered. `hero` slides and the title scroller stay centered.
+- A slide can override the default with `"headerAlign": "left"` or `"headerAlign": "center"`. `components.js` passes the field through and `engine.js` turns it into a `header-left` or `header-center` class on the slide.
+- A `.slides` file still holds no CSS. `headerAlign` is the only header lever a deck has.
+
+## Zoom
+
+- `zoom.js` scales the slide stage as one unit with CSS `zoom`. The range is 50% to 250%.
+- Keys: Ctrl or Cmd with `+`, `-` or `0` (reset). Wheel or trackpad pinch with Ctrl or Cmd also works. The bottom bar has a `- 100% +` control, and a click on the percentage resets it.
+- The level is saved in `artifacts/super-slides/state.json` through `SS.appState`, beside the resume position.
+- Fixed overlays (bottom bar, remote mode, slide picker) do not scale. Do not move them into the stage without a plan for that.
+
+## Before you change anything, and before you publish
+
+Run the checks. Do not skip them because the change looks small.
+
+**While you work (after every change to the app code):**
+1. Run `tests/index.html` after any edit to `engine.js`, `components.js`, `zoom.js`, `remote-mode.js`, `remote.js` or `init.js`. Expect all suites green and no uncaught error in the page.
+2. If you change command handling, state, card focus, zoom or header behavior, update `tests/models.js` and add or extend a suite in the same change. A new behavior with no test is not done.
+3. Keep the test page honest. If the code now needs a new global (for example `SS.appState`), stub it in `tests/index.html`. Do not hide a failing suite.
+4. Open the app and look at it. Tests do not cover layout. Check one hero slide, one content slide and one slide with cards, at 100% and at a zoomed level.
+5. Check the bundled decks still load and render. If a rename or format change touches them, fix them in the same change.
+
+**Docs (every time behavior or format changes):**
+- Update this file in the same change. A new `.slides` field, a new key, a new component or a changed default must appear here before the work is called done.
+- Check that the manifest `description` still matches what the app does.
+
+**Before you publish the plugin (all of these, in order):**
+1. Tests green, with no uncaught error.
+2. This knowhow is up to date with the code. Grep it for every new field and key.
+3. App files and the knowhow in the plugin repo match the workspace copies. Run a `diff -rq` and expect no output.
+4. `manifest.toml` version is bumped.
+5. A rebase onto `origin/main` is clean.
+6. Kenneth says yes. Publishing is a public act. Prepare and commit locally, then wait.
+
+If a check fails, fix the cause and run it again. Do not publish around it.
 
 ## Card Focus System
 

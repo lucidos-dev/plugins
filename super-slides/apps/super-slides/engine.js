@@ -264,7 +264,8 @@ SS.initEngine = function() {
     // Deck
     html += '<div class="deck" id="ssDeck">';
     pres.slides.forEach((s, i) => {
-      const heroClass = s.hero ? ' slide-hero' : '';
+      const heroClass = (s.hero ? ' slide-hero' : '')
+        + (s.headerAlign === 'left' || s.headerAlign === 'center' ? ' header-' + s.headerAlign : '');
       const activeClass = i === current ? ' active' : '';
       html += `<div class="slide${heroClass} center${activeClass}" data-slide="${i}">${s.html}</div>`;
     });
@@ -393,7 +394,8 @@ SS.initEngine = function() {
     }
     scroller.classList.remove('hidden');
 
-    const vh = window.innerHeight;
+    // #app is CSS-zoomed, so its coordinate space is viewport / zoom.
+    const vh = window.innerHeight / ((SS.zoom && SS.zoom.value) || 1);
     const centerY = vh * 0.48;
 
     titleItems.forEach((el, i) => {
