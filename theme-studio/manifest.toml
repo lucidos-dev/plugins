@@ -1,0 +1,7 @@
+id = "theme-studio"
+version = "0.1.0"
+name = "Theme Studio"
+description = "Make your own Lucidos themes. Start from any theme or from scratch, set three seed colours, override any design token for dark, light or both, tune the header and focus cues, style named parts such as chat text, the composer and icons, pick a UI and code font, and watch Lucidos repaint live before you save and apply. Formerly Look Studio. Its two originals, Ember and Harbour, now ship with Lucidos as built-in themes."
+source = "https://github.com/lucidos-dev/plugins/tree/main/theme-studio"
+engine = ">=0.46.1"
+categories = ["productivity"]

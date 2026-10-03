@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Theme Studio</title>
+    <script src="/api/v1/sdk-prefs.js"></script>
+    <link rel="stylesheet" href="/api/v1/sdk-iframe.css">
+    <script src="/api/v1/sdk.js"></script>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main class="studio">
+      <header class="studio-head">
+        <h1 class="title studio-title">Theme Studio</h1>
+        <p class="lede">Make your own theme. Set three seed colours and Lucidos works out the rest. Every other token is an optional override.</p>
+      </header>
+
+      <div class="banner" id="banner" hidden></div>
+
+      <section class="panel">
+        <div class="section-title">Start from</div>
+        <div class="start-row">
+          <div class="start-select" id="start-select"></div>
+          <button class="action-btn action-btn-secondary" id="start-scratch" type="button">Start from scratch</button>
+        </div>
+        <p class="hint" id="start-hint"></p>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">Details</div>
+        <div class="field-grid">
+          <label class="field"><span class="field-label">Name</span><input id="f-name" class="text-input" type="text" maxlength="80" placeholder="Harbour"></label>
+          <label class="field"><span class="field-label">Id</span><input id="f-id" class="text-input" type="text" maxlength="64" placeholder="harbour" spellcheck="false"><small class="hint">Lowercase letters and digits joined by hyphens. Saved as <code>themes/&lt;id&gt;.json</code>.</small></label>
+          <label class="field field-wide"><span class="field-label">Description</span><input id="f-description" class="text-input" type="text" maxlength="400" placeholder="Deep teal with a brass accent."></label>
+          <label class="field"><span class="field-label">Author</span><input id="f-author" class="text-input" type="text" maxlength="400"></label>
+          <label class="field"><span class="field-label">Credit</span><input id="f-credit" class="text-input" type="text" maxlength="400" placeholder="Palette after …"></label>
+        </div>
+      </section>
+
+      <div class="scope-bar">
+        <div class="segmented-control" id="scope-control" role="tablist" aria-label="Which values to edit">
+          <button class="segmented-btn" type="button" data-scope="dark">Dark</button>
+          <button class="segmented-btn" type="button" data-scope="light">Light</button>
+          <button class="segmented-btn" type="button" data-scope="tokens">Both modes</button>
+        </div>
+        <label class="preview-toggle"><span class="toggle-switch"><input type="checkbox" id="preview-toggle" checked><span class="toggle-slider"></span></span>Live preview</label>
+      </div>
+      <p class="hint scope-hint" id="scope-hint"></p>
+
+      <section class="panel panel-seeds">
+        <div class="section-title">Seeds</div>
+        <p class="hint">Set these three and the surfaces, text greys, action colour, header and focus cues all follow.</p>
+        <div class="seed-grid" id="seed-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-title">Header and focus</div>
+        <div id="headfocus"></div>
+      </section>
+
+      <section class="panel" id="fonts-panel">
+        <div class="section-title">Fonts</div>
+        <div class="field-grid" id="fonts-body">
+          <div class="field"><span class="field-label">UI font</span><div id="font-ui"></div></div>
+          <div class="field"><span class="field-label">Code font</span><div id="font-mono"></div></div>
+        </div>
+        <p class="hint" id="fonts-hint"></p>
+      </section>
+
+      <section class="panel specimen-panel">
+        <div class="section-title">Specimen</div>
+        <div class="specimen" id="specimen">
+          <div class="spec-header">
+            <span class="spec-seg">Threads</span>
+            <span class="spec-seg spec-seg-focus">Chat</span>
+            <span class="spec-seg">Preview</span>
+            <span class="spec-badge">3</span>
+          </div>
+          <div class="spec-body">
+            <div class="spec-card">
+              <div class="spec-primary">Body text on a surface</div>
+              <div class="spec-secondary">A label in the secondary grey</div>
+              <div class="spec-muted">A hint in the muted grey</div>
+              <div class="spec-row">
+                <button class="action-btn" type="button" tabindex="-1">Primary</button>
+                <span class="spec-chip spec-ok">Applied</span>
+                <span class="spec-chip spec-warn">Caution</span>
+                <span class="spec-chip spec-err">Error</span>
+              </div>
+            </div>
+            <pre class="spec-code"><span class="sx-keyword">const</span> <span class="sx-key">theme</span> = <span class="sx-function">load</span>(<span class="sx-string">"harbour"</span>, <span class="sx-number">2</span>); <span class="sx-comment">// preview</span></pre>
+          </div>
+        </div>
+      </section>
+
+      <div id="groups"></div>
+
+      <section class="panel" id="parts-panel" hidden>
+        <div class="section-title">Parts</div>
+        <p class="hint">A theme part is a named region of Lucidos, such as chat text or the header titles. A theme can give it a colour, a glow or wider letter-spacing, each under a cap. Lucidos owns every selector, so a part cannot move, hide or cover anything.</p>
+        <div class="parts-scope">
+          <div class="segmented-control" role="tablist" aria-label="Which parts map to edit">
+            <button class="segmented-btn" type="button" data-scope="dark">Dark</button>
+            <button class="segmented-btn" type="button" data-scope="light">Light</button>
+            <button class="segmented-btn" type="button" data-scope="tokens">Both modes</button>
+          </div>
+          <p class="hint">The same scope as the tokens. Both modes writes <code>parts</code>, Dark writes <code>dark.parts</code> and Light writes <code>light.parts</code>. A Dark or Light value wins over Both modes. Set <code>none</code> on a shadow or filter to switch a shared effect off in one mode.</p>
+        </div>
+        <div id="parts-aliases"></div>
+        <p class="hint">With Effects set to Reduce (Settings, Appearance, Theme), part shadows and filters do not show on that device.<span id="parts-reduced" hidden> This device reduces effects now, so the live preview shows none.</span></p>
+        <p class="hint" id="parts-protected"></p>
+        <p class="token-error" id="parts-hold" hidden></p>
+        <div id="parts-groups"></div>
+      </section>
+      <p class="hint" id="parts-missing" hidden>Theme parts need a newer Lucidos.</p>
+
+      <section class="panel error-box" id="error-box" hidden></section>
+
+      <div class="action-bar">
+        <div class="button-group">
+          <button class="action-btn" id="btn-save-apply" type="button">Save and apply</button>
+          <button class="action-btn action-btn-secondary" id="btn-save" type="button">Save</button>
+          <button class="action-btn action-btn-secondary" id="btn-cancel" type="button">Cancel</button>
+          <button class="action-btn action-btn-danger" id="btn-delete" type="button" hidden>Delete</button>
+        </div>
+        <span class="hint dirty-note" id="dirty-note"></span>
+      </div>
+    </main>
+    <script src="parts.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

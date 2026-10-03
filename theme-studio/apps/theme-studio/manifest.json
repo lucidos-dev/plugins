@@ -1,0 +1,4 @@
+{
+  "description": "Make your own Lucidos themes. Start from any theme or from scratch, set the three seed colours, and override any design token for dark, light or both. Tune the header and focus cues, and watch the whole UI repaint live. Then save the theme to themes/<id>.json and apply it.",
+  "name": "Theme Studio"
+}
