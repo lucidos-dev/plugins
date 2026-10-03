@@ -8,6 +8,10 @@
    The engine would install it into every workspace that installs the plugin.
 3. Every manifest.toml parses as TOML. The engine refuses a plugin whose
    manifest does not parse, so it can be neither installed nor updated.
+4. `engine`, when present, is a valid semver requirement such as ">=0.46.1".
+   From Lucidos 0.46.2 the engine refuses a plugin whose `engine` it cannot
+   parse. A plugin with no `engine` gets a warning: without one, any Lucidos
+   installs it, even a release that lacks what it needs.
 
 Usage: check_plugins.py <base-sha> <head-sha>
 """
@@ -17,6 +21,11 @@ import sys
 import tomllib
 
 BUILD_OUTPUT = re.compile(r"(^|/)(__pycache__|node_modules|\.venv)(/|$)|\.py[co]$")
+# One comparator: optional operator, then MAJOR[.MINOR[.PATCH[-pre]]] or a wildcard.
+COMPARATOR = re.compile(
+    r"^(\^|~|>=|<=|>|<|=)?\s*"
+    r"(\*|\d+(\.(\*|x|X|\d+)(\.(\*|x|X|\d+)(-[0-9A-Za-z.-]+)?)?)?)$"
+)
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$")
 
 
@@ -26,6 +35,16 @@ def git(*args):
 
 class BadManifest(Exception):
     pass
+
+
+def engine_problem(value):
+    """Why `engine` would be refused, or None when it is a valid requirement."""
+    if not isinstance(value, str):
+        return f"engine must be a string, got {value!r}"
+    parts = [c.strip() for c in value.split(",")]
+    if not value.strip() or any(not COMPARATOR.match(c) for c in parts):
+        return f"engine {value!r} is not a semver requirement (example: \">=0.46.1\")"
+    return None
 
 
 def manifest_at(sha, plugin):
@@ -69,10 +88,17 @@ def main():
         if path.count("/") == 1 and path.endswith("/manifest.toml"):
             plugin = path.split("/", 1)[0]
             try:
-                manifest_at(head, plugin)
+                manifest = manifest_at(head, plugin)
             except BadManifest as e:
                 errors.append(str(e))
                 broken.add(plugin)
+                continue
+            if "engine" not in manifest:
+                print(f"::warning::{plugin}: manifest.toml has no engine field, so any Lucidos release installs it.")
+            else:
+                problem = engine_problem(manifest["engine"])
+                if problem:
+                    errors.append(f"{plugin}: {problem}. Lucidos refuses to install it.")
 
     plugins = sorted({p.split("/", 1)[0] for p in changed if "/" in p})
     for plugin in plugins:

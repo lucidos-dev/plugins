@@ -1,8 +1,9 @@
 id = "ouroboros"
-version = "0.2.2"
+version = "0.2.3"
 name = "Ouroboros"
 description = "Classic Snake game with a polished highscore board, replays, and custom victory audio. Plays fully local out of the box; optionally syncs a shared family/friends scoreboard through a Lucidos proxy you configure. Ask Lucidos to wire up a shared board after install if you want one."
 source = "https://github.com/lucidos-dev/plugins/tree/main/ouroboros"
+engine = ">=0.9.1"
 categories = ["fun"]
 setup = """
 Ouroboros works immediately as a single-player game — highscores save to the local workspace and the bundled fanfare/trombone audio plays on its own. No setup is required to start playing.
