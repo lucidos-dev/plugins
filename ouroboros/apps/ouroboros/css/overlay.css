@@ -1,0 +1,280 @@
+/* Overlay screens: name, start, buttons */
+
+/* Overlay */
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 10, 5, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: opacity 0.3s ease;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Fade in overlay while GAME OVER dissolves */
+.overlay.dissolve-fade-in {
+  animation: overlay-dissolve-fadein 1.4s ease-out forwards;
+}
+
+@keyframes overlay-dissolve-fadein {
+  0% { opacity: 0; }
+  30% { opacity: 0.3; }
+  100% { opacity: 1; }
+}
+
+.overlay-content {
+  text-align: center;
+  padding: var(--space-lg);
+  width: 100%;
+  max-width: 300px;
+  position: relative;
+  z-index: 2;
+  height: 85%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Venom-glow title for start screen */
+.venom-title {
+  font-size: 2.4rem !important;
+  font-weight: 900 !important;
+  background: linear-gradient(180deg, #e0ffd0 0%, #4ade80 30%, #22c55e 60%, #059669 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 12px rgba(74, 222, 128, 0.5)) drop-shadow(0 0 30px rgba(34, 197, 94, 0.25));
+  animation: venom-title-pulse 2.5s ease-in-out infinite alternate;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+@keyframes venom-title-pulse {
+  0% { filter: drop-shadow(0 0 8px rgba(74, 222, 128, 0.4)) drop-shadow(0 0 20px rgba(34, 197, 94, 0.2)); }
+  50% { filter: drop-shadow(0 0 16px rgba(74, 222, 128, 0.65)) drop-shadow(0 0 35px rgba(34, 197, 94, 0.35)); }
+  100% { filter: drop-shadow(0 0 10px rgba(74, 222, 128, 0.45)) drop-shadow(0 0 24px rgba(34, 197, 94, 0.22)); }
+}
+
+#start-screen {
+  position: relative;
+}
+
+#start-screen::before {
+  content: '';
+  position: absolute;
+  top: -60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 200px;
+  height: 140px;
+  background: radial-gradient(ellipse at center, rgba(74, 222, 128, 0.15) 0%, rgba(34, 197, 94, 0.06) 40%, transparent 70%);
+  pointer-events: none;
+  animation: glow-pulse 3s ease-in-out infinite alternate;
+  z-index: -1;
+}
+
+@keyframes glow-pulse {
+  0% { opacity: 0.5; transform: translateX(-50%) scale(1); }
+  100% { opacity: 1; transform: translateX(-50%) scale(1.15); }
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  width: 100%;
+}
+
+/*
+ * ALIGNMENT CONTRACT, ER DU KLAR? and BYTT SPILLER screens:
+ * Both .screen use the same structure: .screen-title-area + .screen-actions.
+ * .screen-title-area has a FIXED height so titles land on the same Y position.
+ * .screen-actions has a FIXED margin-top so buttons start at the same Y position.
+ * Both titles must use .venom-title for identical font-size/style.
+ * Any extra elements (e.g. <p>) inside .screen-title-area must be display:none
+ * when not used, otherwise they shift the title vertically.
+ */
+.screen-title-area {
+  height: 4rem;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.screen-actions {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 280px;
+  margin-top: 3rem;
+}
+
+.overlay-content h2 {
+  font-size: 1.8rem;
+  color: var(--text-primary);
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.overlay-content p {
+  color: var(--text-secondary);
+  margin-bottom: var(--space-md);
+  font-size: 0.9rem;
+}
+
+/* Known players */
+.known-players {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: var(--space-sm);
+  width: 100%;
+  max-width: 280px;
+  overflow-y: auto;
+}
+
+.player-chip {
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.player-chip:hover {
+  background: rgba(74, 222, 128, 0.12);
+  border-color: rgba(74, 222, 128, 0.35);
+  color: #4ade80;
+}
+
+.player-chip:active {
+  transform: scale(0.95);
+}
+
+.name-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  max-width: 220px;
+  margin-bottom: var(--space-xs);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.name-divider::before,
+.name-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+/* Name input group */
+.name-input-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  width: 100%;
+  max-width: 280px;
+  margin-top: var(--space-sm);
+}
+
+.name-input-group input {
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 1rem;
+  text-align: center;
+  outline: none;
+  min-width: 0;
+  text-transform: uppercase;
+}
+
+.name-input-group .btn-play {
+  min-width: 0;
+  padding: 10px 8px;
+}
+
+.name-input-group input:focus {
+  border-color: var(--accent);
+}
+
+.btn-play {
+  padding: 12px 32px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  background: linear-gradient(135deg, #22c55e, #16a34a, #0d7a36);
+  box-shadow: 0 0 16px rgba(74, 222, 128, 0.3), 0 2px 8px rgba(0,0,0,0.3);
+  border: 1px solid rgba(74, 222, 128, 0.25);
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.btn-switch {
+  padding: 12px 32px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  margin-top: var(--space-sm);
+  text-transform: uppercase;
+}
+
+#start-screen .btn-play {
+  width: 100%;
+  max-width: 280px;
+}
+
+#start-screen .btn-switch {
+  width: 100%;
+  max-width: 280px;
+}
+
+.btn-switch:hover {
+  background: rgba(74, 222, 128, 0.08);
+  border-color: rgba(74, 222, 128, 0.3);
+  color: #4ade80;
+}
+
+.btn-play:hover {
+  background: rgba(74, 222, 128, 0.12);
+  border-color: rgba(74, 222, 128, 0.35);
+  color: #4ade80;
+  box-shadow: 0 0 16px rgba(74, 222, 128, 0.3);
+  transform: scale(1.015);
+}

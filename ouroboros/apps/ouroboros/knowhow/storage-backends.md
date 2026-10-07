@@ -1,6 +1,6 @@
 ---
 name: Snake Storage Backends
-description: How Ouroboros (snake-game) stores highscores and players — local-only via lucidos.data, or one of N shared scoreboards via Lucidos proxies. Covers the store.js abstraction, the multi-board picker UI, the proxy contract, the RTDB layout, and recommended security rules.
+description: How Ouroboros (snake-game) stores highscores and players — local-only via lucidos.data, or one of N shared scoreboards via Lucidos proxies. Covers the js/store.js abstraction, the multi-board picker UI, the proxy contract, the RTDB layout, and recommended security rules.
 ---
 
 ## Why this design exists
@@ -10,60 +10,74 @@ Ouroboros started as a single-user app reading/writing JSON in the local Lucidos
 - **No URLs or auth tokens may live in the iframe.** Plugin recipients install the app and immediately see somebody else's Firebase URL and token unless we keep both server-side. Same reason the heatpump app talks to Comfort Cloud through a proxy entry — the iframe never sees credentials.
 - **A user can play in several scoreboards.** Family list, work-friends list, public list — all different Firebase backends, all simultaneously available, the user picks which one is "active" right now.
 
-So the app keeps a *list of boards*. One is always "Local" (private, lucidos.data). Each additional board is a **named pointer to a Lucidos proxy entry** — the proxy holds the real URL + auth, the app just calls `lucidos.proxy(<name>).fetch(...)`.
+So the app keeps a *list of boards*. One is always "Lokalt" (private, lucidos.data). Each additional board is a **named pointer to a Lucidos proxy entry**: the proxy holds the real URL + auth, the app just calls `lucidos.proxy(<name>).fetch(...)`.
+
+**Boards are discovered, not entered.** Every proxy in `data/config/apis.json` whose name starts with `snake-storage-` shows up in the 💾 screen by itself (`store.refreshBoards()`). The label is the rest of the name: `snake-storage-familien` → "Familien". To add a shared board, create the proxy; nothing else. Discovery reads only the names from apis.json.
 
 ## File layout
 
 ```
 apps/ouroboros/
-  store.js              ← backend abstraction (this contract)
+  js/store.js               ← backend abstraction (this contract)
+  js/players.js             ← current player + known-player list (uses the store)
+  js/ui/storage-screen.js   ← board-list rendering, pick/test/remove handlers
+  js/main.js                ← creates the store, reloads scores/players on a switch
+  css/storage.css           ← .board-list, .board-row, .firebase-status
+  index.html                ← storage-screen markup
+  tests/unit/store.test.js  ← registry + backend tests (fake lucidos, fake localStorage)
   knowhow/
-    storage-backends.md ← this doc
-  index.html            ← storage-screen UI (board list + add form)
-  script.js             ← board-list rendering, add/test/remove handlers
-  styles.css            ← .board-list, .board-row, .add-board-form
+    storage-backends.md     ← this doc
 ```
 
-## store.js public API
+## js/store.js public API
+
+`createStore({ lucidos, storage })` builds the store. `lucidos` is a function
+returning the SDK object (read lazily, the SDK loads late); `storage` is a
+SafeStorage (`js/core/safe-storage.js`), a localStorage wrapper that never throws.
+In the browser it is `window.Ouroboros.createStore`; under Node it is
+`require('js/store.js').createStore`.
 
 ```
-SnakeStore.getMode()          → 'local' | 'shared'
-SnakeStore.isShared()         → boolean
-SnakeStore.getActiveProxy()   → string | null  (e.g. 'snake-storage-family')
-SnakeStore.getActiveLabel()   → string         (e.g. 'Family' or 'Local')
+store.getMode()          → 'local' | 'shared'
+store.isShared()         → boolean
+store.getActiveProxy()   → string | null  (e.g. 'snake-storage-familien')
+store.getActiveLabel()   → string         (e.g. 'Familien' or 'Lokalt')
 
-SnakeStore.listBoards()       → [{ label, proxy }]   shared boards only
-SnakeStore.addBoard({label, proxy})
-SnakeStore.removeBoard(proxy)
-SnakeStore.setLocal()
-SnakeStore.setActiveBoard(proxy)
-SnakeStore.testBoard(proxy)   → throws on failure (read + throwaway write)
+store.listBoards()       → [{ label, proxy, discovered }]   shared boards only
+store.refreshBoards()    → re-reads apis.json for snake-storage-* proxies
+store.addBoard({label, proxy})     hand-registered board (no UI; kept for old setups)
+store.removeBoard(proxy)
+store.setLocal()
+store.setActiveBoard(proxy)
+store.testBoard(proxy)   → throws on failure (read + throwaway write)
 
-SnakeStore.loadHighscores()   → [{name, score, date}, ...]
-SnakeStore.saveHighscores(arr)
-SnakeStore.loadPlayers()      → [name, ...]
-SnakeStore.addPlayer(name)
+store.readHighscores()   → { highscores, dailyScores, dailyDate } | null
+store.writeHighscores(board)
+store.readPlayers()      → [name, ...]
+store.writePlayers(names)
 ```
 
-`script.js` calls only these. Mode/board switches re-fetch highscores and players so the UI repaints.
+The rest of the app calls only these. A board switch clears the in-memory
+scoreboard and re-fetches highscores and players, so a new, empty board never
+inherits the previous board's scores.
 
-### Storage of the board list itself
+### Storage of the board choice
 
-The board list and the active selection are kept in the iframe's `localStorage`:
+The active selection, plus any hand-registered boards from older versions, are kept in the iframe's `localStorage`:
 
 | key                       | value                                          |
 | ------------------------- | ---------------------------------------------- |
-| `snake-storage-mode`      | `'local'` or `'shared'`                        |
-| `snake-active-proxy`      | proxy name when mode is `'shared'`             |
-| `snake-boards`            | JSON `[{label, proxy}, ...]`                   |
+| `snake-store-mode`        | `'local'` or `'shared'`                        |
+| `snake-store-active`      | proxy name when mode is `'shared'`             |
+| `snake-store-boards`      | JSON `[{label, proxy}, ...]`, hand-registered only |
 
-This is per-device. A user who plays on two laptops sets up the same boards twice — that's fine because the proxy entries are also per-workspace.
+The choice is per-device. The board list itself comes from the workspace's proxies, so every device in the workspace sees the same boards.
 
 ## Backends
 
 ### Local (`mode = 'local'`)
 
-Reads/writes `artifacts/games/snake-highscores.json` and `artifacts/games/snake-players.json` via `lucidos.data.read/write`. Same behavior the app had before any of this existed. Default mode.
+Reads/writes `artifacts/games/snake-highscores.json` and `artifacts/games/players.json` via `lucidos.data.read/write`. Same behavior the app had before any of this existed. Default mode.
 
 ### Shared (`mode = 'shared'`, `activeProxy = '<name>'`)
 
@@ -77,43 +91,43 @@ Paths the app uses:
 | `/snake/highscores.json`       | `PUT`  | overwrite highscores doc             |
 | `/snake/players.json`          | `GET`  | load players list                    |
 | `/snake/players.json`          | `PUT`  | overwrite players list               |
-| `/snake/_probe.json`           | `PUT`+`GET`+`DELETE` | connection test            |
+| `/snake/_probe.json`           | `PUT`+`DELETE` | connection test, after a `GET` of the highscores doc |
 
 Highscores doc shape (matches local format exactly so callers don't branch):
 ```json
 {
-  "highscores": [{"name":"KENNETH","score":56,"date":"2026-02-15T12:00:00Z"}, ...],
-  "dailyScores": [{"name":"KENNETH","score":16,"date":"2026-05-13T11:31:00Z"}],
+  "highscores": [{"name":"KENNETH","score":56,"date":"2026-02-15","replay":{...}}, ...],
+  "dailyScores": [{"name":"KENNETH","score":16,"date":"2026-05-13","time":"13:31","replay":{...}}],
   "dailyDate": "2026-05-13"
 }
 ```
 
-Players doc shape:
+Players doc shape (a bare array):
 ```json
-{ "players": ["KENNETH","EMIL"] }
+["KENNETH","EMIL"]
 ```
 
 ## Proxy contract (data/config/apis.json)
 
-A shared board is just a Lucidos proxy entry. Suggested naming: `snake-storage-<group>` (e.g. `snake-storage-family`). The user enters that name in the app's "Add board" form; the proxy entry must already exist in `apis.json`.
+A shared board is just a Lucidos proxy entry. Suggested naming: `snake-storage-<group>` (e.g. `snake-storage-familien`). Once the entry exists, the board appears in the app's 💾 screen; there is nothing to enter in the app.
 
 Minimal, no auth (open RTDB rules — fine for low-stakes lists):
 ```json
-"snake-storage-family": {
-  "base_url": "https://snake-family-default-rtdb.firebaseio.com"
+"snake-storage-familien": {
+  "base_url": "https://<your-project>-default-rtdb.firebaseio.com"
 }
 ```
 
 With a Firebase database secret as RTDB query-param auth:
 ```json
-"snake-storage-family": {
-  "base_url": "https://snake-family-default-rtdb.firebaseio.com",
+"snake-storage-familien": {
+  "base_url": "https://<your-project>-default-rtdb.firebaseio.com",
   "auth": {
     "pipeline": [
       { "type": "static_credential",
         "kind": "query_param",
         "param_name": "auth",
-        "credential": "snake-storage-family-token" }
+        "credential": "snake-storage-familien-token" }
     ]
   }
 }
@@ -152,7 +166,7 @@ For a multi-user setup with per-user auth, switch the proxy to use a Google ID t
 ## When packaging as a plugin
 
 The plugin ships:
-- `apps/ouroboros/` (UI, store.js, knowhow)
+- `apps/ouroboros/` (UI, js/store.js, knowhow)
 - `knowhow/snake/storage-backends.md` (optional, if you want it discoverable workspace-wide)
 
 It does **not** ship:
@@ -162,7 +176,7 @@ It does **not** ship:
 The plugin manifest's `setup` field should walk the installer LLM through:
 1. Asking whether they want only-local, want to join an existing scoreboard (paste proxy name), or want to set up a new one.
 2. If new: ask for the Firebase RTDB URL, write a `snake-storage-<group>` entry to `data/config/apis.json`, optionally request the database secret via `request_credential` and wire the `query_param` auth layer.
-3. Tell the user to open Ouroboros → 💾 → "+ Add shared board" and enter the proxy name.
+3. Tell the user to open Ouroboros → 💾 → "Legg til delt liste" and enter the proxy name.
 
 That keeps the plugin install ceremony explicit — every recipient picks their own backend instead of inheriting the author's.
 
@@ -172,6 +186,6 @@ That keeps the plugin install ceremony explicit — every recipient picks their 
 | ---------------------------------------- | -------------------------------------------------------------------- |
 | `404 Proxy 'snake-storage-x' not found`  | Proxy entry missing in `data/config/apis.json`. Add it, no restart needed. |
 | `401 Permission denied`                  | Auth credential wrong/missing for the configured RTDB rules.         |
-| `400 Invalid data; couldn't parse JSON`  | RTDB requires `.json` suffix on every path — store.js does this; check you didn't add a custom path that drops it. |
+| `400 Invalid data; couldn't parse JSON`  | RTDB requires `.json` suffix on every path — js/store.js does this; check you didn't add a custom path that drops it. |
 | Highscores merge instead of replace      | RTDB `PUT` overwrites. If you ever need partial updates, switch to `PATCH`. |
 | Two players race to save and lose scores | Pre-write read merge is in `addHighscore` — keep it. Concurrent writes within the same second can still drop a row; acceptable for a family game. |

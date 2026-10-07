@@ -1,18 +1,18 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="no">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Ouroboros</title>
   <script src="/api/v1/sdk-prefs.js"></script>
   <script>
-    // Ouroboros is permanently dark — pin data-theme=dark and re-pin if the
-    // SDK's applyPreferences (runs on init + on PreferencesChanged) flips it.
+    // Ouroboros is permanently dark, pin data-theme-mode=dark and re-pin if
+    // the SDK's applyPreferences (runs on init + on PreferencesChanged) flips it.
     (function() {
       var d = document.documentElement;
       function forceDark() {
-        if (d.getAttribute('data-theme') !== 'dark') {
-          d.setAttribute('data-theme', 'dark');
+        if (d.getAttribute('data-theme-mode') !== 'dark') {
+          d.setAttribute('data-theme-mode', 'dark');
         }
         d.style.setProperty('--bg-primary', '#0d1117');
         d.style.background = '#0d1117';
@@ -20,11 +20,18 @@
       forceDark();
       new MutationObserver(forceDark).observe(d, {
         attributes: true,
-        attributeFilter: ['data-theme', 'style']
+        attributeFilter: ['data-theme-mode', 'style']
       });
     })();
   </script>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/header.css">
+  <link rel="stylesheet" href="css/board.css">
+  <link rel="stylesheet" href="css/overlay.css">
+  <link rel="stylesheet" href="css/controls.css">
+  <link rel="stylesheet" href="css/scores.css">
+  <link rel="stylesheet" href="css/storage.css">
+  <link rel="stylesheet" href="css/responsive.css">
   <script src="/api/v1/sdk-iframe-audio.js"></script>
   <script src="/api/v1/sdk.js"></script>
 </head>
@@ -32,9 +39,9 @@
   <div class="game-container">
     <div class="game-layout">
       <div class="daily-panel side-panel">
-        <h3>Today's best</h3>
+        <h3>Dagens beste</h3>
         <div class="highscores-list" id="daily-list">
-          <div class="empty-state">No rounds today</div>
+          <div class="empty-state">Ingen runder i dag</div>
         </div>
       </div>
 
@@ -44,14 +51,14 @@
             <h1>Ouroboros</h1>
           </div>
           <div class="header-right">
-            <div class="player-badge hidden" id="player-badge" title="Click to switch player">
+            <div class="player-badge hidden" id="player-badge" title="Klikk for å bytte spiller">
               <span class="player-name" id="player-display"></span>
             </div>
             <span class="header-replay-badge hidden" id="header-replay-badge">▶ REPLAY</span>
             <div class="audio-toggles">
-              <button class="audio-toggle active" id="toggle-music" title="Music">🎵</button>
-              <button class="audio-toggle active" id="toggle-sfx" title="Sound effects">🔊</button>
-              <button class="audio-toggle" id="btn-storage" title="Storage">💾</button>
+              <button class="audio-toggle active" id="toggle-music" title="Musikk">🎵</button>
+              <button class="audio-toggle active" id="toggle-sfx" title="Lydeffekter">🔊</button>
+              <button class="audio-toggle" id="btn-storage" title="Lagring">💾</button>
             </div>
             <div class="score-display">
               <span class="score-label">Score</span>
@@ -69,29 +76,29 @@
               <div class="screen" id="name-screen">
                 <div class="screen-title-area">
                   <h2 id="name-screen-title">Ouroboros</h2>
-                  <p id="name-screen-prompt">What's your name?</p>
+                  <p id="name-screen-prompt">Hva heter du?</p>
                 </div>
                 <div class="screen-actions">
                   <div class="known-players hidden" id="known-players"></div>
-                  <div class="name-divider hidden" id="name-divider"><span>or new name</span></div>
+                  <div class="name-divider hidden" id="name-divider"><span>eller nytt navn</span></div>
                   <div class="name-input-group">
-                    <input type="text" id="name-input" placeholder="NEW PLAYER" maxlength="10" autocomplete="off">
+                    <input type="text" id="name-input" placeholder="NY SPILLER" maxlength="10" autocomplete="off">
                     <button class="btn-play" id="btn-name-ok">Start</button>
                   </div>
                 </div>
               </div>
               <div class="screen hidden" id="start-screen">
                 <div class="screen-title-area">
-                  <h2 class="venom-title" id="start-title">ARE YOU READY?</h2>
+                  <h2 class="venom-title" id="start-title">ER DU KLAR?</h2>
                 </div>
                 <div class="screen-actions">
-                  <button class="btn-play" id="btn-start">START</button>
-                  <button class="btn-switch" id="btn-switch">SWITCH PLAYER</button>
+                  <button class="btn-play" id="btn-start">START SOM KENNETH</button>
+                  <button class="btn-switch" id="btn-switch">BYTT SPILLER</button>
                 </div>
               </div>
               <div class="screen hidden" id="storage-screen">
                 <div class="screen-title-area">
-                  <h2>Leaderboards</h2>
+                  <h2>Topplister</h2>
                 </div>
                 <div class="screen-actions">
                   <ul class="board-list" id="board-list"></ul>
@@ -100,17 +107,21 @@
                     <div class="firebase-status" id="storage-status"></div>
                   </div>
 
-                  <button class="btn-play" id="btn-add-board" type="button">+ Add shared board</button>
+                  <button class="btn-play" id="btn-add-board" type="button">+ Legg til delt liste</button>
 
                   <div class="storage-buttons">
-                    <button class="btn-switch" id="btn-storage-close" type="button">Done</button>
+                    <button class="btn-switch" id="btn-storage-close" type="button">Ferdig</button>
                   </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-          <svg class="game-over-svg" id="game-over-svg" viewBox="0 0 300 225" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+          <!-- The viewBox reaches 300 units above the resting text so the words
+               fall inside the SVG's own box. WebKit clips a CSS-filtered <svg>
+               to its viewport and ignores overflow:visible, so text dropping in
+               from above the box was invisible in Safari. -->
+          <svg class="game-over-svg" id="game-over-svg" viewBox="0 -300 300 525" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <linearGradient id="go-fill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stop-color="#fca5a5"/>
@@ -143,18 +154,44 @@
       </div>
 
       <div class="highscores-panel side-panel">
-        <h3>Legends</h3>
+        <h3>Legender</h3>
         <div class="highscores-list" id="highscores-list">
-          <div class="empty-state">No scores yet</div>
+          <div class="empty-state">Ingen scores ennå</div>
         </div>
       </div>
     </div>
   </div>
 
-  <script src="audio.js"></script>
-  <script src="replay.js"></script>
-  <script src="renderer.js"></script>
-  <script src="store.js"></script>
-  <script src="script.js"></script>
+  <!-- Pure logic (also loaded by the unit tests) -->
+  <script src="js/core/config.js"></script>
+  <script src="js/core/safe-storage.js"></script>
+  <script src="js/core/text.js"></script>
+  <script src="js/core/game.js"></script>
+  <script src="js/core/scores.js"></script>
+  <script src="js/core/replay.js"></script>
+  <script src="js/core/timing.js"></script>
+  <script src="js/core/fall-physics.js"></script>
+  <script src="js/core/sound-clips.js"></script>
+  <!-- Storage and players -->
+  <script src="js/store.js"></script>
+  <script src="js/players.js"></script>
+  <!-- Audio -->
+  <script src="js/audio/engine.js"></script>
+  <script src="js/audio/sfx.js"></script>
+  <script src="js/audio/music.js"></script>
+  <script src="js/audio/audio.js"></script>
+  <!-- Rendering -->
+  <script src="js/render/palette.js"></script>
+  <script src="js/render/effects.js"></script>
+  <script src="js/render/board.js"></script>
+  <script src="js/render/screen-fx.js"></script>
+  <script src="js/render/game-over.js"></script>
+  <!-- UI -->
+  <script src="js/ui/input.js"></script>
+  <script src="js/ui/scoreboard.js"></script>
+  <script src="js/ui/screens.js"></script>
+  <script src="js/ui/storage-screen.js"></script>
+  <!-- Controller -->
+  <script src="js/main.js"></script>
 </body>
 </html>

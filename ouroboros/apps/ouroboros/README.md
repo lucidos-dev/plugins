@@ -1,72 +1,50 @@
 # Ouroboros
 
-A snake that eats its own tail, and the first app Lucidos ever built.
+Classic Snake for Lucidos, with daily and all-time leaderboards, replays,
+procedural music and a Game Over sequence timed to the jingle.
 
-![Ouroboros: a game in progress, score 34, with the Legends leaderboard on the left](docs/screenshot.png)
-
-## The story
-
-In February 2026 I wanted my oldest son to be able to make a game by describing
-it in a chat, and then play it immediately, in the same window, while we kept
-changing it. That turned out to need a platform underneath, and that platform
-became [Lucidos](https://github.com/lucidos-dev/lucidos).
-
-The first thing it ever ran was a snake game. We iterated on it a lot: a Mario
-sound when the snake eats an apple, a high score list of "legends", and some
-music snippets that took A LOT of iteration to get right. It kept growing, and
-it is now a plugin any Lucidos workspace can install.
-
-## What you get
-
-- **The game.** Arrow keys or WASD on desktop, swipe on mobile.
-- **Legends.** An all-time top-10 board plus a separate list for today.
-- **Replays.** Every scoring run is recorded. Hit the play button next to any
-  entry on the leaderboard and watch that exact game play back.
-- **Audio.** Fanfare when you place on the board, sad trombone when you do not.
-  Both can be muted independently from the header.
-- **Multiple players.** Switch player from the start screen; each one keeps
-  their own name on the board.
-
-Highscores are stored in your own workspace at
-`artifacts/games/snake-highscores.json`. Nothing leaves your machine.
-
-## Install
-
-From a Lucidos workspace, just point the assistant at this URL:
+## Layout
 
 ```
-Install https://github.com/lucidos-dev/plugins/tree/main/ouroboros
+index.html          markup, plus the script and stylesheet order
+css/                styles, split by area (base → responsive, cascade order matters)
+js/core/            pure logic, no DOM: rules, scores, replays, timing, fall physics
+js/store.js         highscore/player storage: local (lucidos.data) or shared (proxy)
+js/players.js       current player and known players
+js/audio/           AudioContext engine, sound effects, music, and the O.Audio facade
+js/render/          canvas board, particles, DOM effects, the Game Over overlay
+js/ui/              input, scoreboard panels, overlay screens, storage screen
+js/main.js          controller: state, render loop, replays, death sequence
+audio/clips/        bundled fanfare/trombone overrides, loaded at startup
+knowhow/            storage backend reference for the Lucidos agent
+tests/unit/         node:test unit tests for js/core, store and players
+tests/e2e/          Chromium + WebKit tests for the Game Over sequence and more
 ```
 
-Or set the whole collection up as a marketplace once, and pick plugins from the
-UI whenever you want one:
+Everything hangs off `window.Ouroboros`. The files are classic scripts, not ES
+modules: the app frame has an opaque origin, and module scripts load with CORS,
+which the engine does not grant for app files. Files in `js/core/`, plus
+`js/store.js` and `js/players.js`, also export through `module.exports`, so
+Node can test them without a build step.
+
+## Tests
 
 ```
-Set up https://github.com/lucidos-dev/plugins as a plugin marketplace
+npm test                 # unit tests, plain Node, no dependencies
+npm run test:e2e         # needs playwright-core and its browsers:
+PLAYWRIGHT_CORE=~/projects/lucidos/node_modules/playwright-core npm run test:e2e
 ```
 
-Then open the **Plugins** panel, uncheck "Installed only", and install Ouroboros
-from the list.
+The e2e suite serves the app with a stub SDK. It checks that the Game Over
+words stay inside their SVG box (WebKit clips a filtered SVG to that box),
+settle before the dissolve, and finish on the start screen. It runs in
+Chromium, WebKit, and WebKit throttled to 30 fps.
 
-Either way you get a confirmation panel before anything lands. No setup, no
-credentials, no configuration: it works as soon as it is installed.
+## Keep in mind
 
-## Optional: a shared scoreboard
-
-The game can sync one leaderboard across several people (family, friends, a
-team) through a Lucidos proxy pointing at a Firebase Realtime Database. This is
-entirely optional and off by default.
-
-The point of routing it through a proxy is that the game itself never sees a
-URL or a token. Those stay server-side in your workspace config, so installing
-this plugin does not hand you somebody else's Firebase credentials, and sharing
-your board does not hand yours to anyone else.
-
-To set one up, ask your Lucidos assistant for a shared Ouroboros board. It will
-read `apps/ouroboros/knowhow/storage-backends.md` (shipped with the plugin),
-which documents the proxy entry, the database layout, and the security rules to
-apply. Then open Ouroboros, click the save icon, and add the board by name.
-
-## License
-
-MIT, same as Lucidos.
+- The playing field has a fixed size and the font is always monospace. Neither
+  follows the Lucidos UI-scale or font preferences.
+- The death animation steps on a fixed 60 Hz clock (`Timing.createFixedStepClock`).
+  Never count rAF frames: Safari caps rAF at 60 Hz, or 30 Hz in Low Power Mode.
+- Anything from a scoreboard goes through `Text.escapeHtml` before it reaches
+  `innerHTML`. Shared boards are written by other people.

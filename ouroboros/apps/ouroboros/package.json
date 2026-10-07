@@ -1,0 +1,9 @@
+{
+  "name": "ouroboros",
+  "private": true,
+  "description": "Ouroboros snake game (Lucidos app). No build step and no dependencies; this file only holds the test commands.",
+  "scripts": {
+    "test": "node --test \"tests/unit/*.test.js\"",
+    "test:e2e": "node tests/e2e/run.cjs"
+  }
+}

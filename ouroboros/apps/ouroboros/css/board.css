@@ -1,0 +1,152 @@
+/* Playing field: canvas, flash, shake, Game Over overlay, dissolve */
+
+/* Canvas area, positions game-over text outside clipped canvas */
+.canvas-area {
+  position: relative;
+}
+
+/* Canvas */
+.canvas-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  background: #0a0f0a;
+}
+
+#game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.screen-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.05s ease;
+  z-index: 5;
+}
+
+.screen-flash.flash-eat {
+  background: radial-gradient(circle at var(--flash-x, 50%) var(--flash-y, 50%), rgba(74, 222, 128, 0.45), rgba(74, 222, 128, 0.12) 40%, transparent 70%);
+  opacity: 1;
+  animation: flash-fade 0.35s ease-out forwards;
+}
+
+.screen-flash.flash-death {
+  background: radial-gradient(circle at 50% 50%, rgba(74, 222, 128, 0.3), rgba(34, 197, 94, 0.1) 60%, transparent 80%);
+  opacity: 1;
+  animation: flash-fade 0.4s ease-out forwards;
+}
+
+/* Game Over, SVG vector text overlay (inside canvas-area, outside canvas-wrapper).
+   The box is anchored at the bottom and its viewBox extends upward over the
+   fall path, so the text never relies on overflow:visible (see index.html). */
+.game-over-svg {
+  position: absolute;
+  z-index: 7;
+  pointer-events: none;
+  opacity: 0;
+  overflow: visible;
+  width: 62%;
+  bottom: 26%;
+  left: 50%;
+  transform: translateX(-50%);
+  filter: drop-shadow(2px 3px 0 rgba(0,0,0,0.6));
+}
+
+.go-highscore {
+  position: absolute;
+  z-index: 7;
+  pointer-events: none;
+  opacity: 0;
+  bottom: 68%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: clamp(1rem, 4.5vw, 1.5rem);
+  font-weight: 900;
+  color: #ffd700;
+  text-shadow: 0 0 12px rgba(255, 215, 0, 0.5), 0 0 30px rgba(255, 215, 0, 0.25), 0 2px 0 #4a3800;
+  white-space: nowrap;
+  letter-spacing: 1px;
+  animation: go-placement-glow 1.2s ease-in-out infinite;
+}
+
+@keyframes go-placement-glow {
+  0%, 100% { 
+    filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.3));
+    transform: translateX(-50%) scale(1);
+  }
+  50% { 
+    filter: drop-shadow(0 0 18px rgba(255, 215, 0, 0.7));
+    transform: translateX(-50%) scale(1.04);
+  }
+}
+
+/* Game Over text, initial hidden state, JS drives the physics */
+.game-over-svg text {
+  opacity: 0;
+}
+
+.game-over-svg.falling {
+  opacity: 1;
+}
+
+.game-over-svg.falling text {
+  opacity: 0.95;
+}
+
+.game-over-svg.dissolving {
+  animation: go-dissolve 1.6s ease-in forwards;
+}
+
+.go-highscore.dissolving {
+  animation: go-dissolve 1.6s ease-in forwards;
+}
+
+@keyframes go-dissolve {
+  0% { opacity: 1; filter: blur(0px) brightness(1); }
+  50% { opacity: 0.6; filter: blur(4px) brightness(1.3); }
+  100% { opacity: 0; filter: blur(14px) brightness(1.6); }
+}
+
+/* Swipe transition canvas */
+.dissolution-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 15;
+  pointer-events: none;
+}
+
+.dissolution-canvas.fade-away {
+  animation: smooth-fade 1.6s ease-in-out forwards;
+}
+
+@keyframes smooth-fade {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes flash-fade {
+  to { opacity: 0; }
+}
+
+.canvas-wrapper.shake {
+  animation: shake 0.3s ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translate(0); }
+  15% { transform: translate(-3px, 2px); }
+  30% { transform: translate(3px, -2px); }
+  45% { transform: translate(-2px, 1px); }
+  60% { transform: translate(2px, -1px); }
+  75% { transform: translate(-1px, 1px); }
+}
