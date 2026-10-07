@@ -5,17 +5,17 @@
   display: none;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
 }
 
 .controls-row {
   display: flex;
-  gap: 4px;
+  gap: 0.25rem;
 }
 
 .ctrl-btn {
-  width: 56px;
-  height: 56px;
+  width: 3.5rem;
+  height: 3.5rem;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);

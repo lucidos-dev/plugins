@@ -1,32 +1,35 @@
 /* Ouroboros: theme tokens, reset and page layout */
 
-/* Permanent dark mode, override SDK theme vars regardless of user preference */
+/* Permanent dark mode, override SDK theme vars regardless of user preference.
+   !important is required: the SDK writes the active theme's tokens (e.g. the
+   light 'paper' palette) as INLINE styles on <html>, which beat any normal
+   stylesheet rule. Only a stylesheet !important outranks a non-important inline. */
 html,
 html[data-theme-mode="dark"],
 html[data-theme-mode="light"] {
-  color-scheme: dark;
-  --bg-primary: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-tertiary: #21262d;
-  --bg-quaternary: #2a313a;
-  --border-color: #30363d;
-  --bg-hover: #1a1f2a;
-  --bg-selected: #1e2430;
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #6e7681;
-  --text-on-accent: #fff;
-  --accent: #58a6ff;
-  --accent-light: #7ab8ff;
-  --accent-green: #3fb950;
-  --accent-yellow: #d29922;
-  --accent-red: #f85149;
-  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+  color-scheme: dark !important;
+  --bg-primary: #0d1117 !important;
+  --bg-secondary: #161b22 !important;
+  --bg-tertiary: #21262d !important;
+  --bg-quaternary: #2a313a !important;
+  --border-color: #30363d !important;
+  --bg-hover: #1a1f2a !important;
+  --bg-selected: #1e2430 !important;
+  --text-primary: #e6edf3 !important;
+  --text-secondary: #8b949e !important;
+  --text-muted: #6e7681 !important;
+  --text-on-accent: #fff !important;
+  --accent: #58a6ff !important;
+  --accent-light: #7ab8ff !important;
+  --accent-green: #3fb950 !important;
+  --accent-yellow: #d29922 !important;
+  --accent-red: #f85149 !important;
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
   /* Hardcoded monospace, Ouroboros is always monospace regardless of the
      user's font preference. Overrides the SDK --font-mono. */
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-mono: Menlo, Monaco, ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", "Courier New", monospace;
 
   /* Layout tokens, Ouroboros does NOT link the SDK iframe CSS (see index.html),
      so the spacing/radius/transition tokens it relies on are defined here
@@ -42,14 +45,11 @@ html[data-theme-mode="light"] {
   --transition: 0.15s ease;
 }
 
-/* Static play surface, Ouroboros owns its own size and must NOT scale with
-   the Lucidos UI-size slider. The SDK iframe CSS sets
-   `html { font-size: var(--user-ui-scale, 100%) }`, which would make every
-   rem-based layout value track the slider. Pin the root font-size so all rem
-   units stay fixed; the board renders at a constant size regardless of the
-   user's UI-scale preference. */
+/* Follow the Lucidos UI-size slider: the SDK sets --user-ui-scale on <html>.
+   Every layout value is in rem, so the whole game (panels, board, text)
+   scales with it. The canvas backing store re-sizes via ResizeObserver. */
 html {
-  font-size: 1rem !important;
+  font-size: var(--user-ui-scale, 100%);
 }
 
 * {
@@ -60,7 +60,7 @@ html {
      over the SDK's more-specific font-family rules (input/select/.lucidos-*
      all set var(--font-ui)). `inherit` was too weak and let those elements
      fall back to the theme/system font. */
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+  font-family: Menlo, Monaco, ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", "Courier New", monospace !important;
 }
 
 body {
@@ -68,7 +68,7 @@ body {
   color: var(--text-primary);
   /* Hardcoded monospace, Ouroboros owns its own font, never inherits
      the user's font preference or the SDK theme. */
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: Menlo, Monaco, ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", "Courier New", monospace;
   min-height: 100vh;
   overflow-x: hidden;
   text-transform: uppercase;
@@ -77,6 +77,7 @@ body {
 }
 
 .game-container {
+  container-type: inline-size;
   max-width: 62.5rem;
   margin: 0 auto;
   padding: var(--space-md);

@@ -1,7 +1,7 @@
 /* Responsive layout: panels beside or below the board */
 
 /* Intermediate: panels beside game, stacked vertically */
-@media (max-width: 980px) {
+@container (max-width: 59.75rem) {
   .game-layout {
     grid-template-columns: 14.375rem minmax(0, 30rem);
     grid-template-areas:
@@ -15,7 +15,7 @@
 }
 
 /* Narrow: everything stacked */
-@media (max-width: 740px) {
+@container (max-width: 44.75rem) {
   .game-layout {
     grid-template-columns: 1fr;
     grid-template-areas:

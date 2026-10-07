@@ -308,6 +308,12 @@
     // Custom periodic wave, trumpet harmonic series (bright, brassy)
     const brassWave = A.harmonicWave(tc?.harmonics || Clips.TROMBONE_HARMONICS);
 
+    // Own sub-bus so the trombone can sit lower than the rest of the SFX.
+    // ~-7 dB by default; audio/clips/trombone.json may override with "level".
+    const tromBus = ctx.createGain();
+    tromBus.gain.value = tc?.level ?? 0.45;
+    tromBus.connect(sfxVol);
+
     let nt = t + JINGLE_OFFSET;
     notes.forEach((note, ni) => {
       const atk = 0.03 + ni * 0.008;
@@ -407,7 +413,7 @@
         breathG.gain.setValueAtTime(0.07 * note.press, nt + note.dur * 0.5);
         breathG.gain.linearRampToValueAtTime(0, nt + note.dur);
       }
-      breath.connect(breathBp); breathBp.connect(breathG); breathG.connect(sfxVol);
+      breath.connect(breathBp); breathBp.connect(breathG); breathG.connect(tromBus);
 
       // Main gain, fades out from halfway
       const g = ctx.createGain();
@@ -426,7 +432,7 @@
       o.connect(f1); o2.connect(f1);
       f1.connect(f2); f2.connect(lp);
       lp.connect(g); lp.connect(g2);
-      g.connect(sfxVol); g2.connect(sfxVol);
+      g.connect(tromBus); g2.connect(tromBus);
 
       buzz.start(nt); buzz.stop(nt + note.dur + 0.02);
       breath.start(nt); breath.stop(nt + note.dur + 0.01);
