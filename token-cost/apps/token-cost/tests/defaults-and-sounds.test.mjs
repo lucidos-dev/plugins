@@ -1,9 +1,8 @@
-// Two fixes from 2026-10-02 that both failed only inside the real app frame:
+// Defaults, and a fix from 2026-10-02 that failed only inside the real app frame:
 //
-//   rows    a pricing.json written before a model shipped had no row for it,
-//           so the model was missing from Settings. The app now adds every
-//           built-in model the file lacks, saves once, and never touches a
-//           row the user already has.
+//   rows    pricing.json is the only price table. The app carries no prices,
+//           so a first run is unpriced rather than wrong, and opening the app
+//           never rewrites the file.
 //   sounds  an app frame has an opaque origin, so fetch() of the app's own
 //           sounds/*.m4a failed ("Failed to fetch"). Built-ins now decode from
 //           the bundled base64 copy; an uploaded clip falls back to <audio>.
@@ -74,47 +73,47 @@ async function boot(pricingText) {
     },
     events: { query: async () => [] }, request: async () => [],
     sse: { connect() {}, on() {} },
-    utils: { escapeHtml: (s) => String(s), timeAgo: () => '1m ago' },
+    utils: { escapeHtml: (s) => String(s), escapeHtmlAttr: (s) => String(s), timeAgo: () => '1m ago' },
   };
   global.window.lucidos = global.lucidos;
-  new Function(src + ';globalThis.__tc = { loadSound, DEFAULT_PRICING, get pricing(){ return pricing; } };')();
+  new Function(src + ';globalThis.__tc = { loadSound, DEFAULT_PRICING, rateFor, get pricing(){ return pricing; } };')();
   await settle();
   return { tc: globalThis.__tc, writes: writes.filter((w) => w.p.includes('pricing')) };
 }
 
-console.log('\n1. a built-in model missing from pricing.json is added and saved');
+console.log('\n1. the app carries no prices of its own');
 {
-  const { tc: probe } = await boot(null);
-  const builtins = Object.keys(probe.DEFAULT_PRICING.models).filter((k) => k !== 'default');
-  const stale = { currency: 'USD', models: {} };
-  for (const id of builtins) stale.models[id] = { ...probe.DEFAULT_PRICING.models[id] };
-  delete stale.models['claude-sonnet-5-5'];
-  stale.models['claude-sonnet-5'] = { uncached_in: 9, cache_write: 9, cache_read: 9, out: 9 };
-  stale.models['my-own-model'] = { uncached_in: 1, out: 1 };
-  const { tc, writes } = await boot(JSON.stringify(stale));
-  ok(writes.length === 1, 'pricing.json is written once: ' + writes.length);
-  const saved = writes.length ? JSON.parse(writes[0].c).models : {};
-  ok(JSON.stringify(saved['claude-sonnet-5-5']) === JSON.stringify(tc.DEFAULT_PRICING.models['claude-sonnet-5-5']),
-     'Sonnet 5.5 arrives with its built-in card');
-  ok(saved['claude-sonnet-5'] && saved['claude-sonnet-5'].out === 9, 'a row the user edited is left alone');
-  ok(saved['my-own-model'] && saved['my-own-model'].out === 1, 'a row with no built-in is kept');
-  ok(!('default' in saved), 'the default card is never written as a row');
-  ok(tc.pricing.models['claude-sonnet-5-5'], 'and the Settings table sees the row in this session');
+  // pricing.json is the one price table. A second copy in the app drifted
+  // from it and had to be edited in step with every provider change.
+  const { tc } = await boot(null);
+  ok(Object.keys(tc.DEFAULT_PRICING.models).length === 0, 'DEFAULT_PRICING lists no model');
+  ok(!/uncached_in:\s*\d/.test(html.slice(html.indexOf('const DEFAULT_PRICING'), html.indexOf('const CURRENCY_NAMES'))),
+     'and no rate appears anywhere in the built-in block');
 }
 
-console.log('\n2. a complete pricing.json is not rewritten');
+console.log('\n2. a first run with no pricing.json is unpriced, not an error');
 {
-  const { tc: probe } = await boot(null);
-  const full = { currency: 'USD', models: {} };
-  for (const [id, c] of Object.entries(probe.DEFAULT_PRICING.models)) if (id !== 'default') full.models[id] = { ...c };
-  const { writes } = await boot(JSON.stringify(full));
-  ok(writes.length === 0, 'no write when nothing is missing: ' + writes.length);
+  const { tc, writes } = await boot(null);
+  ok(writes.length === 0, 'nothing is written on open: ' + writes.length);
+  ok(tc.rateFor('claude-opus-5') === null, 'a model has no price until one is added');
+  ok(tc.pricing.producers.main_llm === 'Lucidos Agent', 'the producer labels still load');
 }
 
-console.log('\n3. no pricing.json stays a first run, not a write');
+console.log('\n3. pricing.json is read as it is, never rewritten on open');
 {
-  const { writes } = await boot(null);
-  ok(writes.length === 0, 'the file is still created only by the first Save');
+  // A legacy file (plain cards) and a history file (card lists) both load,
+  // and opening the app writes neither: only an edit in Settings saves.
+  const legacy = { currency: 'USD', models: { 'claude-opus-5': { uncached_in: 5, cache_write: 6.25, cache_read: 0.5, out: 25 } } };
+  const { tc: a, writes: wa } = await boot(JSON.stringify(legacy));
+  ok(wa.length === 0, 'a legacy file is not rewritten: ' + wa.length);
+  ok(a.rateFor('claude-opus-5')?.out === 25, 'and its plain card prices the model');
+  const history = { currency: 'USD', models: { 'gemini-3.8-flash': [
+    { uncached_in: 0.75, cache_write: 0, cache_read: 0.075, out: 3.75 },
+    { from: '2027-01-01', uncached_in: 1.5, cache_write: 0, cache_read: 0.15, out: 7.5 } ] } };
+  const { tc: b, writes: wb } = await boot(JSON.stringify(history));
+  ok(wb.length === 0, 'a history file is not rewritten: ' + wb.length);
+  ok(b.rateFor('gemini-3.8-flash', '2026-12-31')?.out === 3.75 && b.rateFor('gemini-3.8-flash', '2027-01-01')?.out === 7.5,
+     'and each day reads its own card');
 }
 
 console.log('\n4. a built-in sound decodes from the bundled copy, never fetch');

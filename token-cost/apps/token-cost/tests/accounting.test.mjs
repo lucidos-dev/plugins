@@ -63,14 +63,17 @@ global.lucidos = {
   // through the generic bridged call, which has no labels to give.
   events:{ query: async () => [] }, request: async () => [],
   sse:{ connect(){}, on(){} },
-  utils:{ escapeHtml:(s)=>String(s), timeAgo:()=>'1m ago' },
+  // As the SDK has them: the text escape leaves quotes raw, the attribute
+  // escape does not, so a test can tell which one an attribute used.
+  utils:{ escapeHtml:(s)=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'), escapeHtmlAttr:(s)=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'), timeAgo:()=>'1m ago' },
 };
 
 // expose internals for assertions
 const harness = src + `
 ;globalThis.__tc = {
   pushLive, render, get live(){return live;}, countedLive, get seenSeq(){return seenSeq;},
-  seriesForDay, selectedDays, knownDays, localDay, costOf, longThreshold, rateFor, dayZoneLabel,
+  seriesForDay, selectedDays, knownDays, localDay, costOf, longThreshold, isLongCall, rateFor, dayZoneLabel,
+  cardOn, cardsOf, savedModels, checkFrom, servedAsSent, pricedModel,
   setDaily(d){ daily = d; }, setPricing(p){ pricing = p; },
   get daily(){ return daily; },
   get metaText(){ return document.getElementById('meta').textContent; },
@@ -263,16 +266,17 @@ ok(tc.longThreshold('openai/gpt-5.5') === 272000, 'and keeps its 272k long tier'
 ok(priceOf('x-ai/grok-4.6') === 8, 'a key that IS a prefixed id still matches literally');
 ok(priceOf('claude-opus-5@default[1m]') === 30, 'the engine\'s own decorations still strip');
 
-console.log('\n15. Sonnet 5.5 and the built-in cards');
-// The stored table above predates Sonnet 5.5 and has no row for it. The
-// built-in card must reach it, or every existing pricing.json stays wrong.
-ok(priceOf('claude-sonnet-5-5') === 12, 'Sonnet 5.5 takes the built-in $2/$10 card, got '+priceOf('claude-sonnet-5-5'));
-ok(priceOf('claude-sonnet-5-5[1m]') === 12, 'and so does its [1m] variant');
-ok(priceOf('anthropic/claude-sonnet-5.5') === 12, 'and a gateway spelling of it');
+console.log('\n15. pricing.json is the only table');
+// The app used to carry its own copy of every price and fill gaps from it.
+// Now a model the stored table does not list is unpriced, never priced from
+// a second copy that drifts.
+ok(priceOf('claude-sonnet-5-5') === null, 'a model the stored table lacks is unpriced, got '+priceOf('claude-sonnet-5-5'));
 const custom = storedWithDefault();
 custom.models['claude-sonnet-5-5'] = { uncached_in:1.5, cache_write:0, cache_read:0, out:7.5 };
 tc.setPricing(custom);
-ok(priceOf('claude-sonnet-5-5') === 9, 'a stored rate beats the built-in one');
+ok(priceOf('claude-sonnet-5-5') === 9, 'a stored rate prices it');
+ok(priceOf('claude-sonnet-5-5[1m]') === 9, 'and its [1m] variant');
+ok(priceOf('anthropic/claude-sonnet-5.5') === 9, 'and a gateway spelling of it');
 
 console.log('\n16. an empty card is unpriced, a partial one is priced');
 const blank = storedWithDefault();
@@ -321,6 +325,217 @@ ok(tc.dayZoneLabel(new Date('2026-01-15T12:00:00Z')) === 'Days in Europe/Oslo (U
    'winter: '+tc.dayZoneLabel(new Date('2026-01-15T12:00:00Z')));
 ok(document.getElementById('tz-note').textContent.startsWith('Days in Europe/Oslo'),
    'render writes it next to the selector');
+
+
+// --- price history ---------------------------------------------------------
+// A provider changes its prices. A day must be priced at the card in force ON
+// that day, so a later price change never reprices the days before it.
+const dayOffset = (n) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + n); return tc.localDay(d); };
+const D2 = dayOffset(-2), D1 = dayOffset(-1);
+const tableWith = (models) => ({ currency:'USD', models,
+  long_context_multiplier:{ threshold_tokens:200000, in_multiplier:1, out_multiplier:1 }, producers:{}, fx:{ rates:{USD:1} } });
+const near = (a, b) => a !== null && Math.abs(a - b) < 1e-9;
+
+console.log('\n19. a price change mid-range prices each side at its own card');
+tc.setPricing(tableWith({
+  'acme-1': [
+    { uncached_in:5, cache_write:0, cache_read:0.5, out:30 },
+    { from:D1, uncached_in:4, cache_write:0, cache_read:0.4, out:20 },
+  ],
+}));
+ok(near(tc.costOf('acme-1', oneM, oneM.long, D2), 35), 'the day before the change takes the old card: '+tc.costOf('acme-1', oneM, oneM.long, D2));
+ok(near(tc.costOf('acme-1', oneM, oneM.long, D1), 24), 'the change day takes the new card: '+tc.costOf('acme-1', oneM, oneM.long, D1));
+ok(near(tc.costOf('acme-1', oneM, oneM.long, today), 24), 'and it stays in force after');
+ok(near(tc.costOf('acme-1', oneM, oneM.long, '2020-01-01'), 35), 'an undated first card covers the beginning');
+// The range total is a SUM of per-day costs. Pricing the summed tokens once
+// would charge both days at one card: 48 at the new rate, 70 at the old.
+tc.resetLive();
+tc.setDaily({ ...empty, days:{
+  [D2]: { 'main_llm|acme-1': bucket(1, 1e6, 1e6) },
+  [D1]: { 'main_llm|acme-1': bucket(1, 1e6, 1e6) },
+}, hours:{} });
+tc.render();
+const hero19 = document.getElementById('hero-cost').querySelector('.live').textContent;
+ok(hero19 === '$59.00', 'the hero over both days is 35 + 24 = $59.00, got '+hero19);
+ok(/\$59\.00/.test(document.getElementById('tbody').children[0].innerHTML), 'and so is the model row');
+ok(/Total.*\$59\.00/.test(document.getElementById('tfoot').innerHTML), 'and the footer');
+
+console.log('\n20. a plain object card still loads, as one undated card');
+tc.setPricing(tableWith({ 'acme-1': { uncached_in:5, cache_write:0, cache_read:0.5, out:30 } }));
+ok(near(tc.costOf('acme-1', oneM, oneM.long, '2020-01-01'), 35), 'priced on an old day');
+ok(near(tc.costOf('acme-1', oneM, oneM.long, today), 35), 'and today');
+ok(near(tc.costOf('acme-1', oneM, oneM.long), 35), 'and with no day given');
+const saved = tc.savedModels({ 'acme-1': { uncached_in:5, out:30 }, 'acme-2': [
+  { from:'2026-08-21', uncached_in:4, out:20, source:'b' }, { uncached_in:5, out:30, source:'a' } ] });
+ok(Array.isArray(saved['acme-1']) && saved['acme-1'].length === 1 && !('from' in saved['acme-1'][0]),
+   'a save writes the plain card as a one-card list');
+ok(saved['acme-2'][0].source === 'a' && Object.keys(saved['acme-2'][1])[0] === 'from',
+   'cards are saved oldest first, `from` leading a dated card');
+
+console.log('\n21. a future-dated card waits for its day');
+tc.setPricing(tableWith({
+  'acme-flash': [
+    { uncached_in:0.75, cache_write:0, cache_read:0.075, out:3.75 },
+    { from:'2099-01-01', uncached_in:1.5, cache_write:0, cache_read:0.15, out:7.5 },
+  ],
+  'acme-later': [ { from:'2099-01-01', uncached_in:1, out:1 } ],
+}));
+ok(near(tc.costOf('acme-flash', oneM, oneM.long, today), 4.5), 'today is still the introductory card: '+tc.costOf('acme-flash', oneM, oneM.long, today));
+ok(near(tc.costOf('acme-flash', oneM, oneM.long, '2099-01-01'), 9), 'the new card is in force from its day');
+ok(tc.costOf('acme-later', oneM, oneM.long, today) === null, 'a model whose first card starts later is unpriced before it');
+
+console.log('\n22. the long tier follows the card in force');
+tc.setPricing(tableWith({
+  'acme-mini': [
+    { uncached_in:1, cache_write:0, cache_read:0.1, out:5 },
+    { from:D1, uncached_in:0.1, cache_write:0, cache_read:0.01, out:0.5,
+      long:{ threshold_tokens:100000, uncached_in:0.5, cache_write:0, cache_read:0.05, out:2.5 } },
+  ],
+}));
+ok(tc.longThreshold('acme-mini', D2) === 200000, 'before the tier exists the split is the global 200k: '+tc.longThreshold('acme-mini', D2));
+ok(tc.longThreshold('acme-mini', D1) === 100000, 'from its day it is the card\'s 100k: '+tc.longThreshold('acme-mini', D1));
+const call150k = { calls:1, in:150000, cache_read:0, cache_write:0, out:1000, seconds:0,
+                   long:{ in:150000, out:1000, cache_read:0, cache_write:0 } };
+ok(near(tc.costOf('acme-mini', call150k, call150k.long, D1), (150000*0.5 + 1000*2.5)/1e6),
+   'a 150k call on the tier day takes the long rates whole');
+ok(near(tc.costOf('acme-mini', call150k, null, D2), (150000*1 + 1000*5)/1e6),
+   'the day before, the old card has no tier and prices it flat');
+// A live call is split at the threshold of ITS day, not today's.
+tc.resetLive();
+tc.setDaily({ ...empty, days:{}, hours:{} });
+tc.pushLive(mk(999500, D2+'T10:00:00', 'main_llm', 'acme-mini', [150000,0,0,1000]), {quiet:true});
+tc.pushLive(mk(999501, D1+'T10:00:00', 'main_llm', 'acme-mini', [150000,0,0,1000]), {quiet:true});
+ok(tc.seriesForDay(D2)['main_llm|acme-mini'].long.in === 0, 'the old day\'s live call is not long');
+ok(tc.seriesForDay(D1)['main_llm|acme-mini'].long.in === 150000, 'the tier day\'s live call is long');
+
+console.log('\n23. odd histories stay honest');
+tc.setPricing(tableWith({
+  'acme-1': [
+    { uncached_in:5, out:30 },
+    { from:D1 },                                   // a price change not filled in yet
+    { from:'next tuesday', uncached_in:99, out:99 } // not a date
+  ],
+}));
+ok(near(tc.costOf('acme-1', oneM, oneM.long, D1), 35), 'an empty card leaves the old price standing');
+ok(near(tc.costOf('acme-1', oneM, oneM.long, '2099-12-31'), 35), 'a card whose from is not a date is ignored');
+const hist = [ { uncached_in:5 }, { from:'2026-08-21', uncached_in:4 } ];
+ok(tc.checkFrom(hist, hist[1], '2026-08-21') === null, 'a card may keep its own day');
+ok(/already starts/.test(tc.checkFrom(hist, {}, '2026-08-21') || ''), 'two cards cannot share a day');
+ok(/no From day/.test(tc.checkFrom(hist, hist[1], '') || ''), 'and only one card may be undated');
+ok(/like 2026/.test(tc.checkFrom(hist, hist[1], '21.08.2026') || ''), 'a malformed day is refused');
+ok(/real date/.test(tc.checkFrom(hist, hist[1], '2026-02-30') || ''), 'a day that does not exist is refused');
+ok(/real date/.test(tc.checkFrom(hist, hist[1], '2026-13-01') || ''), 'and so is a month that does not exist');
+ok(tc.checkFrom(hist, hist[1], '2028-02-29') === null, 'a real leap day is fine');
+
+console.log('\n24. the edge of the long tier is the provider\'s');
+// OpenAI (">272K"), Google ("> 200k") and Anthropic ("over 100,000") bill the
+// long rates only ABOVE the threshold. xAI bills from a prompt that reaches
+// it, and its card says so with `inclusive`.
+tc.setPricing(tableWith({
+  'gpt-5.5': { uncached_in:5, cache_write:0, cache_read:0.5, out:30,
+               long:{ threshold_tokens:272000, uncached_in:10, cache_write:0, cache_read:1, out:45 } },
+  'grok-4.6': { uncached_in:2, cache_write:0, cache_read:0.5, out:6,
+                long:{ threshold_tokens:200000, inclusive:true, uncached_in:4, cache_write:0, cache_read:1, out:12 } },
+  'claude-opus-5': { uncached_in:5, cache_write:6.25, cache_read:0.5, out:25 },
+}));
+ok(tc.isLongCall('gpt-5.5', 272000, today) === false, 'a GPT prompt of exactly 272,000 is short');
+ok(tc.isLongCall('gpt-5.5', 272001, today) === true, 'one token over is long');
+ok(tc.isLongCall('grok-4.6', 200000, today) === true, 'an xAI prompt of exactly 200,000 is long');
+ok(tc.isLongCall('grok-4.6', 199999, today) === false, 'one token under is short');
+ok(tc.isLongCall('claude-opus-5', 200000, today) === false, 'a tier-less card at exactly the global 200k is short');
+tc.resetLive();
+tc.setDaily({ ...empty, days:{}, hours:{} });
+const edgeAt = today + 'T10:00:00';
+tc.pushLive(mk(999600, edgeAt, 'codex', 'gpt-5.5', [272000,0,0,1000]), {quiet:true});
+ok(tc.seriesForDay(today)['codex|gpt-5.5'].long.in === 0, 'a live 272,000-token call folds in as short');
+const exact = { calls:1, in:272000, cache_read:0, cache_write:0, out:1000, seconds:0, long:{in:0,out:0,cache_read:0,cache_write:0} };
+ok(near(tc.costOf('gpt-5.5', exact, exact.long, today), (272000*5 + 1000*30)/1e6), 'and is priced at the base card');
+
+console.log('\n25. a card without a usable threshold falls back to the global one');
+const withGlobal = (models, t) => ({ ...tableWith(models), long_context_multiplier:{ threshold_tokens:t, in_multiplier:1, out_multiplier:1 } });
+tc.setPricing(withGlobal({ 'acme-1': { uncached_in:1, out:1 },
+  'acme-2': { uncached_in:1, out:1, long:{ threshold_tokens:'abc', uncached_in:2, out:2 } } }, 150000));
+ok(tc.longThreshold('acme-1', today) === 150000, 'a tier-less card splits at the global threshold, as the rollup does');
+ok(tc.longThreshold('acme-2', today) === 150000, 'a threshold that is not a number is skipped');
+ok(tc.isLongCall('acme-2', 10, today) === false, 'and never compared as text');
+
+
+console.log('\n26. a call is priced as the model that actually served it');
+// The engine records `served_model`, the model the reply names. A provider
+// that reroutes a retired id does it silently, so the reply is the truth.
+for (const [sent, served] of [['gemini-3.5-flash','gemini-3.6-flash'], ['claude-opus-5','claude-opus-5-5'],
+                              ['gemini-3.8-flash','gemini-3.8-flash-lite']]) {
+  ok(!tc.servedAsSent(sent, served) && tc.pricedModel(sent, served) === served, `${sent} answered by ${served} is priced as ${served}`);
+}
+for (const [sent, served] of [['claude-haiku-4-5','claude-haiku-4-5-20251001'], ['gpt-5.6-luna','gpt-5.6-luna-2026-04-01'],
+                              ['gemini-3.8-flash','gemini-3.8-flash-001'], ['google/gemini-3.8-flash','gemini-3.8-flash'],
+                              ['claude-opus-5[1m]','claude-opus-5'], ['claude-opus-4-5','claude-opus-4-5@20251101'],
+                              ['qwen3','qwen3:latest'], ['GPT-5.6-Luna','gpt-5.6-luna']]) {
+  ok(tc.servedAsSent(sent, served) && tc.pricedModel(sent, served) === sent, `${sent} answered by ${served} keeps the requested id`);
+}
+ok(tc.pricedModel('claude-opus-5-5[1m]', undefined) === 'claude-opus-5-5[1m]', 'no served model keeps the requested one');
+tc.setPricing(tableWith({
+  'gemini-3.5-flash': { uncached_in:1.5, cache_write:0, cache_read:0.15, out:9 },
+  'gemini-3.6-flash': { uncached_in:0.75, cache_write:0, cache_read:0.075, out:3.75 },
+}));
+tc.resetLive();
+tc.setDaily({ ...empty, days:{}, hours:{} });
+const rerouted = mk(999600, today+'T10:00:00', 'auxiliary', 'gemini-3.5-flash', [1e6,0,0,1e6]);
+rerouted.event.served_model = 'gemini-3.6-flash';
+tc.pushLive(rerouted, {quiet:true});
+const same = mk(999601, today+'T10:01:00', 'auxiliary', 'gemini-3.6-flash', [1e6,0,0,1e6]);
+same.event.served_model = 'gemini-3.6-flash-001';
+tc.pushLive(same, {quiet:true});
+const s24 = tc.seriesForDay(today);
+ok(!s24['auxiliary|gemini-3.5-flash'], 'nothing is filed under the id that was asked for');
+const b24 = s24['auxiliary|gemini-3.6-flash'];
+ok(b24 && b24.calls === 2, 'both calls are filed under the model that ran: '+JSON.stringify(b24 && b24.calls));
+ok(JSON.stringify(b24.routed_from) === '{"gemini-3.5-flash":1}', 'and the rerouted one is counted by what was asked: '+JSON.stringify(b24.routed_from));
+tc.render();
+ok(document.getElementById('hero-cost').querySelector('.live').textContent === '$9.00', 'priced at the served card, 2 x $4.50');
+ok(/asked for gemini-3\.5-flash/.test(document.getElementById('tbody').children[0].innerHTML), 'the row says what was asked for');
+// The rollup stores the same count; a stored row folds it the same way.
+tc.resetLive();
+tc.setDaily({ ...empty, days:{ [today]: { 'auxiliary|gemini-3.6-flash': { ...bucket(3, 3e6, 0), routed_from:{ 'gemini-3.5-flash':3 } } } }, hours:{} });
+ok(tc.seriesForDay(today)['auxiliary|gemini-3.6-flash'].routed_from['gemini-3.5-flash'] === 3, 'a stored routed_from count survives the merge');
+
+console.log('\n27. a served model with no card is unpriced, never priced as the one asked for');
+tc.setPricing(tableWith({ 'gemini-3.5-flash': { uncached_in:1.5, cache_write:0, cache_read:0.15, out:9 } }));
+tc.resetLive();
+tc.setDaily({ ...empty, days:{}, hours:{} });
+const orphan = mk(999700, today+'T10:00:00', 'auxiliary', 'gemini-3.5-flash', [1e6,0,0,1e6]);
+orphan.event.served_model = 'gemini-3.9-flash';
+tc.pushLive(orphan, {quiet:true});
+tc.render();
+ok(!/[1-9]/.test(document.getElementById('hero-cost').querySelector('.live').textContent), 'nothing is added at the requested card: '+document.getElementById('hero-cost').querySelector('.live').textContent);
+ok(!document.getElementById('hero-unpriced').hidden, 'the call is counted as unpriced');
+ok(/data-add-rate="gemini-3\.9-flash"/.test(document.getElementById('tbody').children[0].innerHTML), 'and the served id is the one offered a rate');
+ok(tc.isLongCall('gemini-3.9-flash', 200001, today) === true, 'an unpriced served model splits at the global default, as the rollup does');
+
+console.log('\n28. a model id cannot break out of an attribute');
+// The asked id is the request body's, the served id the provider reply's.
+// Neither is ours, so a quote in one must not close the attribute it sits in.
+tc.resetLive();
+const hostile = mk(999710, today+'T10:00:00', 'auxiliary', 'x" onmouseover="alert(1)', [10,0,0,10]);
+hostile.event.served_model = 'y" onfocus="alert(2)';
+tc.pushLive(hostile, {quiet:true});
+tc.render();
+const row26 = document.getElementById('tbody').children[0].innerHTML;
+// Only the attributes matter: in text position a quote is harmless.
+const tags26 = row26.match(/<[^>]*>/g).join('');
+ok(!/onmouseover="/.test(tags26), 'the asked id stays inside the tooltip');
+ok(!/onfocus="/.test(tags26), 'the served id stays inside the add-rate button');
+ok(tags26.includes('data-add-rate="y&quot; onfocus=&quot;alert(2)"'), 'and arrives escaped');
+// An older host's SDK has no escapeHtmlAttr. Render must neither throw nor
+// fall back to the text escape.
+const attrEsc = lucidos.utils.escapeHtmlAttr;
+delete lucidos.utils.escapeHtmlAttr;
+let threw = null;
+try { tc.render(); } catch (e) { threw = e; }
+lucidos.utils.escapeHtmlAttr = attrEsc;
+ok(!threw, 'an SDK without escapeHtmlAttr still renders: '+(threw && threw.message));
+const oldTags = document.getElementById('tbody').children[0].innerHTML.match(/<[^>]*>/g).join('');
+ok(!/onmouseover="|onfocus="/.test(oldTags), 'and still escapes the quotes itself');
 
 console.log('\n'+pass+' passed, '+fail+' failed');
 process.exit(fail?1:0);

@@ -88,7 +88,7 @@ global.lucidos = {
   // call. Same reason: this frame's own fetch cannot reach the engine.
   request: async () => { if (globalThis.__modelsFail) throw new Error('offline'); return []; },
   sse:{ connect(){}, on(){} },
-  utils:{ escapeHtml:(s)=>String(s), timeAgo:()=>'1m ago' },
+  utils:{ escapeHtml:(s)=>String(s), escapeHtmlAttr:(s)=>String(s), timeAgo:()=>'1m ago' },
 };
 
 // expose internals for assertions

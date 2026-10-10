@@ -25,16 +25,20 @@ the provider's own `usage` block. Two halves read it:
 - The app reads that rollup, then folds anything that has arrived over SSE since
   on top of it, so today's number is live rather than an hour stale.
 
-Cost is computed in the browser from the rates in Settings, never stored. Edit a
-rate and your whole history re-prices on save.
+Cost is computed in the browser from the rates in Settings, never stored. A call
+is priced as the model that served it, which can differ from the model asked
+for when a provider reroutes a retired model; the dashboard marks those calls.
+Adding a dated card changes prices from its day on and leaves the past alone.
 
 ## Settings
 
 The **Settings** tab holds everything the dashboard prices with:
 
 - **Model rates**, USD per 1,000,000 tokens, split into fresh input, cache write,
-  cache read and output. The `default` row is the fallback for any model id the
-  engine reports that is not listed.
+  cache read and output. Each model holds a list of dated cards, its price
+  history, and each day is priced at the card in force that day. A model with no
+  card shows as unpriced and stays out of the total: there is no fallback rate,
+  because a guessed price looks exactly like a real one.
 - **Long-context premium**: the threshold, and the input and output multipliers
   applied to calls over it on a model whose id ends in `[1m]`.
 - **Producer labels**, how each producer id is named in the table and the filter.
@@ -70,18 +74,24 @@ apps/token-cost/tests/run.sh
 
 ## Requirements
 
-Lucidos 0.27.0 or newer. The app resolves the workspace-prefixed events endpoint
-through `lucidos.apiUrl`, which earlier engines do not expose.
+Lucidos 0.47.2 or newer. Served-model pricing reads the `served_model` field
+that release adds to every model call.
+
+## Prices
+
+The app ships no prices. Plugin setup fills `artifacts/token-cost/pricing.json`
+from each provider's official pricing page, following
+`knowhow/daily-price-check.md`, and offers a daily check that writes a new dated
+card when a provider changes a price. Every card names its source.
 
 ## Updating
 
-Nothing to do by hand. The app adds a rate for every model it knows to
-`artifacts/token-cost/pricing.json` when it opens, and leaves every row you
-already have alone. When an update changes how the rollup sums a day,
-`daily.json` carries an older `rollup_version`, and the next scheduled run
-rebuilds every day once. Set `TOKEN_COST_REBUILD=1` to force one yourself.
+Your `pricing.json` is never replaced. When an update changes how the rollup
+sums a day, `daily.json` carries an older `rollup_version`, and the next
+scheduled run rebuilds every day once. Set `TOKEN_COST_REBUILD=1` to force one
+yourself.
 
 ## After install
 
-Ask Lucidos to set up the rollup trigger; the plugin's setup step walks it
-through. Hourly at five past is the suggested default.
+The setup step creates the rollup trigger, seeds the prices, and offers the
+daily price check. Hourly at five past is the suggested rollup cadence.

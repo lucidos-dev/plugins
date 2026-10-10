@@ -82,7 +82,9 @@ State path is anchored on LUCIDOS_WORKSPACE, never on __file__ (see
 knowhow/script-state-paths.md).
 """
 
+import hashlib
 import json
+import math
 import os
 import pathlib
 import re
@@ -113,6 +115,15 @@ LONG_CTX_THRESHOLD = 200000
 # multiplies by the measured mean tokens per call, so the count is exact and
 # the token figure is an estimate. A day that has real events is never
 # backfilled, so the estimate retires itself as fresh runs land.
+#
+# Both sources END at the PROXY CUTOVER. The engine now records every model
+# call its credentialed proxy forwards as a `ContextCaptured` with
+# `purpose: "proxy"` (engine ADR 0381), Jev calls included, and the main pass
+# above already counts those rows. So the cutover is the first such row: a
+# `JevCallCompleted` or a drive result from after it would count the same call
+# twice. The plugin stopped emitting `JevCallCompleted` at the same change. A
+# drive between that and the cutover still has its result file, so the disk
+# estimate covers that gap until the engine takes over.
 JEV_TOKENS_PER_CALL = 12525
 JEV_MODEL = "jev-1.13.0"
 JEV_PRODUCER = "jev_browser"
@@ -138,6 +149,7 @@ COPY (
     FROM events
     WHERE event_type = 'JevCallCompleted'
       AND payload->'usage'->>'input_tokens' IS NOT NULL
+      AND created < %(cutover)s
     GROUP BY 1, 2, 3
   ) t
 ) TO STDOUT;
@@ -151,6 +163,22 @@ def blank_bucket() -> dict:
         "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0},
         "max_in": 0,
     }
+
+
+# The first row the engine wrote for a proxied model call, as epoch seconds.
+PROXY_CUTOVER_SQL = (
+    "SELECT coalesce(extract(epoch FROM min(created))::text, '') FROM events "
+    "WHERE event_type = 'ContextCaptured' AND payload->>'purpose' = 'proxy'"
+)
+
+
+def proxy_cutover() -> float | None:
+    """When the engine began recording proxied calls, or None before then."""
+    try:
+        raw = psql(PROXY_CUTOVER_SQL)
+    except SystemExit:
+        return None
+    return float(raw) if raw else None
 
 
 def fold_jev(days: dict, hours: dict, keep_hours: set) -> tuple:
@@ -187,11 +215,13 @@ def fold_jev(days: dict, hours: dict, keep_hours: set) -> tuple:
             dst["buckets"][0] += calls
             dst["max_in"] = max(dst["max_in"], max_in)
 
-    # 1. Real events, the authoritative source.
+    # 1. Real events, the authoritative source, up to the proxy cutover.
+    cutover = proxy_cutover()
+    cutover_sql = "'infinity'::timestamptz" if cutover is None else f"to_timestamp({cutover})"
     covered = set()
     calls_total = tokens_total = 0
     try:
-        rows = json.loads(psql(JEV_SQL % {"tz": TZ, "hour": LOCAL_HOUR}))
+        rows = json.loads(psql(JEV_SQL % {"tz": TZ, "hour": LOCAL_HOUR, "cutover": cutover_sql}))
     except Exception:
         rows = []
     for x in rows:
@@ -203,9 +233,12 @@ def fold_jev(days: dict, hours: dict, keep_hours: set) -> tuple:
         add(x["day"], int(x["hour"]), calls, tokens,
             int(x["out_tok"] or 0), int(x["max_in"] or 0))
 
-    # 2. Disk backfill, for days no event covers.
+    # 2. Disk backfill, for days no event covers, up to the proxy cutover.
     for pattern in JEV_RESULT_GLOBS:
         for path in WS.glob(pattern):
+            mtime = path.stat().st_mtime
+            if cutover is not None and mtime >= cutover:
+                continue
             try:
                 doc = json.loads(path.read_text())
             except (OSError, ValueError):
@@ -213,7 +246,7 @@ def fold_jev(days: dict, hours: dict, keep_hours: set) -> tuple:
             calls = int(doc.get("requests") or doc.get("decisions") or 0)
             if calls <= 0:
                 continue
-            stamp = datetime.fromtimestamp(path.stat().st_mtime).astimezone()
+            stamp = datetime.fromtimestamp(mtime).astimezone()
             day = stamp.strftime("%Y-%m-%d")
             if day in covered:
                 continue
@@ -225,124 +258,321 @@ def fold_jev(days: dict, hours: dict, keep_hours: set) -> tuple:
     return calls_total, tokens_total
 
 
-# The app's built-in cards, for a model pricing.json does not list. The app
-# prices such a model from its built-in card, long tier included, so the split
-# here has to use that card's threshold too.
-APP_HTML = pathlib.Path(__file__).resolve().parent.parent / "index.html"
+# The fields that make a card priced, as the app's isPricedCard() reads them.
+RATE_FIELDS = ("uncached_in", "cache_write", "cache_read", "out", "per_minute")
+DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
-def builtin_long_thresholds() -> dict:
-    """Model id -> long-tier threshold, from DEFAULT_PRICING in the app.
+class PricingUnreadable(Exception):
+    """pricing.json exists but cannot be read as a price table."""
 
-    Read from index.html rather than copied here, so the two cannot drift.
-    Each card there sits on one line, which is what the pattern relies on.
-    A missing or reshaped file gives {} and every model falls back to the
-    stored table or 200k, as before.
+
+def cards_of(entry) -> list:
+    """A model's price history, oldest first, as the app's cardsOf() reads it.
+
+    pricing.json holds a LIST of cards per model, each in force from its
+    `from` day. An undated card sorts first (in force since the beginning),
+    ties keep file order, and a plain object is one undated card: the shape
+    every file had before history existed.
     """
-    try:
-        html = APP_HTML.read_text()
-        block = html[html.index("const DEFAULT_PRICING = {"):]
-        block = block[: block.index("long_context_multiplier:")]
-    except (OSError, ValueError):
-        return {}
-    out = {}
-    for m in re.finditer(r"^\s*'([^']+)':\s*\{.*$", block, re.M):
-        t = re.search(r"threshold_tokens:\s*(\d+)", m.group(0))
-        out[m.group(1)] = int(t.group(1)) if t else None
+    if isinstance(entry, dict):
+        cards = [entry]
+    elif isinstance(entry, list):
+        cards = [c for c in entry if isinstance(c, dict)]
+    else:
+        cards = []
+    return sorted(cards, key=lambda c: str(c.get("from") or ""))
+
+
+def is_priced(card: dict) -> bool:
+    return any(
+        isinstance(card.get(k), (int, float)) and not isinstance(card.get(k), bool)
+        for k in RATE_FIELDS
+    )
+
+
+def threshold_of(value):
+    """A threshold as the app's thresholdOf() reads it: a positive number of
+    prompt tokens, or None. A typo in the file must not crash the run."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value) or value <= 0:
+        return None
+    return value
+
+
+def over_cut(threshold, inclusive: bool):
+    """The prompt size a call must be OVER to be long, as a SQL number.
+
+    Providers word the edge two ways. OpenAI (">272K"), Google ("> 200k")
+    and Anthropic ("over 100,000") bill the long rates only ABOVE the
+    threshold. xAI bills them from a prompt that REACHES it, which a card
+    says with `inclusive: true`. Token counts are whole numbers, so "at
+    least t" is "over ceil(t) - 1", and one comparison covers both.
+    """
+    cut = math.ceil(threshold) - 1 if inclusive else threshold
+    return int(cut) if float(cut).is_integer() else cut
+
+
+def default_cut(doc) -> int:
+    """The split for a card with no tier of its own, and for a model with no
+    card: the global `long_context_multiplier` threshold, as the app's
+    longThreshold() falls back to it. 200k when the file sets none."""
+    block = doc.get("long_context_multiplier") if isinstance(doc, dict) else None
+    block = block if isinstance(block, dict) else {}
+    t = threshold_of(block.get("threshold_tokens"))
+    if t is None:
+        return LONG_CTX_THRESHOLD
+    return over_cut(t, block.get("inclusive") is True)
+
+
+def threshold_schedule(entry, default) -> list:
+    """[(from day or None, cut)] for each card that can be in force.
+
+    The same cards the app's cardOn() can pick: priced, and with a `from`
+    that is a real date or absent. A card whose `long` tier names no usable
+    threshold splits at `default`, like the app's longThreshold() for it.
+    Empty when the model has no priced card at all, which the app treats
+    as unlisted.
+    """
+    out = []
+    for card in cards_of(entry):
+        start = card.get("from")
+        if start and not DAY_RE.fullmatch(str(start)):
+            continue
+        if not is_priced(card):
+            continue
+        tier = card.get("long") if isinstance(card.get("long"), dict) else {}
+        t = threshold_of(tier.get("threshold_tokens"))
+        cut = default if t is None else over_cut(t, tier.get("inclusive") is True)
+        out.append((start or None, cut))
     return out
 
 
-# The fields that make a card priced, as the app's isPricedCard() reads them.
-RATE_FIELDS = ("uncached_in", "cache_write", "cache_read", "out", "per_minute")
+def read_pricing() -> dict:
+    """pricing.json as a dict. Missing is {}: every model splits at 200k, as
+    an unpriced model does in the app.
+
+    A file that is THERE but unreadable stops the run instead. Splitting at
+    200k then would quietly file every 200k-272k GPT call as long, and the
+    rolled-up days would keep that until the next rebuild. A failed run
+    leaves daily.json as it was, and the next hour tries again.
+    """
+    try:
+        text = PRICING.read_text()
+    except FileNotFoundError:
+        return {}
+    except OSError as e:
+        raise PricingUnreadable(f"cannot read {PRICING}: {e}") from e
+    try:
+        doc = json.loads(text)
+    except ValueError as e:
+        raise PricingUnreadable(f"{PRICING} is not valid JSON: {e}") from e
+    if not isinstance(doc, dict) or not isinstance(doc.get("models", {}), dict):
+        raise PricingUnreadable(f"{PRICING} has no models table")
+    return doc
 
 
-def long_thresholds() -> dict:
-    """Base model id -> the prompt size its long-context tier starts at.
+def long_schedules(doc: dict) -> dict:
+    """Model id -> its cut schedule, for every model pricing.json prices.
 
     Read from pricing.json, because the threshold is a fact about the
-    PROVIDER and differs between them: OpenAI's flagship tier starts at 272k,
-    xAI's and Gemini Pro's at 200k, and Anthropic charges no premium at all.
-    One global 200k split filed every 200k-272k GPT call as long and the app
-    then priced it at a rate OpenAI does not charge.
-
-    A model pricing.json does not list takes the app's built-in card, the same
-    rule the app's rateFor() applies. A stored card with a rate wins, with or
-    without a tier, so a tier removed by hand stays removed. A stored card
-    with no rate at all is skipped, as the app skips it.
-
-    Missing or unreadable pricing.json is not fatal: the built-in cards still
-    apply, and any other model falls back to 200k.
-
-    Every model is returned, at 200k when its card has no tier, because
-    long_cutoff_sql() needs to know which cards shadow a tier.
+    PROVIDER and differs between them: OpenAI's tier starts over 272k,
+    xAI's at 200k, Gemini Pro's over 200k, Haiku 5.5's over 100k, and
+    Anthropic's other models charge no premium at all. One global 200k
+    split filed every 200k-272k GPT call as long and the app then priced
+    it at a rate OpenAI does not charge. pricing.json is the only table:
+    the app carries no prices of its own, so there is nothing else to
+    agree with.
     """
-    merged = builtin_long_thresholds()
-    try:
-        cards = json.loads(PRICING.read_text()).get("models", {})
-    except (OSError, ValueError):
-        cards = {}
-    for model, card in cards.items():
-        if not isinstance(card, dict) or not any(
-            isinstance(card.get(k), (int, float)) for k in RATE_FIELDS
-        ):
+    default = default_cut(doc)
+    out = {}
+    for model, entry in (doc.get("models") or {}).items():
+        if model == "default":
             continue
-        merged[model] = (card.get("long") or {}).get("threshold_tokens")
-    return {
-        m: int(t) if t else LONG_CTX_THRESHOLD
-        for m, t in merged.items() if m != "default"
-    }
+        sched = threshold_schedule(entry, default)
+        if sched:
+            out[model] = sched
+    return out
 
 
-def gateway_id(model: str) -> str:
-    """The app's modelKeys() normalisation, as far as a long tier needs it.
+def schedule_sql(sched: list, day: str, before: str) -> str:
+    """One model's cut on the row's day, as SQL.
 
-    A gateway prefixes the ids it passes through (`openai/gpt-5.5`), and the
-    app resolves those to the plain card. Only the provider prefix matters
-    here: the providers with a long tier are not reached under Bedrock's
-    `anthropic.` names, and Anthropic itself has no tier.
+    The newest card whose `from` is on or before the day wins, the same rule
+    the app prices with. Days before the first dated card take `before`:
+    the default, or for a literal id, whatever its plain id would give,
+    since the app falls through to the next key when a key has no card
+    that day.
     """
-    return re.sub(r"^(?:[a-z0-9_-]+/)+", "", model.lower())
+    base = before
+    dated = []
+    for start, t in sched:
+        if start is None:
+            base = str(t)
+        else:
+            dated.append((start, str(t)))
+    # A card that keeps the threshold changes prices, not the split, so it
+    # needs no branch here.
+    kept, cur = [], base
+    for start, t in dated:
+        if t != cur:
+            kept.append((start, t))
+            cur = t
+    dated = kept
+    if not dated:
+        return base
+    # Newest first, so the first WHEN that matches is the card in force. Two
+    # cards on one day: the later one in the file wins, as in the app.
+    whens = " ".join(f"WHEN {day} >= '{start}' THEN {t}" for start, t in reversed(dated))
+    return f"(CASE {whens} ELSE {base} END)"
 
 
-def long_cutoff_sql(column: str) -> str:
-    """The per-model threshold as one SQL expression.
+def plain_id(model: str) -> str:
+    """The app's modelKeys() normalisation of an id, before the release date.
+
+    A gateway decorates the ids it passes through, and the app resolves
+    each of these to the plain card: a provider prefix (`openai/gpt-5.5`),
+    Bedrock's `us.anthropic.` prefix and `-v1:0` suffix, and OpenRouter's
+    dotted Claude version (`claude-haiku-5.5`). Claude Haiku 5.5 has a
+    long tier, so the Anthropic spellings matter here too.
+    """
+    m = model.lower()
+    m = re.sub(r"^(?:[a-z]{2,6}\.)?anthropic\.", "", m)
+    m = re.sub(r"^(?:[a-z0-9_-]+/)+", "", m)
+    m = re.sub(r"-v\d+(?::\d+)?$", "", m)
+    if m.startswith("claude-"):
+        m = re.sub(r"(\d)\.(\d)", r"\1-\2", m)
+    return m
+
+
+def undated_id(model: str) -> str:
+    """`claude-haiku-5-5-20261007` -> `claude-haiku-5-5`, as the app's undated().
+
+    A release stamp is three or more digits (`-20251001`, `-001`,
+    `-2026-04-01`), so a version such as `claude-opus-5-5` is never one.
+    """
+    return re.sub(r"-\d{3,}(?:-\d+)*$", "", model)
+
+
+def _bare_sql(x: str) -> str:
+    """The served-model rule's id normalisation: no `vendor/` prefix, no
+    `[1m]`, `@` as `-`, lowercase."""
+    return f"lower(replace(regexp_replace(regexp_replace({x}, '^.*/', ''), '\\[1m\\]$', ''), '@', '-'))"
+
+
+def served_as_sent_sql(sent: str, served: str) -> str:
+    """The engine's served_as_sent() (llm/served_model.rs) as SQL.
+
+    True when the served id is the sent id plus nothing, a `:tag`, or a
+    release stamp of three or more digits. Written with regexp_replace
+    rather than `~` so the test can run it in sqlite.
+    """
+    a, b = _bare_sql(sent), _bare_sql(served)
+    return (
+        f"(substr({b}, 1, length({a})) = {a} AND "
+        f"regexp_replace(substr({b}, length({a}) + 1), '^(:.*|-[0-9]{{3}}.*)?$', '') = '')"
+    )
+
+
+def priced_model_sql(model: str, served: str) -> str:
+    """The model a call is priced as, as the app's pricedModel() decides it.
+
+    `served_model` is the model the provider's reply names. When it is a
+    DIFFERENT model, the provider rerouted the call, and the model that ran
+    is the one billed. A snapshot or tag of the requested id keeps the
+    requested id, which the cards and the [1m] check key on. Rows from
+    before the engine recorded it have none and keep `model`.
+    """
+    same = f"coalesce({served}, '') = '' OR {served_as_sent_sql(model, served)}"
+    return f"(CASE WHEN {same} THEN {model} ELSE {served} END)"
+
+
+def asked_sql(model: str, served: str) -> str:
+    """The id Lucidos asked for, on a row another model answered. Else NULL."""
+    same = f"coalesce({served}, '') = '' OR {served_as_sent_sql(model, served)}"
+    return f"(CASE WHEN {same} THEN NULL ELSE {model} END)"
+
+
+REQ = "payload->>'model'"
+SERVED = "payload->>'served_model'"
+PRICED_MODEL = priced_model_sql(REQ, SERVED)
+ASKED = asked_sql(REQ, SERVED)
+
+
+def plain_id_sql(expr: str) -> str:
+    """plain_id() then undated_id(), as SQL over an already-lowercased id."""
+    m = f"regexp_replace({expr}, '^([a-z]{{2,6}}\\.)?anthropic\\.', '')"
+    m = f"regexp_replace({m}, '^([a-z0-9_-]+/)+', '')"
+    m = f"regexp_replace({m}, '-v[0-9]+(:[0-9]+)?$', '')"
+    m = f"(CASE WHEN {m} LIKE 'claude-%' THEN regexp_replace({m}, '([0-9])\\.([0-9])', '\\1-\\2', 'g') ELSE {m} END)"
+    return f"regexp_replace({m}, '-[0-9]{{3,}}(-[0-9]+)*$', '')"
+
+
+def long_cutoff_sql(column: str, day: str, doc: dict | None = None) -> str:
+    """The per-model, per-day cut as one SQL expression: a call is long when
+    its prompt is OVER this many tokens.
 
     The stored id carries the engine's decorations (`claude-opus-5@default[1m]`),
     and pricing keys on the bare model, so both sides are stripped the same way
     the app's `baseModel()` does it. The literal id is tried first, then the
-    id with its gateway prefix removed, matching the order the app looks up in.
+    id normalised as modelKeys() does and undated, matching the order the app
+    looks up in. `day` is the row's local day, so a card that starts
+    mid-history splits only the days it covers.
     """
+    if doc is None:
+        doc = read_pricing()
     bare = (
         f"regexp_replace(regexp_replace({column}, '\\[1m\\]$', ''), '@[^\\[\\]]*$', '')"
     )
-    plain = f"regexp_replace(lower({bare}), '^([a-z0-9_-]+/)+', '')"
-    rows = long_thresholds()
-    # The second pass keys on table ids that carry no prefix, lowercased: the
-    # app strips the prefix from the id it looks up, never from the table.
+    plain = plain_id_sql(f"lower({bare})")
+    rows = long_schedules(doc)
+    dflt = default_cut(doc)
+    default = str(dflt)
+    differs = lambda sched: any(t != dflt for _, t in sched)
+    # The second pass keys on table ids already in normalised form, undated:
+    # the app normalises the id it looks up, never the table, and matches a
+    # dated key to an undated id and back.
     plain_rows = {}
-    for m, t in sorted(rows.items()):
-        if gateway_id(m) == m.lower() and t != LONG_CTX_THRESHOLD:
-            plain_rows.setdefault(m.lower(), t)
-    # A literal match also has to pin 200k when a tier-less card would
-    # otherwise fall through to a tier under its plain id.
+    for m, sched in sorted(rows.items()):
+        if plain_id(m) == m.lower() and differs(sched):
+            plain_rows.setdefault(undated_id(m.lower()), sched)
+    # A literal match also has to pin the default when a tier-less card
+    # would otherwise fall through to a tier under its plain id.
     literal_rows = {
-        m: t for m, t in rows.items()
-        if t != LONG_CTX_THRESHOLD or gateway_id(m) in plain_rows
+        m: sched for m, sched in rows.items()
+        if differs(sched) or undated_id(plain_id(m)) in plain_rows
     }
     if not literal_rows and not plain_rows:
-        return str(LONG_CTX_THRESHOLD)
+        return default
     q = lambda s: "'" + s.replace("'", "''") + "'"
-    whens = lambda d: " ".join(f"WHEN {q(m)} THEN {t}" for m, t in sorted(d.items()))
     inner = (
-        f"CASE {plain} {whens(plain_rows)} ELSE {LONG_CTX_THRESHOLD} END"
-        if plain_rows else str(LONG_CTX_THRESHOLD)
+        f"CASE {plain} "
+        + " ".join(f"WHEN {q(m)} THEN {schedule_sql(s, day, default)}" for m, s in sorted(plain_rows.items()))
+        + f" ELSE {default} END"
+        if plain_rows else default
     )
     if not literal_rows:
         return f"({inner})"
-    return f"(CASE {bare} {whens(literal_rows)} ELSE {inner} END)"
+    whens = " ".join(
+        f"WHEN {q(m)} THEN {schedule_sql(s, day, f'({inner})' if plain_rows else default)}"
+        for m, s in sorted(literal_rows.items())
+    )
+    return f"(CASE {bare} {whens} ELSE {inner} END)"
 
 
-LONG_CUTOFF = long_cutoff_sql("payload->>'model'")
+def split_signature(cutoff_sql: str) -> str:
+    """A short fingerprint of the long-context split, stamped in daily.json.
+
+    The split happens HERE, at rollup time, and the app then prices each
+    day's `long` share at the card in force. A tier added, moved or dated
+    in pricing.json after a day was rolled up would price that day's old
+    split at the new card. A changed fingerprint rebuilds every day once,
+    so the two cannot drift.
+    """
+    return hashlib.sha256(cutoff_sql.encode()).hexdigest()[:16]
+
+
 # Days that keep their per-hour breakdown. The app draws hourly bars only when
 # exactly one day is selected, so a short window covers every case that can
 # reach it, and older days shed the 24x detail.
@@ -378,6 +608,10 @@ LOCAL_HOUR = f"(extract(hour FROM (created AT TIME ZONE '{TZ}'))::int)"
 E_DAY = f"((e.created AT TIME ZONE '{TZ}')::date)"
 E_HOUR = f"(extract(hour FROM (e.created AT TIME ZONE '{TZ}'))::int)"
 
+# Each row's cut comes from the card in force on that row's local day. Built
+# in main(), from the pricing.json of that run, and spliced in for this mark.
+LONG_CUT_MARK = "%(long_cut)s"
+
 # `usage` tuple, spelled once for the value and once inside the LAG.
 _USAGE_TUPLE = """(
         (payload->'usage'->>'input_tokens')::bigint,
@@ -395,6 +629,7 @@ COPY (
       local_hour AS hour,
       producer,
       model,
+      asked,
       count(*) AS calls,
       sum(in_tok) AS total_in,
       sum(cr) AS cache_read,
@@ -406,10 +641,10 @@ COPY (
       count(*) FILTER (WHERE in_tok >= 128000 AND in_tok < 200000) AS b3,
       count(*) FILTER (WHERE in_tok >= 200000 AND in_tok < 400000) AS b4,
       count(*) FILTER (WHERE in_tok >= 400000) AS b5,
-      sum(in_tok)  FILTER (WHERE in_tok >= long_cut) AS long_in,
-      sum(out_tok) FILTER (WHERE in_tok >= long_cut) AS long_out,
-      sum(cr)      FILTER (WHERE in_tok >= long_cut) AS long_cr,
-      sum(cw)      FILTER (WHERE in_tok >= long_cut) AS long_cw,
+      sum(in_tok)  FILTER (WHERE in_tok > long_cut) AS long_in,
+      sum(out_tok) FILTER (WHERE in_tok > long_cut) AS long_out,
+      sum(cr)      FILTER (WHERE in_tok > long_cut) AS long_cr,
+      sum(cw)      FILTER (WHERE in_tok > long_cut) AS long_cw,
       max(in_tok) AS max_in
     FROM (
       SELECT
@@ -420,13 +655,18 @@ COPY (
     + LOCAL_HOUR
     + """ AS local_hour,
         payload->>'producer' AS producer,
-        payload->>'model' AS model,
+        """
+    + PRICED_MODEL
+    + """ AS model,
+        """
+    + ASKED
+    + """ AS asked,
         (payload->'usage'->>'input_tokens')::bigint AS in_tok,
         coalesce((payload->'usage'->>'cache_read_tokens')::bigint, 0) AS cr,
         coalesce((payload->'usage'->>'cache_creation_tokens')::bigint, 0) AS cw,
         (payload->'usage'->>'output_tokens')::bigint AS out_tok,
         """
-    + LONG_CUTOFF
+    + LONG_CUT_MARK
     + """ AS long_cut,
         """
     + _USAGE_TUPLE
@@ -438,6 +678,7 @@ COPY (
       FROM events
       WHERE event_type = 'ContextCaptured'
         AND payload->'usage' IS NOT NULL
+        AND sequence <= %(max_seq)s
         AND thread_id IN (
           SELECT DISTINCT thread_id FROM events
           WHERE event_type = 'ContextCaptured'
@@ -448,7 +689,7 @@ COPY (
     ) s
     WHERE NOT dup
       AND local_day = ANY (%(days)s)
-    GROUP BY 1, 2, 3, 4
+    GROUP BY 1, 2, 3, 4, 5
   ) t
 ) TO STDOUT;
 """
@@ -509,6 +750,7 @@ COPY (
     ) m
     WHERE e.event_type = 'VoiceSessionEnded'
       AND e.payload->>'duration_secs' IS NOT NULL
+      AND e.sequence <= %(max_seq)s
       AND """
     + E_DAY
     + """ = ANY (%(days)s)
@@ -526,11 +768,24 @@ COPY (
 # with nothing for the user to do. History:
 #   1  everything before the stamp existed
 #   2  2026-10-02: long-context split uses the same card the app prices with
-ROLLUP_VERSION = 2
+#   3  2026-10-10: the split uses the card in force on the row's own day
+#      (pricing.json now keeps a dated price history per model)
+#   4  2026-10-10: a call is long only OVER the threshold unless its card says
+#      `inclusive`; a tier-less card splits at the global threshold; Bedrock
+#      and dotted Claude ids find their card, as in the app
+#   5  2026-10-10: a row is filed under the model it is priced as (the
+#      served model on a reroute) and carries `routed_from`. The split
+#      fingerprint also moves, but only when pricing.json has a tier.
+ROLLUP_VERSION = 5
 
 
-def needs_rebuild(state: dict | None, env: dict) -> str | None:
-    """Why this run must rebuild every day, or None to run incrementally."""
+def needs_rebuild(state: dict | None, env: dict, split: str | None = None) -> str | None:
+    """Why this run must rebuild every day, or None to run incrementally.
+
+    `split` is this run's split_signature(). A daily.json split under other
+    thresholds is rebuilt, since the incremental path would only re-split
+    the days that gained rows.
+    """
     if env.get("TOKEN_COST_REBUILD") == "1":
         return "TOKEN_COST_REBUILD=1"
     if state is None:
@@ -538,12 +793,21 @@ def needs_rebuild(state: dict | None, env: dict) -> str | None:
     have = int(state.get("rollup_version", 1) or 1)
     if have < ROLLUP_VERSION:
         return f"daily.json is from rollup version {have}, this is {ROLLUP_VERSION}"
+    if split is not None and state.get("long_split") != split:
+        return "the long-context thresholds in pricing.json changed"
     return None
 
 
 def main() -> None:
+    try:
+        # Split on the model the call is PRICED as, so a rerouted call splits
+        # at the card of the model that ran.
+        long_cut = long_cutoff_sql(PRICED_MODEL, LOCAL_DAY)
+    except PricingUnreadable as e:
+        sys.exit(f"not rolling up: {e}")
+    split = split_signature(long_cut)
     existing = json.loads(OUT.read_text()) if OUT.exists() else None
-    why = needs_rebuild(existing, os.environ)
+    why = needs_rebuild(existing, os.environ, split)
     if why:
         print(f"rebuilding every day: {why}")
 
@@ -570,14 +834,22 @@ def main() -> None:
         return
 
     day_array = "ARRAY[" + ",".join(f"'{d}'::date" for d in touched) + "]"
-    rows = json.loads(psql(ROLLUP_SQL.replace("%(days)s", day_array)))
+    # Every query stops at `max_seq`, the cursor this run writes. The app
+    # counts every row above the cursor live, so a row that landed while the
+    # rollup ran (a minute or more on a rebuild) would be in both the stored
+    # day and the live tail, and counted twice until the next run.
+    ceiling = lambda sql: sql.replace("%(days)s", day_array).replace("%(max_seq)s", str(max_seq))
+    rows = json.loads(psql(ceiling(ROLLUP_SQL.replace(LONG_CUT_MARK, long_cut))))
 
     # Diagnostic only, and counted separately: the rollup query filters the
     # duplicates out inside the same subquery, so it cannot also count them.
     raw_rows = int(
         psql(
-            "SELECT count(*) FROM events WHERE event_type = 'ContextCaptured' "
-            f"AND payload->'usage' IS NOT NULL AND {LOCAL_DAY} = ANY ({day_array});"
+            ceiling(
+                "SELECT count(*) FROM events WHERE event_type = 'ContextCaptured' "
+                "AND payload->'usage' IS NOT NULL AND sequence <= %(max_seq)s "
+                f"AND {LOCAL_DAY} = ANY (%(days)s);"
+            )
         )
         or 0
     )
@@ -609,6 +881,11 @@ def main() -> None:
         dst["long"]["cache_read"] += int(x["long_cr"] or 0)
         dst["long"]["cache_write"] += int(x["long_cw"] or 0)
         dst["max_in"] = max(dst["max_in"], int(x["max_in"]))
+        # Calls another model answered, by the id Lucidos asked for. Absent
+        # on nearly every bucket, so it is only written when it has a count.
+        if x.get("asked"):
+            routed = dst.setdefault("routed_from", {})
+            routed[x["asked"]] = routed.get(x["asked"], 0) + int(x["calls"])
 
     days = state.get("days", {})
     hours = state.get("hours", {})
@@ -629,7 +906,7 @@ def main() -> None:
     # that started before midnight is filed on the day it ENDED, because that
     # is the row carrying its duration; at these volumes (a handful of calls a
     # day, none near midnight) splitting one across two days buys nothing.
-    secs = json.loads(psql(SECONDS_SQL.replace("%(days)s", day_array)))
+    secs = json.loads(psql(ceiling(SECONDS_SQL)))
     total_secs = 0
     for x in secs:
         n = int(x["seconds"] or 0)
@@ -649,18 +926,25 @@ def main() -> None:
         "generated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "last_sequence": max(max_seq, since),
         "rollup_version": ROLLUP_VERSION,
+        "long_split": split,
         "bucket_edges": BUCKET_EDGES,
         "timezone": TZ,
         "hours_days": HOURS_DAYS,
         "note": (
             "'in' is TOTAL prompt size (uncached + cache_read + cache_write). "
             "uncached = in - cache_read - cache_write. 'long' is the subset of rows "
-            "whose prompt reached the model's own long-context threshold, from "
-            "pricing.json (272k on OpenAI's flagships, 200k elsewhere), for the "
-            "long-context price tier. "
+            "whose prompt went over the model's own long-context threshold (or "
+            "reached it, on a card marked inclusive), from the pricing.json card "
+            "in force on that day (272k on OpenAI's flagships, 100k on Haiku 5.5, "
+            "200k elsewhere), for the long-context price tier. 'long_split' "
+            "fingerprints those thresholds; a change rebuilds every day. "
             "A claude_code row whose usage tuple repeats the previous row in the same "
             "thread is dropped as a re-delivered streaming frame, not counted as a "
-            "second call. Other producers are never collapsed. 'seconds' is voice "
+            "second call. Other producers are never collapsed. A row is filed under "
+            "the model it is PRICED as: the reply's `served_model` when the provider "
+            "answered with a different model (a reroute), else the requested model; "
+            "'routed_from' counts those rerouted calls by the id that was asked for. "
+            "'seconds' is voice "
             "session wall-clock time, for a model billed by the minute rather than by "
             "tokens, taken from VoiceSessionEnded.duration_secs. Days are bucketed in "
             f"the local timezone ({TZ}). 'hours' holds the same shape keyed by local "

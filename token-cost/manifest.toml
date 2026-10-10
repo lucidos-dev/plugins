@@ -1,45 +1,49 @@
 id = "token-cost"
-version = "0.2.3"
+version = "0.3.0"
 name = "Token Cost"
-description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, cache-hit share, context-size distribution, and per-model/per-producer cost from a pricing table you edit in the app's own Settings tab. A dead stream, a gap behind it, or a stale rollup are each detected and named in the header instead of quietly showing plausible wrong numbers. Ships an incremental rollup script; ask Lucidos to set up an hourly rollup trigger after install."
+description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, cache-hit share, context-size distribution, and per-model/per-producer cost from a dated price history: each day is priced at the rate in force that day, and each call at the model that actually served it. A dead stream, a gap behind it, or a stale rollup are each detected and named in the header. Ships an incremental rollup script and a price-check recipe; setup fills in real prices and offers an hourly rollup and a daily price check."
 source = "https://github.com/lucidos-dev/plugins/tree/main/token-cost"
-engine = ">=0.27.0"
+engine = ">=0.47.2"
 categories = ["developer-tools", "data"]
 
 setup = """
-This plugin needs two things wired up: a schedule for its rollup script, and
-the proxy entry its currency refresh uses.
+This plugin needs four things wired up: a schedule for its rollup script, the
+proxy entry its currency refresh uses, a first set of model prices, and
+optionally a daily price check.
 
 1. Ask the user how often they want the rollup to run. Hourly at five past
-   (`0 5 * * * *`) is a good default: the dashboard folds live SSE calls on top
-   of the last rollup, so a longer gap costs nothing but a slower cold start.
+   (`0 5 * * * *`) is a good default: the dashboard folds live calls on top of
+   the last rollup, so a longer gap costs nothing but a slower cold start.
 2. Create a **script** trigger with that cron, `app_id = "token-cost"`, running
    `apps/token-cost/scripts/rollup.py`. Leave `go_to_review` off, it is silent
    housekeeping. The script prints one line and notifies nothing.
 3. Check that `data/config/apis.json` has a `frankfurter` entry. The Settings
    tab's **Update rates** button fetches exchange rates through
-   `lucidos.proxy('frankfurter')`, because an app frame cannot fetch a third-party
-   host itself. If the entry is missing, add it (no auth, the API needs no key):
+   `lucidos.proxy('frankfurter')`. If the entry is missing, add it (no auth):
 
    ```json
    "frankfurter": { "base_url": "https://api.frankfurter.dev/v1" }
    ```
 
-   Without it everything else works; only the currency refresh fails, with a
-   toast that says so.
-4. Run the rollup once so the dashboard has history immediately, then tell the user it
-   is done and link the app. The first run reads every `ContextCaptured` row in
-   the store and can take a few seconds; later runs resume from the recorded
-   sequence. When an update changes how days are summed, the next scheduled
-   run rebuilds every day once by itself, so there is nothing to rerun.
+4. Run the rollup once so `artifacts/token-cost/daily.json` exists. The first
+   run reads every `ContextCaptured` row and can take a minute on a busy
+   workspace; later runs resume from the recorded sequence.
+5. **Seed the prices.** The app carries no prices of its own, so until
+   `artifacts/token-cost/pricing.json` has cards every model shows as unpriced.
+   Load the knowhow `token-cost/daily-price-check` and follow its seed mode:
+   read each provider's official pricing page for every model in `daily.json`,
+   and write sourced price cards. If `pricing.json` already has models (an
+   update from 0.2.x), skip the seed and run a daily check instead, which only
+   adds what is missing or changed.
+6. Offer a daily price check, so a provider's price change reaches the
+   dashboard without the user typing it. Suggest 07:30 local time and let the
+   user pick. If they want it, create an intent trigger as the knowhow's last
+   section describes. If they decline, tell them prices stay as seeded until
+   they edit them in Settings.
+7. Tell the user it is done, say how many models are priced and which are not,
+   and link the app.
 
-The script talks to the workspace Postgres through `psql` with no connection
+The rollup talks to the workspace Postgres through `psql` with no connection
 arguments, relying on the `PG*` environment the engine gives every spawned
-script. It writes `artifacts/token-cost/daily.json`.
-
-No credentials, no API keys, nothing to connect. Pricing rates are built into
-the app and editable under its Settings tab, which writes
-`artifacts/token-cost/pricing.json` on first save. Model display labels need
-engine 0.39.0 or later (`lucidos.request`); on an older engine the dashboard
-shows raw model ids and says the labels are unavailable.
+script. Nothing here needs a credential or an API key.
 """
