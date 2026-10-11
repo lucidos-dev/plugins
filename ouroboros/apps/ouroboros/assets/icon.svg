@@ -1,8 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="28" fill="#1a1a2e"/>
-  <path d="M84.65 34.51A36 36 0 1 1 40.86 36.42" fill="none" stroke="#22c55e" stroke-width="17" stroke-linecap="round"/>
-  <path d="M40.86 36.42A36 36 0 0 1 58.99 28.35" fill="none" stroke="#22c55e" stroke-width="9" stroke-linecap="round"/>
-  <circle cx="75.12" cy="29.76" r="14.5" fill="#86efac"/>
-  <circle cx="71.5" cy="25.5" r="3.4" fill="#1a1a2e"/>
-  <circle cx="64" cy="67" r="10" fill="#ef4444"/>
+  <rect width="128" height="128" rx="28" fill="#0d1117"/>
+  <g stroke="#ffffff" stroke-opacity="0.06" stroke-width="1">
+    <path d="M11.5 11.5V116.5M11.5 11.5H116.5"/>
+    <path d="M26.5 11.5V116.5M11.5 26.5H116.5"/>
+    <path d="M41.5 11.5V116.5M11.5 41.5H116.5"/>
+    <path d="M56.5 11.5V116.5M11.5 56.5H116.5"/>
+    <path d="M71.5 11.5V116.5M11.5 71.5H116.5"/>
+    <path d="M86.5 11.5V116.5M11.5 86.5H116.5"/>
+    <path d="M101.5 11.5V116.5M11.5 101.5H116.5"/>
+    <path d="M116.5 11.5V116.5M11.5 116.5H116.5"/>
+  </g>
+  <rect x="43.1" y="28.1" width="11.8" height="11.8" rx="3" fill="#15803d"/>
+  <rect x="58.1" y="28.1" width="11.8" height="11.8" rx="3" fill="#198742"/>
+  <rect x="73.1" y="28.1" width="11.8" height="11.8" rx="3" fill="#1d8d47"/>
+  <rect x="88.1" y="28.1" width="11.8" height="11.8" rx="3" fill="#20944b"/>
+  <rect x="88.1" y="43.1" width="11.8" height="11.8" rx="3" fill="#249b50"/>
+  <rect x="88.1" y="58.1" width="11.8" height="11.8" rx="3" fill="#28a255"/>
+  <rect x="88.1" y="73.1" width="11.8" height="11.8" rx="3" fill="#2ca85a"/>
+  <rect x="88.1" y="88.1" width="11.8" height="11.8" rx="3" fill="#30af5e"/>
+  <rect x="73.1" y="88.1" width="11.8" height="11.8" rx="3" fill="#33b663"/>
+  <rect x="58.1" y="88.1" width="11.8" height="11.8" rx="3" fill="#37bc68"/>
+  <rect x="43.1" y="88.1" width="11.8" height="11.8" rx="3" fill="#3bc36d"/>
+  <rect x="28.1" y="88.1" width="11.8" height="11.8" rx="3" fill="#3fca72"/>
+  <rect x="28.1" y="73.1" width="11.8" height="11.8" rx="3" fill="#42d176"/>
+  <rect x="28.1" y="58.1" width="11.8" height="11.8" rx="3" fill="#46d77b"/>
+  <rect x="28.1" y="43.1" width="11.8" height="11.8" rx="3" fill="#4ade80"/>
+  <rect x="27.1" y="27.1" width="13.8" height="13.8" rx="4" fill="#86efac"/>
+  <circle cx="36.5" cy="31.0" r="2" fill="#0d1117"/><circle cx="36.5" cy="37.0" r="2" fill="#0d1117"/>
+  <circle cx="64.0" cy="64.0" r="10" fill="#ef4444" fill-opacity="0.22"/>
+  <rect x="59.0" y="59.0" width="10.0" height="10.0" rx="2.5" fill="#ef4444"/>
 </svg>

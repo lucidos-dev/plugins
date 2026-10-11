@@ -190,6 +190,24 @@ test('e2e', { skip: pw ? false : 'playwright-core not found (set PLAYWRIGHT_CORE
     });
   }
 
+  // On iOS a "playback" audio session keeps the game audible with the ring
+  // switch on silent. Desktop WebKit has no navigator.audioSession, so stub it.
+  await t.test('webkit: the game asks for a playback audio session', async () => {
+    const browser = await pw.webkit.launch();
+    try {
+      const page = await browser.newPage();
+      await page.addInitScript(() => {
+        const session = { type: 'auto' };
+        Object.defineProperty(Navigator.prototype, 'audioSession', { configurable: true, get: () => session });
+      });
+      await page.goto(baseUrl + '/app/index.html');
+      await page.waitForSelector('#name-screen', { state: 'visible' });
+      assert.equal(await page.evaluate(() => navigator.audioSession.type), 'playback');
+    } finally {
+      await browser.close();
+    }
+  });
+
   await t.test('webkit: storage screen opens and closes', async () => {
     const { browser, page, errors } = await openApp(pw.webkit, baseUrl);
     try {

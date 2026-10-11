@@ -29,6 +29,19 @@
 
   let audioUnlocked = false;
 
+  // iOS treats Web Audio as "ambient" sound and mutes it when the ring switch
+  // is on silent, while <audio> and <video> still play. A "playback" session
+  // makes the game sound like any other media. Safari 17+; older versions
+  // and other browsers do not have navigator.audioSession and are unaffected.
+  function usePlaybackSession() {
+    try {
+      if (navigator.audioSession && navigator.audioSession.type !== 'playback') {
+        navigator.audioSession.type = 'playback';
+      }
+    } catch (e) {}
+  }
+  usePlaybackSession();
+
   function runSilentUnlock() {
     const ctx = A.ctx;
     if (!ctx) return;
@@ -59,6 +72,7 @@
     }
 
     // Must be attempted synchronously from gestures on iOS before any awaits.
+    usePlaybackSession();
     if (!audioUnlocked || ctx.state !== 'running') runSilentUnlock();
 
     if (ctx.state !== 'running') {
