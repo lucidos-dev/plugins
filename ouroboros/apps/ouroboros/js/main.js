@@ -211,6 +211,10 @@
 
   function finishDeath() {
     clearDeathTimers();
+    // Drop the finished dissolve layers. Their forwards fill keeps a 14px
+    // blur filter alive under the start screen, which iOS WebKit composites
+    // with the text above it.
+    GameOver.cancel();
     death = null;
     replay = null;
     Screens.setOverlayFadeIn(false);

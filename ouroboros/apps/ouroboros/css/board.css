@@ -83,15 +83,11 @@
   animation: go-placement-glow 1.2s ease-in-out infinite;
 }
 
+/* Scale only. The glow is the static text-shadow above: animating `filter`
+   here made iOS WebKit draw the gold label from a blurry bitmap. */
 @keyframes go-placement-glow {
-  0%, 100% { 
-    filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.3));
-    transform: scale(1);
-  }
-  50% { 
-    filter: drop-shadow(0 0 18px rgba(255, 215, 0, 0.7));
-    transform: scale(1.04);
-  }
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
 }
 
 /* Game Over text, initial hidden state, JS drives the physics */

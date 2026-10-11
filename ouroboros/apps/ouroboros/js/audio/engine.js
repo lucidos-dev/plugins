@@ -42,6 +42,36 @@
   }
   usePlaybackSession();
 
+  // Fallback for iOS when navigator.audioSession is missing or ignored, as it
+  // can be inside a sandboxed iframe. Playing an HTML <audio> element from a
+  // user gesture moves the page's audio session to the "playback" category,
+  // and Web Audio then plays with the ring switch on silent too. The clip is
+  // a quarter second of silence played once per gesture, never looped, so iOS
+  // shows no lock-screen media controls.
+  const SILENT_WAV = 'data:audio/wav;base64,UklGRvQHAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YdAHAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  let silentTag = null;
+  function playSilentTag() {
+    if (!isIOS) return;
+    try {
+      if (!silentTag) {
+        silentTag = document.createElement('audio');
+        silentTag.setAttribute('playsinline', '');
+        silentTag.setAttribute('x-webkit-airplay', 'deny');
+        silentTag.preload = 'auto';
+        silentTag.loop = false;
+        silentTag.src = SILENT_WAV;
+      }
+      if (silentTag.paused) {
+        silentTag.currentTime = 0;
+        const p = silentTag.play();
+        if (p && p.catch) p.catch(() => {});
+      }
+    } catch (e) {}
+  }
+  A.playSilentTag = playSilentTag;
+
   function runSilentUnlock() {
     const ctx = A.ctx;
     if (!ctx) return;
@@ -73,6 +103,7 @@
 
     // Must be attempted synchronously from gestures on iOS before any awaits.
     usePlaybackSession();
+    playSilentTag();
     if (!audioUnlocked || ctx.state !== 'running') runSilentUnlock();
 
     if (ctx.state !== 'running') {
@@ -139,7 +170,20 @@
     const ctx = A.ctx = new AudioCtor({ latencyHint: 'interactive' });
     ctx.onstatechange = () => { if (A.ctx && A.ctx.state !== 'running') audioUnlocked = false; };
 
-    A.masterVol = ctx.createGain(); A.masterVol.gain.value = 0.92; A.masterVol.connect(ctx.destination);
+    // Limiter at the end of the chain. Music, sound effects and the echo can
+    // stack above full scale, and the browser then clips, which sounds like
+    // overdrive. iOS in the playback session plays at media volume, louder
+    // than the old ringer level, so the clipping is easy to hear there.
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -10;
+    limiter.knee.value = 6;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.12;
+    limiter.connect(ctx.destination);
+    A.limiter = limiter;
+
+    A.masterVol = ctx.createGain(); A.masterVol.gain.value = isIOS ? 0.55 : 0.8; A.masterVol.connect(limiter);
     A.musicVol = ctx.createGain(); A.musicVol.gain.value = MUSIC_LEVEL; A.musicVol.connect(A.masterVol);
     A.sfxVol = ctx.createGain(); A.sfxVol.gain.value = SFX_LEVEL; A.sfxVol.connect(A.masterVol);
 

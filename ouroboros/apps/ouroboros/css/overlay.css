@@ -4,12 +4,14 @@
 .overlay {
   position: absolute;
   inset: 0;
-  background: rgba(5, 10, 5, 0.88);
+  /* No backdrop-filter: on an iPhone, a backdrop blur on a layer whose
+     opacity animates (the fade-in after GAME OVER) makes WebKit rasterize the
+     overlay's text at a low scale, so the start screen came back soft. The
+     board behind is near-black, so a slightly denser tint looks the same. */
+  background: rgba(5, 10, 5, 0.92);
   display: flex;
   align-items: center;
   justify-content: center;
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
   transition: opacity 0.3s ease;
   z-index: 10;
   overflow: hidden;
@@ -53,16 +55,35 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  /* A fixed glow. Animating `filter` on text makes iOS WebKit redraw the
+     title from a low-resolution bitmap, which is what blurred it. The pulse
+     now lives on ::after and animates opacity only, so the text stays sharp. */
   filter: drop-shadow(0 0 12px rgba(74, 222, 128, 0.5)) drop-shadow(0 0 30px rgba(34, 197, 94, 0.25));
-  animation: venom-title-pulse 2.5s ease-in-out infinite alternate;
   letter-spacing: 1px;
   white-space: nowrap;
+  position: relative;
+  isolation: isolate;
+}
+
+.venom-title::after {
+  content: '';
+  position: absolute;
+  inset: -20% -6%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(74, 222, 128, 0.18), transparent 70%);
+  opacity: 0.5;
+  animation: venom-title-pulse 2.5s ease-in-out infinite alternate;
 }
 
 @keyframes venom-title-pulse {
-  0% { filter: drop-shadow(0 0 8px rgba(74, 222, 128, 0.4)) drop-shadow(0 0 20px rgba(34, 197, 94, 0.2)); }
-  50% { filter: drop-shadow(0 0 16px rgba(74, 222, 128, 0.65)) drop-shadow(0 0 35px rgba(34, 197, 94, 0.35)); }
-  100% { filter: drop-shadow(0 0 10px rgba(74, 222, 128, 0.45)) drop-shadow(0 0 24px rgba(34, 197, 94, 0.22)); }
+  0% { opacity: 0.35; }
+  50% { opacity: 1; }
+  100% { opacity: 0.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .venom-title::after { animation: none; }
 }
 
 #start-screen {
@@ -167,10 +188,12 @@
   text-transform: uppercase;
 }
 
+@media (hover: hover) {
 .player-chip:hover {
-  background: rgba(74, 222, 128, 0.12);
-  border-color: rgba(74, 222, 128, 0.35);
-  color: #4ade80;
+    background: rgba(74, 222, 128, 0.12);
+    border-color: rgba(74, 222, 128, 0.35);
+    color: #4ade80;
+  }
 }
 
 .player-chip:active {
@@ -267,16 +290,21 @@
   max-width: 17.5rem;
 }
 
-.btn-switch:hover {
-  background: rgba(74, 222, 128, 0.08);
-  border-color: rgba(74, 222, 128, 0.3);
-  color: #4ade80;
-}
-
-.btn-play:hover {
-  background: rgba(74, 222, 128, 0.12);
-  border-color: rgba(74, 222, 128, 0.35);
-  color: #4ade80;
-  box-shadow: 0 0 16px rgba(74, 222, 128, 0.3);
-  transform: scale(1.015);
+/* Hover only where a real pointer hovers. On an iPhone a tap leaves :hover
+   stuck, and the stuck scale(1.015) drew the button text from a scaled,
+   soft bitmap. */
+@media (hover: hover) {
+  .btn-switch:hover {
+    background: rgba(74, 222, 128, 0.08);
+    border-color: rgba(74, 222, 128, 0.3);
+    color: #4ade80;
+  }
+  
+  .btn-play:hover {
+    background: rgba(74, 222, 128, 0.12);
+    border-color: rgba(74, 222, 128, 0.35);
+    color: #4ade80;
+    box-shadow: 0 0 16px rgba(74, 222, 128, 0.3);
+    transform: scale(1.015);
+  }
 }
