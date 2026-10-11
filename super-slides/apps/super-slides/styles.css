@@ -299,6 +299,19 @@ h3 { font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 600; let
 }
 .card h3 { margin-bottom: 10px; color: #fff; }
 .card p, .card li { font-size: 14px; color: var(--text-dim); line-height: 1.7; }
+/* A list reads like a list: left-aligned, in the same column as the slide
+   header. Without this it inherits the slide's `center` class, so every
+   line is centred and the bullets drift with the text. */
+.ss-list {
+  width: 100%;
+  max-width: var(--content-max-w);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1.4em;
+  text-align: left;
+}
+.slide > .ss-list { margin-top: var(--section-gap); }
+.ss-list li { padding: 2px 0; }
 .card ul { list-style: none; padding: 0; }
 .card ul li { padding: 5px 0; padding-left: 20px; position: relative; }
 .card ul li::before { content: '→'; position: absolute; left: 0; color: var(--accent); font-weight: 600; }

@@ -201,11 +201,11 @@ SS.icon = (emoji) =>
 
 SS.list = (items, path) => {
   if (path) {
-    return `<ul>${items.map((item, i) =>
+    return `<ul class="ss-list">${items.map((item, i) =>
       `<li class="ss-editable" data-ss-path="${path}" data-ss-prop="items[${i}]">${item}</li>`
     ).join('')}</ul>`;
   }
-  return `<ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>`;
+  return `<ul class="ss-list">${items.map(i => `<li>${i}</li>`).join('')}</ul>`;
 };
 
 // ── Skill chips ──

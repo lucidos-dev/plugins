@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Super Slides layout tests</title>
+<!-- Layout tests need the real stylesheet and the real components, so they run
+     on their own page. index.html cannot load components.js: it declares
+     `const SS`, which clashes with the stub namespace there. -->
+<link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+<div id="stage" class="deck" style="position:relative;width:100%;height:640px"></div>
+<div id="results"></div>
+<script src="harness.js"></script>
+<script src="../components.js"></script>
+<script src="test-list-layout.js"></script>
+<script>bootstrap('results');</script>
+</body>
+</html>
