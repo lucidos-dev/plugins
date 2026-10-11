@@ -1,4 +1,5 @@
 {
   "name": "Ouroboros",
-  "description": "Classic Snake game with a highscore leaderboard"
+  "description": "Classic Snake game with a highscore leaderboard",
+  "icon": "assets/icon.svg"
 }
