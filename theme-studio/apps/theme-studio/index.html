@@ -7,7 +7,7 @@
     <script src="/api/v1/sdk-prefs.js"></script>
     <link rel="stylesheet" href="/api/v1/sdk-iframe.css">
     <script src="/api/v1/sdk.js"></script>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=clip1">
   </head>
   <body>
     <main class="studio">
@@ -118,16 +118,16 @@
       <section class="panel error-box" id="error-box" hidden></section>
 
       <div class="action-bar">
-        <div class="button-group">
-          <button class="action-btn" id="btn-save-apply" type="button">Save and apply</button>
-          <button class="action-btn action-btn-secondary" id="btn-save" type="button">Save</button>
-          <button class="action-btn action-btn-secondary" id="btn-cancel" type="button">Cancel</button>
-          <button class="action-btn action-btn-danger" id="btn-delete" type="button" hidden>Delete</button>
-        </div>
         <span class="hint dirty-note" id="dirty-note"></span>
+        <div class="button-group">
+          <button class="action-btn action-btn-danger" id="btn-delete" type="button" hidden>Delete</button>
+          <button class="action-btn action-btn-secondary" id="btn-cancel" type="button">Cancel</button>
+          <button class="action-btn action-btn-secondary" id="btn-save" type="button">Save</button>
+          <button class="action-btn" id="btn-save-apply" type="button">Save and apply</button>
+        </div>
       </div>
     </main>
-    <script src="parts.js"></script>
-    <script src="app.js"></script>
+    <script src="parts.js?v=clip1"></script>
+    <script src="app.js?v=clip1"></script>
   </body>
 </html>
