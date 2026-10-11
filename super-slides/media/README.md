@@ -36,4 +36,4 @@ The app reads its address hash, so you or Lucidos can link straight to a view:
 
 - Decks are plain files in your workspace. Lucidos can edit them, git keeps their history, and uninstalling the plugin never deletes them.
 - The app keeps its resume position in `artifacts/super-slides/state.json`, so every device opens where you stopped.
-- The screenshots show the author's "Lucidos Architecture" deck. It is a sample, and it does not ship with the plugin.
+- The screenshots use a made-up demo deck about a balcony herb garden. It does not ship with the plugin.
