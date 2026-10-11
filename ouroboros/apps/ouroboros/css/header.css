@@ -14,7 +14,7 @@
 }
 
 .header h1 {
-  font-size: 1.4rem;
+  font-size: min(1.4rem, 6cqi);
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.5px;
@@ -37,11 +37,15 @@
   display: flex;
   align-items: center;
   gap: var(--space-md);
+  min-width: 0;
 }
 
+/* min-width: 0 lets a long name shrink to its ellipsis on a narrow phone
+   instead of pushing the header off the screen. */
 .player-badge {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: var(--space-xs);
   background: rgba(74, 222, 128, 0.22);
   border: 1px solid rgba(74, 222, 128, 0.45);
@@ -65,6 +69,7 @@
   font-size: 0.95rem;
   color: var(--text-primary);
   max-width: 7.5rem;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -17,7 +17,7 @@
 /* Narrow: everything stacked */
 @container (max-width: 44.75rem) {
   .game-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "game"
       "daily"
@@ -27,5 +27,8 @@
   }
   .side-panel {
     width: 100%;
+  }
+  .header-right {
+    gap: var(--space-sm);
   }
 }

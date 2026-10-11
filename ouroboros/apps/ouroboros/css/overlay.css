@@ -44,8 +44,10 @@
 }
 
 /* Venom-glow title for start screen */
+/* Shrinks with .game-container (a size container) so ARE YOU READY? fits a
+   320px phone. */
 .venom-title {
-  font-size: 2.4rem !important;
+  font-size: min(2.4rem, 10.5cqi) !important;
   font-weight: 900 !important;
   background: linear-gradient(180deg, #e0ffd0 0%, #4ade80 30%, #22c55e 60%, #059669 100%);
   -webkit-background-clip: text;
