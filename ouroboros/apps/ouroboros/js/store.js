@@ -13,7 +13,7 @@
 // places:
 //   - Discovered: every proxy in data/config/apis.json whose name starts with
 //     `snake-storage-` is a board. Setting up the proxy is all it takes; the
-//     label comes from the rest of the name ('snake-storage-familien' → 'Familien').
+//     label comes from the rest of the name ('snake-storage-family' → 'Family').
 //   - Registered: boards added by hand on this device (older versions had a
 //     form for it). Kept so existing setups keep working.
 // The active board's proxy is what `lucidos.proxy(<name>).fetch(...)` is
@@ -52,11 +52,11 @@
 
   const HIGHSCORES_PATH = 'artifacts/games/snake-highscores.json';
   const PLAYERS_PATH    = 'artifacts/games/players.json';
-  const LOCAL_LABEL     = 'Lokalt';
+  const LOCAL_LABEL     = 'Local';
   const APIS_PATH       = 'config/apis.json';
   const BOARD_PROXY_RE  = /^snake-storage-([a-z0-9_-]+)$/i;
 
-  // 'snake-storage-familien' → 'Familien', 'snake-storage-jobb_gjeng' → 'Jobb gjeng'
+  // 'snake-storage-family' → 'Family', 'snake-storage-work_crew' → 'Work crew'
   function labelForProxy(proxy) {
     const m = BOARD_PROXY_RE.exec(proxy || '');
     if (!m) return proxy;
@@ -112,9 +112,9 @@
         if (!res.ok) {
           const text = await res.text().catch(() => '');
           const hint = (res.status === 404 || res.status === 502)
-            ? ` (proxy \`${proxyName}\` not configured — be Lucidos legge den til i data/config/apis.json)`
+            ? ` (proxy \`${proxyName}\` not configured: ask Lucidos to add it to data/config/apis.json)`
             : '';
-          throw new Error(`Delt lager (${label}) ${method} /${path}: ${res.status}${hint} ${text}`.trim());
+          throw new Error(`Shared store (${label}) ${method} /${path}: ${res.status}${hint} ${text}`.trim());
         }
         const text = await res.text();
         if (!text || text === 'null') return method === 'GET' ? null : undefined;
@@ -209,7 +209,7 @@
       // Activate one of the registered shared boards by proxy name.
       setActiveBoard(proxyName) {
         const board = findBoard(proxyName);
-        if (!board) throw new Error(`Ukjent toppliste: ${proxyName}`);
+        if (!board) throw new Error(`Unknown leaderboard: ${proxyName}`);
         storage.set(LS_MODE, 'shared');
         storage.set(LS_ACTIVE, proxyName);
         useShared(board);
@@ -219,13 +219,13 @@
       addBoard({ label, proxy }) {
         const cleanLabel = (label || '').trim();
         const cleanProxy = (proxy || '').trim();
-        if (!cleanLabel) throw new Error('Etikett kreves');
-        if (!cleanProxy) throw new Error('Proxy-navn kreves');
+        if (!cleanLabel) throw new Error('Label required');
+        if (!cleanProxy) throw new Error('Proxy name required');
         if (!/^[a-z0-9_-]+$/i.test(cleanProxy)) {
-          throw new Error('Proxy-navn kan bare ha bokstaver, tall, _ og -');
+          throw new Error('Proxy name may only contain letters, numbers, _ and -');
         }
         if (allBoards().some(b => b.proxy === cleanProxy)) {
-          throw new Error(`Toppliste \`${cleanProxy}\` finnes allerede`);
+          throw new Error(`Leaderboard \`${cleanProxy}\` already exists`);
         }
         boards.push({ label: cleanLabel, proxy: cleanProxy });
         saveBoards(boards);
@@ -246,9 +246,9 @@
         if (!res.ok) {
           const text = await res.text().catch(() => '');
           const hint = (res.status === 404 || res.status === 502)
-            ? `\n\nProxy \`${proxyName}\` finnes nok ikke i data/config/apis.json. Be Lucidos sette den opp.`
+            ? `\n\nProxy \`${proxyName}\` is probably missing from data/config/apis.json. Ask Lucidos to set it up.`
             : '';
-          throw new Error(`Lesing feilet: ${res.status} ${text}${hint}`.trim());
+          throw new Error(`Read failed: ${res.status} ${text}${hint}`.trim());
         }
         res = await proxy.fetch(probePath, {
           method: 'PUT',
@@ -257,7 +257,7 @@
         });
         if (!res.ok) {
           const text = await res.text().catch(() => '');
-          throw new Error(`Skriving feilet: ${res.status} ${text}`);
+          throw new Error(`Write failed: ${res.status} ${text}`);
         }
         proxy.fetch(probePath, { method: 'DELETE' }).catch(() => {});
         return true;

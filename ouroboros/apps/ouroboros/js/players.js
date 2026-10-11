@@ -9,7 +9,13 @@
   'use strict';
 
   const LS_PLAYER = 'snake-player';
-  const ANONYMOUS = 'ANONYM';
+  const ANONYMOUS = 'ANONYMOUS';
+  // Versions before 0.4.1 stored blank players as 'ANONYM'.
+  const LEGACY_ANONYMOUS = 'ANONYM';
+
+  function isAnonymous(name) {
+    return name === ANONYMOUS || name === LEGACY_ANONYMOUS;
+  }
 
   function normalize(name) {
     return (name || '').trim().toUpperCase();
@@ -22,7 +28,7 @@
 
     async function add(name) {
       const n = normalize(name);
-      if (!n || n === ANONYMOUS || known.includes(n)) return;
+      if (!n || isAnonymous(n) || known.includes(n)) return;
       known.push(n);
       try { await store.writePlayers(known); } catch (e) { console.warn('writePlayers failed', e); }
     }
@@ -31,7 +37,7 @@
       get current() { return current; },
 
       // Known players worth offering as quick picks
-      list() { return known.filter(p => p && p !== ANONYMOUS); },
+      list() { return known.filter(p => p && !isAnonymous(p)); },
 
       async load() {
         try {

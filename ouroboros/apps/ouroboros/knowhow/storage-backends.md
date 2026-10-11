@@ -1,18 +1,18 @@
 ---
 name: Snake Storage Backends
-description: How Ouroboros (snake-game) stores highscores and players — local-only via lucidos.data, or one of N shared scoreboards via Lucidos proxies. Covers the js/store.js abstraction, the multi-board picker UI, the proxy contract, the RTDB layout, and recommended security rules.
+description: How Ouroboros (snake-game) stores highscores and players: local-only via lucidos.data, or one of N shared scoreboards via Lucidos proxies. Covers the js/store.js abstraction, the multi-board picker UI, the proxy contract, the RTDB layout, and recommended security rules.
 ---
 
 ## Why this design exists
 
 Ouroboros started as a single-user app reading/writing JSON in the local Lucidos workspace (`artifacts/games/snake-highscores.json`, `artifacts/games/snake-players.json`). For a shared family/friends scoreboard the data needs to live somewhere accessible from every player's machine, but:
 
-- **No URLs or auth tokens may live in the iframe.** Plugin recipients install the app and immediately see somebody else's Firebase URL and token unless we keep both server-side. Same reason the heatpump app talks to Comfort Cloud through a proxy entry — the iframe never sees credentials.
-- **A user can play in several scoreboards.** Family list, work-friends list, public list — all different Firebase backends, all simultaneously available, the user picks which one is "active" right now.
+- **No URLs or auth tokens may live in the iframe.** Plugin recipients install the app and immediately see somebody else's Firebase URL and token unless we keep both server-side. Same reason the heatpump app talks to Comfort Cloud through a proxy entry; the iframe never sees credentials.
+- **A user can play in several scoreboards.** Family list, work-friends list, public list. All different Firebase backends, all available at once, and the user picks which one is "active" right now.
 
-So the app keeps a *list of boards*. One is always "Lokalt" (private, lucidos.data). Each additional board is a **named pointer to a Lucidos proxy entry**: the proxy holds the real URL + auth, the app just calls `lucidos.proxy(<name>).fetch(...)`.
+So the app keeps a *list of boards*. One is always "Local" (private, lucidos.data). Each additional board is a **named pointer to a Lucidos proxy entry**: the proxy holds the real URL + auth, the app just calls `lucidos.proxy(<name>).fetch(...)`.
 
-**Boards are discovered, not entered.** Every proxy in `data/config/apis.json` whose name starts with `snake-storage-` shows up in the 💾 screen by itself (`store.refreshBoards()`). The label is the rest of the name: `snake-storage-familien` → "Familien". To add a shared board, create the proxy; nothing else. Discovery reads only the names from apis.json.
+**Boards are discovered, not entered.** Every proxy in `data/config/apis.json` whose name starts with `snake-storage-` shows up in the 💾 screen by itself (`store.refreshBoards()`). The label is the rest of the name: `snake-storage-family` → "Family". To add a shared board, create the proxy; nothing else. Discovery reads only the names from apis.json.
 
 ## File layout
 
@@ -40,8 +40,8 @@ In the browser it is `window.Ouroboros.createStore`; under Node it is
 ```
 store.getMode()          → 'local' | 'shared'
 store.isShared()         → boolean
-store.getActiveProxy()   → string | null  (e.g. 'snake-storage-familien')
-store.getActiveLabel()   → string         (e.g. 'Familien' or 'Lokalt')
+store.getActiveProxy()   → string | null  (e.g. 'snake-storage-family')
+store.getActiveLabel()   → string         (e.g. 'Family' or 'Local')
 
 store.listBoards()       → [{ label, proxy, discovered }]   shared boards only
 store.refreshBoards()    → re-reads apis.json for snake-storage-* proxies
@@ -109,25 +109,25 @@ Players doc shape (a bare array):
 
 ## Proxy contract (data/config/apis.json)
 
-A shared board is just a Lucidos proxy entry. Suggested naming: `snake-storage-<group>` (e.g. `snake-storage-familien`). Once the entry exists, the board appears in the app's 💾 screen; there is nothing to enter in the app.
+A shared board is just a Lucidos proxy entry. Suggested naming: `snake-storage-<group>` (e.g. `snake-storage-family`). Once the entry exists, the board appears in the app's 💾 screen; there is nothing to enter in the app.
 
-Minimal, no auth (open RTDB rules — fine for low-stakes lists):
+Minimal, no auth (open RTDB rules, fine for low-stakes lists):
 ```json
-"snake-storage-familien": {
+"snake-storage-family": {
   "base_url": "https://<your-project>-default-rtdb.firebaseio.com"
 }
 ```
 
 With a Firebase database secret as RTDB query-param auth:
 ```json
-"snake-storage-familien": {
+"snake-storage-family": {
   "base_url": "https://<your-project>-default-rtdb.firebaseio.com",
   "auth": {
     "pipeline": [
       { "type": "static_credential",
         "kind": "query_param",
         "param_name": "auth",
-        "credential": "snake-storage-familien-token" }
+        "credential": "snake-storage-family-token" }
     ]
   }
 }
@@ -139,9 +139,9 @@ The `credential` value is the name of an entry in the Lucidos secret store (adde
 
 Run when adding a board, when switching to one, and on demand from the action button. Sequence:
 
-1. `GET /snake/_probe.json` — proves the proxy resolves and (if auth is required) the credential is good.
-2. `PUT /snake/_probe.json` with body `true` — proves writes are allowed.
-3. `DELETE /snake/_probe.json` — cleanup; failure here is logged but not fatal.
+1. `GET /snake/_probe.json`: proves the proxy resolves and (if auth is required) the credential is good.
+2. `PUT /snake/_probe.json` with body `true`: proves writes are allowed.
+3. `DELETE /snake/_probe.json`: cleanup; failure here is logged but not fatal.
 
 Any non-2xx in steps 1–2 surfaces as the error message in the storage screen status area. The app falls back to local mode and re-renders the badge (💾) so the user isn't stuck in a broken shared state.
 
@@ -155,13 +155,13 @@ For an open family/friends list (anyone with the URL can read/write the snake na
 }
 ```
 
-For a private list (Firebase database secret only — what the `query_param auth` recipe above expects):
+For a private list (Firebase database secret only, what the `query_param auth` recipe above expects):
 ```json
 { "rules": { ".read": false, ".write": false } }
 ```
 The Lucidos proxy attaches `?auth=<secret>` and the database secret bypasses rules.
 
-For a multi-user setup with per-user auth, switch the proxy to use a Google ID token (`script_handshake`) and tighten the rules to `auth != null` — out of scope here, see `system-knowhow/building-an-auth-handshake.md`.
+For a multi-user setup with per-user auth, switch the proxy to use a Google ID token (`script_handshake`) and tighten the rules to `auth != null`. That is out of scope here; see `system-knowhow/building-an-auth-handshake.md`.
 
 ## When packaging as a plugin
 
@@ -176,9 +176,9 @@ It does **not** ship:
 The plugin manifest's `setup` field should walk the installer LLM through:
 1. Asking whether they want only-local, want to join an existing scoreboard (paste proxy name), or want to set up a new one.
 2. If new: ask for the Firebase RTDB URL, write a `snake-storage-<group>` entry to `data/config/apis.json`, optionally request the database secret via `request_credential` and wire the `query_param` auth layer.
-3. Tell the user to open Ouroboros → 💾 → "Legg til delt liste" and enter the proxy name.
+3. Tell the user to open Ouroboros → 💾 and tap the new board to activate it. The app finds it by itself; there is nothing to enter.
 
-That keeps the plugin install ceremony explicit — every recipient picks their own backend instead of inheriting the author's.
+That keeps the plugin install ceremony explicit: every recipient picks their own backend instead of inheriting the author's.
 
 ## Common failure modes
 
@@ -186,6 +186,6 @@ That keeps the plugin install ceremony explicit — every recipient picks their 
 | ---------------------------------------- | -------------------------------------------------------------------- |
 | `404 Proxy 'snake-storage-x' not found`  | Proxy entry missing in `data/config/apis.json`. Add it, no restart needed. |
 | `401 Permission denied`                  | Auth credential wrong/missing for the configured RTDB rules.         |
-| `400 Invalid data; couldn't parse JSON`  | RTDB requires `.json` suffix on every path — js/store.js does this; check you didn't add a custom path that drops it. |
+| `400 Invalid data; couldn't parse JSON`  | RTDB requires `.json` suffix on every path. js/store.js does this; check you didn't add a custom path that drops it. |
 | Highscores merge instead of replace      | RTDB `PUT` overwrites. If you ever need partial updates, switch to `PATCH`. |
-| Two players race to save and lose scores | Pre-write read merge is in `addHighscore` — keep it. Concurrent writes within the same second can still drop a row; acceptable for a family game. |
+| Two players race to save and lose scores | Pre-write read merge is in `addHighscore`; keep it. Concurrent writes within the same second can still drop a row; acceptable for a family game. |

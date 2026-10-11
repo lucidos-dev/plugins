@@ -58,8 +58,8 @@ test('addEntry places a new entry after existing equal scores', () => {
   assert.deepEqual(board.highscores.map(e => e.name), ['OLD', 'NEW']);
 });
 
-test('addEntry names a blank player ANONYM', () => {
-  assert.equal(Scores.addEntry(boardWith([]), { name: '', score: 1 }).entry.name, 'ANONYM');
+test('addEntry names a blank player ANONYMOUS', () => {
+  assert.equal(Scores.addEntry(boardWith([]), { name: '', score: 1 }).entry.name, 'ANONYMOUS');
 });
 
 test('ranks uses competition ranking', () => {
@@ -73,7 +73,7 @@ test('formatDate turns ISO dates into dd.mm.yy', () => {
 });
 
 test('placementLabel', () => {
-  assert.equal(Scores.placementLabel({ type: 'legend', rank: 1 }), 'NR 1, DU ER EN LEGENDE!');
-  assert.equal(Scores.placementLabel({ type: 'daily', rank: 3 }), 'DAGENS 3. BESTE!');
+  assert.equal(Scores.placementLabel({ type: 'legend', rank: 1 }), 'NO 1, YOU\'RE A LEGEND!');
+  assert.equal(Scores.placementLabel({ type: 'daily', rank: 3 }), 'TODAY\'S #3 BEST!');
   assert.equal(Scores.placementLabel(null), '');
 });

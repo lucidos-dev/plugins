@@ -35,15 +35,15 @@ test('a fresh store is local', () => {
   const store = createStore({ lucidos: fakeLucidos, storage: memoryStorage() });
   assert.equal(store.getMode(), 'local');
   assert.equal(store.isShared(), false);
-  assert.equal(store.getActiveLabel(), 'Lokalt');
+  assert.equal(store.getActiveLabel(), 'Local');
   assert.deepEqual(store.listBoards(), []);
 });
 
 test('the store still works when localStorage throws', () => {
   const broken = createSafeStorage(() => { throw new Error('SecurityError'); });
   const store = createStore({ lucidos: fakeLucidos, storage: broken });
-  store.addBoard({ label: 'Familien', proxy: 'snake-storage-familien' });
-  store.setActiveBoard('snake-storage-familien');
+  store.addBoard({ label: 'Family', proxy: 'snake-storage-family' });
+  store.setActiveBoard('snake-storage-family');
   assert.equal(store.isShared(), true);
 });
 
@@ -58,23 +58,23 @@ test('local backend round-trips highscores through lucidos.data', async () => {
 
 test('addBoard validates label and proxy name', () => {
   const store = createStore({ lucidos: fakeLucidos, storage: memoryStorage() });
-  assert.throws(() => store.addBoard({ label: '', proxy: 'x' }), /Etikett/);
-  assert.throws(() => store.addBoard({ label: 'A', proxy: '' }), /Proxy-navn kreves/);
-  assert.throws(() => store.addBoard({ label: 'A', proxy: 'bad name!' }), /bokstaver/);
+  assert.throws(() => store.addBoard({ label: '', proxy: 'x' }), /Label required/);
+  assert.throws(() => store.addBoard({ label: 'A', proxy: '' }), /Proxy name required/);
+  assert.throws(() => store.addBoard({ label: 'A', proxy: 'bad name!' }), /letters, numbers/);
   store.addBoard({ label: 'A', proxy: 'ok-name' });
-  assert.throws(() => store.addBoard({ label: 'B', proxy: 'ok-name' }), /finnes allerede/);
+  assert.throws(() => store.addBoard({ label: 'B', proxy: 'ok-name' }), /already exists/);
 });
 
 test('the active shared board survives a reload', () => {
   const storage = memoryStorage();
   const first = createStore({ lucidos: fakeLucidos, storage });
-  first.addBoard({ label: 'Jobb', proxy: 'snake-storage-jobb' });
-  first.setActiveBoard('snake-storage-jobb');
+  first.addBoard({ label: 'Work', proxy: 'snake-storage-work' });
+  first.setActiveBoard('snake-storage-work');
 
   const second = createStore({ lucidos: fakeLucidos, storage });
   assert.equal(second.getMode(), 'shared');
-  assert.equal(second.getActiveProxy(), 'snake-storage-jobb');
-  assert.equal(second.getActiveLabel(), 'Jobb');
+  assert.equal(second.getActiveProxy(), 'snake-storage-work');
+  assert.equal(second.getActiveLabel(), 'Work');
 });
 
 test('removing the active board falls back to local', () => {
@@ -110,52 +110,58 @@ test('players: setCurrent normalizes, remembers and adds to the known list', asy
 
 test('players: a blank name is anonymous and never listed', async () => {
   const players = createPlayers({ store: { readPlayers: async () => [], writePlayers: async () => {} }, storage: memoryStorage() });
-  assert.equal(players.setCurrent('   '), 'ANONYM');
+  assert.equal(players.setCurrent('   '), 'ANONYMOUS');
   assert.deepEqual(players.list(), []);
+});
+
+test('players: the old ANONYM name from earlier versions is not offered as a quick pick', async () => {
+  const players = createPlayers({ store: { readPlayers: async () => ['ANONYM', 'ANNA'], writePlayers: async () => {} }, storage: memoryStorage() });
+  await players.load();
+  assert.deepEqual(players.list(), ['ANNA']);
 });
 
 // ===== Board discovery from apis.json =====
 const { labelForProxy, boardsFromApis, APIS_PATH } = require('../../js/store.js');
 
 test('labelForProxy turns the proxy name into a friendly label', () => {
-  assert.equal(labelForProxy('snake-storage-familien'), 'Familien');
-  assert.equal(labelForProxy('snake-storage-jobb_gjeng'), 'Jobb gjeng');
+  assert.equal(labelForProxy('snake-storage-family'), 'Family');
+  assert.equal(labelForProxy('snake-storage-work_crew'), 'Work crew');
   assert.equal(labelForProxy('something-else'), 'something-else');
 });
 
 test('boardsFromApis picks only snake-storage-* entries, in both apis.json shapes', () => {
-  const byKey = { binance: {}, 'snake-storage-familien': {}, 'snake-storage-jobb': {}, 'snake-storagex': {} };
-  assert.deepEqual(boardsFromApis(byKey).map(b => b.proxy), ['snake-storage-familien', 'snake-storage-jobb']);
-  const asList = [{ name: 'openai' }, { name: 'snake-storage-venner' }];
-  assert.deepEqual(boardsFromApis(asList), [{ label: 'Venner', proxy: 'snake-storage-venner', discovered: true }]);
+  const byKey = { binance: {}, 'snake-storage-family': {}, 'snake-storage-work': {}, 'snake-storagex': {} };
+  assert.deepEqual(boardsFromApis(byKey).map(b => b.proxy), ['snake-storage-family', 'snake-storage-work']);
+  const asList = [{ name: 'openai' }, { name: 'snake-storage-friends' }];
+  assert.deepEqual(boardsFromApis(asList), [{ label: 'Friends', proxy: 'snake-storage-friends', discovered: true }]);
 });
 
 test('refreshBoards lists discovered boards before hand-registered ones, without duplicates', async () => {
   const lucidos = fakeLucidos();
-  lucidos.files[APIS_PATH] = JSON.stringify({ 'snake-storage-familien': { base_url: 'https://x' }, other: {} });
+  lucidos.files[APIS_PATH] = JSON.stringify({ 'snake-storage-family': { base_url: 'https://x' }, other: {} });
   const store = createStore({ lucidos: () => lucidos, storage: memoryStorage() });
-  store.addBoard({ label: 'Gammel', proxy: 'old-board' });
+  store.addBoard({ label: 'Old', proxy: 'old-board' });
   store.addBoard({ label: 'Dupe', proxy: 'snake-storage-dupe' });
-  lucidos.files[APIS_PATH] = JSON.stringify({ 'snake-storage-familien': {}, 'snake-storage-dupe': {} });
+  lucidos.files[APIS_PATH] = JSON.stringify({ 'snake-storage-family': {}, 'snake-storage-dupe': {} });
   const list = await store.refreshBoards();
   assert.deepEqual(list.map(b => [b.proxy, b.discovered]), [
-    ['snake-storage-dupe', true], ['snake-storage-familien', true], ['old-board', false]
+    ['snake-storage-dupe', true], ['snake-storage-family', true], ['old-board', false]
   ]);
   assert.equal(JSON.stringify(list).includes('https://'), false, 'no URLs kept');
 });
 
 test('a discovered board can be picked, and survives a reload before discovery runs', async () => {
   const lucidos = fakeLucidos();
-  lucidos.files[APIS_PATH] = JSON.stringify({ 'snake-storage-familien': {} });
+  lucidos.files[APIS_PATH] = JSON.stringify({ 'snake-storage-family': {} });
   const storage = memoryStorage();
   const store = createStore({ lucidos: () => lucidos, storage });
   await store.refreshBoards();
-  store.setActiveBoard('snake-storage-familien');
-  assert.equal(store.getActiveLabel(), 'Familien');
+  store.setActiveBoard('snake-storage-family');
+  assert.equal(store.getActiveLabel(), 'Family');
 
   const again = createStore({ lucidos: () => lucidos, storage });
   assert.equal(again.getMode(), 'shared');
-  assert.equal(again.getActiveLabel(), 'Familien');
+  assert.equal(again.getActiveLabel(), 'Family');
 });
 
 test('refreshBoards survives an unreadable apis.json', async () => {

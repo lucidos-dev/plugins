@@ -51,26 +51,26 @@
     });
   }
 
-  // "Hva heter du?" on first run, "BYTT SPILLER" when switching.
+  // "What's your name?" on first run, "SWITCH PLAYER" when switching.
   function showName({ isSwitch, players, onPick }) {
     hideAll();
-    el.nameTitle.textContent = isSwitch ? 'BYTT SPILLER' : 'Ouroboros';
+    el.nameTitle.textContent = isSwitch ? 'SWITCH PLAYER' : 'Ouroboros';
     el.nameTitle.classList.toggle('venom-title', isSwitch);
-    el.namePrompt.textContent = isSwitch ? '' : 'Hva heter du?';
+    el.namePrompt.textContent = isSwitch ? '' : 'What\'s your name?';
     el.namePrompt.classList.toggle('hidden', isSwitch);
-    el.nameOk.textContent = isSwitch ? 'Bytt' : 'Start';
+    el.nameOk.textContent = isSwitch ? 'Switch' : 'Start';
     el.name.classList.remove('hidden');
     showOverlay();
     renderKnownPlayers(players, onPick);
     el.nameInput.value = '';
-    el.nameInput.placeholder = 'DITT NAVN';
+    el.nameInput.placeholder = 'YOUR NAME';
     setTimeout(() => el.nameInput.focus(), 100);
   }
 
   function showStart(player) {
     hideAll();
-    el.startTitle.textContent = 'ER DU KLAR?';
-    el.startBtn.textContent = `START SOM ${player.toUpperCase()}`;
+    el.startTitle.textContent = 'ARE YOU READY?';
+    el.startBtn.textContent = `START AS ${player.toUpperCase()}`;
     el.start.classList.remove('hidden');
     showOverlay();
   }

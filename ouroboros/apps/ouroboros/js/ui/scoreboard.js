@@ -5,7 +5,7 @@
   const { escapeHtml } = O.Text;
   const Scores = O.Scores;
 
-  const EMPTY = { daily: 'Ingen runder i dag', legends: 'HAR IKKE SETT NOEN' };
+  const EMPTY = { daily: 'No rounds today', legends: 'NOTHING HERE YET' };
 
   let lists;
 
@@ -29,7 +29,7 @@
       ? `<span class="hs-medal hs-medal-${rank}">${rank}</span>`
       : `<span class="hs-rank">${rank}</span>`;
     const replayBtn = hs.replay
-      ? `<button class="hs-replay${isReplaying ? ' hs-stop' : ''}" data-idx="${i}" title="${isReplaying ? 'Stopp' : 'Se replay'}">${isReplaying ? '■' : '▶'}</button>`
+      ? `<button class="hs-replay${isReplaying ? ' hs-stop' : ''}" data-idx="${i}" title="${isReplaying ? 'Stop' : 'Watch replay'}">${isReplaying ? '■' : '▶'}</button>`
       : '<span class="hs-replay-spacer"></span>';
     const timeLabel = listName === 'daily' ? (hs.time || '') : Scores.formatDate(hs.date);
     const cls = `hs-row${isHl ? ' hs-highlight' : ''}${isReplaying ? ' hs-replaying' : ''}`;

@@ -6,7 +6,7 @@
   const { musicBpm, fanfareTiming, tromboneTiming, JINGLE_OFFSET } = O.Timing;
   const Clips = O.SoundClips;
 
-  // --- Snake hiss: a rhythmic "hysj" pattern locked to the music grid ---
+  // --- Snake hiss: a rhythmic "shh" pattern locked to the music grid ---
   let hissSrc = null, hissGn = null;
   let hissTimers = [];
   let hissGeneration = 0;

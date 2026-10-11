@@ -118,7 +118,7 @@ async function openApp(browserType, baseUrl, { fps30 = false } = {}) {
 }
 
 // Put the first food right in front of the snake so the round scores a point
-// and the placement label ("NR 1, ...") shows.
+// and the placement label ("NO 1, ...") shows.
 async function scoreOnePoint(page) {
   await page.evaluate(() => {
     const G = window.Ouroboros.Game;
@@ -175,7 +175,7 @@ test('e2e', { skip: pw ? false : 'playwright-core not found (set PLAYWRIGHT_CORE
 
         // The placement label faded in fully before the dissolve
         const before = samples.filter(s => !s.dissolving);
-        assert.equal(before.at(-1).label.text, 'NR 1, DU ER EN LEGENDE!');
+        assert.equal(before.at(-1).label.text, 'NO 1, YOU\'RE A LEGEND!');
         assert.equal(before.at(-1).label.opacity, 1);
 
         // The sequence finishes on the start screen with nothing left over
@@ -195,7 +195,7 @@ test('e2e', { skip: pw ? false : 'playwright-core not found (set PLAYWRIGHT_CORE
     try {
       await page.click('#btn-storage');
       await page.waitForSelector('#storage-screen', { state: 'visible' });
-      assert.match(await page.textContent('#board-list'), /Lokalt/);
+      assert.match(await page.textContent('#board-list'), /Local/);
       await page.click('#btn-storage-close');
       await page.waitForSelector('#start-screen', { state: 'visible' });
       assert.deepEqual(errors, []);
@@ -208,16 +208,16 @@ test('e2e', { skip: pw ? false : 'playwright-core not found (set PLAYWRIGHT_CORE
     const { browser, page, errors } = await openApp(pw.webkit, baseUrl);
     try {
       await page.evaluate(() => {
-        window.__files['config/apis.json'] = JSON.stringify({ openai: {}, 'snake-storage-familien': { base_url: 'https://example.firebaseio.com' } });
-        window.__rtdb = { 'snake-storage-familien/snake/highscores.json': JSON.stringify({
+        window.__files['config/apis.json'] = JSON.stringify({ openai: {}, 'snake-storage-family': { base_url: 'https://example.firebaseio.com' } });
+        window.__rtdb = { 'snake-storage-family/snake/highscores.json': JSON.stringify({
           highscores: [{ name: 'MORMOR', score: 42, date: '2026-01-01' }], dailyScores: [], dailyDate: ''
         }) };
       });
       await page.click('#btn-storage');
-      await page.waitForSelector('[data-action="pick-shared"][data-proxy="snake-storage-familien"]');
-      assert.match(await page.textContent('#board-list'), /Familien/);
-      assert.equal(await page.$('[data-action="remove"][data-proxy="snake-storage-familien"]'), null, 'discovered boards have no remove button');
-      await page.click('[data-action="pick-shared"][data-proxy="snake-storage-familien"]');
+      await page.waitForSelector('[data-action="pick-shared"][data-proxy="snake-storage-family"]');
+      assert.match(await page.textContent('#board-list'), /Family/);
+      assert.equal(await page.$('[data-action="remove"][data-proxy="snake-storage-family"]'), null, 'discovered boards have no remove button');
+      await page.click('[data-action="pick-shared"][data-proxy="snake-storage-family"]');
       await page.waitForFunction(() => document.getElementById('btn-storage').textContent === '☁');
       await page.waitForFunction(() => document.querySelector('#highscores-list .hs-name')?.textContent === 'MORMOR');
       assert.deepEqual(errors, []);

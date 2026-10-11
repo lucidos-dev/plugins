@@ -1,4 +1,4 @@
-// Ouroboros, leaderboards: "Legender" (all time) and "Dagens beste" (today).
+// Ouroboros, leaderboards: "Legends" (all time) and "Today's best" (today).
 //
 // A board is { highscores, dailyScores, dailyDate }. Entries are
 // { name, score, date, replay? }; daily entries also carry a local "HH:MM" time.
@@ -56,7 +56,7 @@
   // what the UI highlights.
   function addEntry(board, { name, score, replay }, now = new Date()) {
     const today = todayStr(now);
-    const entry = { name: (name || 'Anonym').toUpperCase(), score, date: today };
+    const entry = { name: (name || 'Anonymous').toUpperCase(), score, date: today };
     if (replay) entry.replay = replay;
     const fresh = normalizeBoard(board, today);
     return {
@@ -90,7 +90,7 @@
 
   function placementLabel(p) {
     if (!p) return '';
-    return p.type === 'legend' ? `NR ${p.rank}, DU ER EN LEGENDE!` : `DAGENS ${p.rank}. BESTE!`;
+    return p.type === 'legend' ? `NO ${p.rank}, YOU'RE A LEGEND!` : `TODAY'S #${p.rank} BEST!`;
   }
 
   return { todayStr, timeStr, emptyBoard, normalizeBoard, placement, addEntry, ranks, formatDate, isSameEntry, placementLabel };
