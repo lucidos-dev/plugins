@@ -1,4 +1,5 @@
 {
   "name": "Super Slides",
-  "description": "Presentation engine with reusable components and a presentation chooser menu"
+  "description": "Presentation engine with reusable components and a presentation chooser menu",
+  "icon": "assets/icon.svg"
 }

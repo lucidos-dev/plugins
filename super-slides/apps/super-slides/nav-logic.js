@@ -87,4 +87,37 @@ SS.navLogic = {
     if (prevCount >= 2) return { type: 'goToFocusLast', index: target, lastCard: prevCount - 1 };
     return { type: 'goTo', index: target };
   },
+
+  /**
+   * Parse the app's location.hash into a deep-link request.
+   *
+   * Routes (combine with &):
+   *   #menu                  open the presentation chooser
+   *   #remote                open the embedded speaker remote
+   *   #deck=<id>&slide=<n>   open a deck at slide n (1-based, default 1)
+   *
+   * Returns { deck, slideIndex, menu, remote }. `deck` is null when the
+   * hash names none; `slideIndex` is 0-based and never negative. Unknown
+   * keys are ignored, so a stray hash never breaks the app.
+   */
+  parseDeepLink: function (hash) {
+    var out = { deck: null, slideIndex: 0, menu: false, remote: false };
+    var raw = String(hash || '').replace(/^#/, '');
+    if (!raw) return out;
+    raw.split('&').forEach(function (part) {
+      if (!part) return;
+      var eq = part.indexOf('=');
+      var key = eq < 0 ? part : part.slice(0, eq);
+      var val = eq < 0 ? '' : part.slice(eq + 1);
+      try { val = decodeURIComponent(val); } catch (e) { /* keep raw */ }
+      if (key === 'menu') out.menu = true;
+      else if (key === 'remote') out.remote = true;
+      else if (key === 'deck' && val) out.deck = val;
+      else if (key === 'slide') {
+        var n = parseInt(val, 10);
+        out.slideIndex = (isFinite(n) && n >= 1) ? n - 1 : 0;
+      }
+    });
+    return out;
+  },
 };
