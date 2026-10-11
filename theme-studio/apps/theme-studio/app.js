@@ -73,6 +73,7 @@
     reasonOf: (e) => reasonOf(e),
     toHex: (colour) => toHex(colour),
     probeColour: (value) => probeColour(value),
+    colourClip: (opts) => colourClip(opts),
     onEdit: () => changed([]),
   });
 
@@ -188,6 +189,90 @@
     const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
     if (a === 0) return null;
     return '#' + [r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  }
+
+  // ---- Copy and paste for colour rows ----
+  // A bare hex like "58a6ff" gets its "#". Anything else is kept as typed.
+  function cleanColour(text) {
+    const v = String(text || '').trim().replace(/;$/, '');
+    if (!v || v.length > 200 || /[\n\r]/.test(v)) return '';
+    if (/^([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v)) return '#' + v;
+    return v;
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch { /* fall back below */ }
+    const ta = el('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.append(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+    return ok;
+  }
+
+  // Copy and Paste buttons for one colour row. Copy takes the typed value, or the colour
+  // the swatch shows when the row is unset. The app frame has no clipboard-read, so Paste
+  // falls back to focusing the field for a plain Cmd+V. A paste anywhere on the row works too.
+  function colourClip({ row, input, fill, label, apply }) {
+    const copy = el('button', 'accent-link clear-btn clip-btn', 'Copy');
+    copy.type = 'button';
+    copy.setAttribute('aria-label', `Copy ${label}`);
+    const paste = el('button', 'accent-link clear-btn clip-btn', 'Paste');
+    paste.type = 'button';
+    paste.setAttribute('aria-label', `Paste into ${label}`);
+
+    const take = (text) => {
+      const v = cleanColour(text);
+      if (!v) return false;
+      input.value = v;
+      apply(v);
+      return true;
+    };
+
+    copy.addEventListener('click', async () => {
+      const value = input.value.trim() || (fill && toHex(fill.style.background)) || input.placeholder;
+      if (!value) return;
+      const ok = await copyText(value);
+      if (ok) {
+        copy.textContent = 'Copied';
+        setTimeout(() => { copy.textContent = 'Copy'; }, 1200);
+      } else {
+        lucidos.ui.toast('Could not reach the clipboard.', 'error');
+      }
+    });
+
+    paste.addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (take(text)) return;
+        lucidos.ui.toast('The clipboard does not hold a colour.', 'warning');
+        return;
+      } catch { /* no clipboard-read in the app frame */ }
+      input.focus();
+      input.select();
+      lucidos.ui.toast(`Press ${/Mac|iP/.test(navigator.platform) ? '⌘' : 'Ctrl+'}V to paste the colour.`, 'info');
+    });
+
+    // A paste into the text field is cleaned up ("58a6ff" becomes "#58a6ff").
+    // A paste with focus elsewhere on the row (swatch, buttons) sets the colour.
+    row.addEventListener('paste', (e) => {
+      const text = e.clipboardData && e.clipboardData.getData('text');
+      if (e.target === input) {
+        const whole = input.selectionStart === 0 && input.selectionEnd === input.value.length;
+        if (!whole && input.value !== '') return;
+      }
+      if (take(text)) e.preventDefault();
+    });
+
+    return [copy, paste];
   }
 
   function queueWrite(fn) {
@@ -378,6 +463,10 @@
     input.addEventListener('input', () => write(input.value.trim()));
     if (picker) picker.addEventListener('input', () => { input.value = picker.value; write(picker.value); });
     reset.addEventListener('click', () => { input.value = ''; write(''); });
+    if (isColor) {
+      const clip = colourClip({ row, input, fill, label, apply: write });
+      reset.before(...clip);
+    }
 
     const api = {
       token: t.name,
