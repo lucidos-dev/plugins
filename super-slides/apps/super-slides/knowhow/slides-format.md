@@ -311,18 +311,6 @@ Run the checks. Do not skip them because the change looks small.
 
 If a check fails, fix the cause and run it again. Do not publish around it.
 
-## Deep links (`location.hash`)
-
-The app routes on its hash, so a link or `navigate_ui(target="app", app_id="super-slides", fragment=...)` can open a view directly:
-
-| Fragment | Effect |
-|---|---|
-| `deck=<id>&slide=<n>` | Open the deck whose `id` is `<id>` at slide `<n>` (1-based, default 1). |
-| `menu` | Open the presentation chooser. |
-| `remote` | Open the embedded speaker remote. |
-
-Combine them with `&` (`deck=intro&slide=2&remote`). The hash wins over the saved resume position, and a `hashchange` re-applies it in an open app. An unknown deck id only logs a warning. The parser is `SS.navLogic.parseDeepLink` in `nav-logic.js`, pinned by `tests/test-deep-link.js`.
-
 ## Card Focus System
 
 Slides with ≥2 `.card` elements (or `.takeaway-item` / `.insight`) support arrow-key focus mode:

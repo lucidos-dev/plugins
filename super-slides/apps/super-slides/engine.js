@@ -825,46 +825,9 @@ SS.initEngine = function() {
 
     // From here on, navigation persists.
     persistEnabled = true;
-    // A deep link in the URL wins over the saved position.
-    applyDeepLink(location.hash);
     persistPosition();
     if (SS._broadcastState) SS._broadcastState();
   }
-
-  // Deep links (see SS.navLogic.parseDeepLink): #menu, #remote,
-  // #deck=<id>&slide=<n>. Applied once after the saved position is
-  // restored, and again whenever the hash changes, so the host can route
-  // an open app (navigate_ui fragment) straight to a deck or a view.
-  function applyDeepLink(hash) {
-    if (!SS.navLogic || !SS.navLogic.parseDeepLink) return;
-    const link = SS.navLogic.parseDeepLink(hash);
-    try {
-      if (link.deck) {
-        const idx = registry.findIndex(p => p.id === link.deck);
-        if (idx >= 0) {
-          if (registry[idx] !== currentPres) {
-            loadPresentation(registry[idx], link.slideIndex);
-            menuItems.querySelectorAll('.menu-item').forEach((el, i) => {
-              if (el.dataset.action) return;
-              el.classList.toggle('active', i === idx);
-            });
-          } else if (link.slideIndex !== current) {
-            goTo(link.slideIndex);
-          }
-        } else {
-          console.warn('[SS] deep link names an unknown deck:', link.deck);
-        }
-      }
-      if (link.menu) menuDropdown.classList.add('open');
-      if (link.remote && SS.toggleRemoteMode) {
-        const rm = document.getElementById('rmContainer');
-        if (!rm || rm.hidden) SS.toggleRemoteMode();
-      }
-    } catch (err) {
-      console.warn('[SS] could not apply the deep link:', err);
-    }
-  }
-  window.addEventListener('hashchange', () => applyDeepLink(location.hash));
 
   // First paint: the default deck at slide 0, rendered synchronously so the
   // app is never blank while the saved position is in flight.

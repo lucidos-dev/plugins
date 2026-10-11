@@ -226,10 +226,6 @@
       reset.setAttribute('aria-label', `Reset ${part.label} ${label}`);
       reset.addEventListener('click', () => { if (input) input.value = ''; write(part.id, usage.name, ''); });
       control.append(reset);
-      if (fill && input && host.colourClip) {
-        const clip = host.colourClip({ row, input, fill, label: `${part.label} ${label}`, apply: (v) => write(part.id, usage.name, v) });
-        (off || reset).before(...clip);
-      }
 
       const note = el('div', 'token-default');
       const err = el('p', 'token-error');

@@ -60,7 +60,7 @@
 .banner.is-ok { border-left-color: var(--accent-green); }
 .banner-text { flex: 1 1 16rem; overflow-wrap: break-word; }
 
-.start-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; justify-content: flex-end; }
+.start-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
 .start-select { flex: 0 1 18rem; min-width: 0; }
 .start-select .lucidos-select,
 .field .lucidos-select { width: 100%; }
@@ -175,8 +175,6 @@
 }
 .token-error { font-size: var(--font-size-xs); color: var(--accent-red); margin: 0; }
 .clear-btn { flex: 0 0 auto; }
-.clip-btn { color: var(--text-secondary); }
-.clip-btn:hover { color: var(--accent); }
 .clear-btn[hidden] { display: none; }
 .set-dot {
   display: inline-block;
@@ -332,7 +330,6 @@
   border-top: 1px solid var(--border-color);
 }
 .dirty-note { flex: 1 1 10rem; }
-.action-bar .button-group { margin-left: auto; justify-content: flex-end; flex-wrap: wrap; }
 
 @media (pointer: coarse) {
   .action-btn, .icon-btn { position: relative; }
