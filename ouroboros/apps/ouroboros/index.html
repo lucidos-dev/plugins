@@ -24,6 +24,9 @@
       });
     })();
   </script>
+  <!-- The shared stylesheet paints the SDK tooltip and the .label chip. It
+       comes first, so the game's own look wins wherever the two overlap. -->
+  <link rel="stylesheet" href="/api/v1/sdk-iframe.css">
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/header.css">
   <link rel="stylesheet" href="css/board.css">
@@ -51,14 +54,14 @@
             <h1>Ouroboros</h1>
           </div>
           <div class="header-right">
-            <div class="player-badge hidden" id="player-badge" title="Click to switch player">
+            <button type="button" class="player-badge hidden" id="player-badge" data-tooltip="Switch player">
               <span class="player-name" id="player-display"></span>
-            </div>
-            <span class="header-replay-badge hidden" id="header-replay-badge">▶ REPLAY</span>
+            </button>
+            <span class="label header-replay-badge hidden" id="header-replay-badge">▶ REPLAY</span>
             <div class="audio-toggles">
-              <button class="audio-toggle active" id="toggle-music" title="Music">🎵</button>
-              <button class="audio-toggle active" id="toggle-sfx" title="Sound effects">🔊</button>
-              <button class="audio-toggle" id="btn-storage" title="Storage">💾</button>
+              <button class="audio-toggle active" id="toggle-music" data-tooltip="Music" aria-label="Music">🎵</button>
+              <button class="audio-toggle active" id="toggle-sfx" data-tooltip="Sound effects" aria-label="Sound effects">🔊</button>
+              <button class="audio-toggle" id="btn-storage" data-tooltip="Leaderboard storage" aria-label="Leaderboard storage">💾</button>
             </div>
             <div class="score-display">
               <span class="score-label">Score</span>

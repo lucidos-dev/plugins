@@ -24,9 +24,11 @@
 
   function syncBadge() {
     badgeEl.textContent = store.isShared() ? '☁' : '💾';
-    badgeEl.title = store.isShared()
+    const label = store.isShared()
       ? `Leaderboard: ${store.getActiveLabel()} (proxy: ${store.getActiveProxy()})`
       : 'Leaderboard: Local';
+    badgeEl.dataset.tooltip = label;
+    badgeEl.setAttribute('aria-label', label);
   }
 
   function setStatus(msg, kind) {
@@ -39,11 +41,11 @@
     const safeLabel = escapeHtml(label);
     const safeProxy = escapeHtml(proxy);
     const removeBtn = removable
-      ? `<button class="board-action-btn danger" type="button" data-action="remove" data-proxy="${safeProxy}" title="Remove">✕</button>`
+      ? `<button class="board-action-btn danger" type="button" data-action="remove" data-proxy="${safeProxy}" data-tooltip="Remove" aria-label="Remove ${safeProxy}">✕</button>`
       : '';
     const actions = shared ? `
         <div class="board-actions">
-          <button class="board-action-btn" type="button" data-action="test" data-proxy="${safeProxy}" title="Test connection">⚡</button>
+          <button class="board-action-btn" type="button" data-action="test" data-proxy="${safeProxy}" data-tooltip="Test connection" aria-label="Test ${safeProxy}">⚡</button>
           ${removeBtn}
         </div>` : '';
     return `
@@ -134,12 +136,18 @@
         }
         return;
 
-      case 'remove':
-        if (!confirm(`Remove leaderboard "${proxy}"? The data in Firebase stays untouched; only the choice here in the app goes.`)) return;
+      case 'remove': {
+        const ok = await window.lucidos.ui.confirm({
+          message: `Remove leaderboard "${proxy}"? The data in Firebase stays untouched; only the choice here in the app goes.`,
+          okLabel: 'Remove',
+          danger: true
+        });
+        if (!ok) return;
         store.removeBoard(proxy);
         setStatus('');
         await afterSwitch();
         return;
+      }
     }
   }
 

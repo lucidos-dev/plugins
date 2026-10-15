@@ -76,6 +76,38 @@ body {
   -webkit-user-select: none;
 }
 
+/* sdk-iframe.css is linked for the SDK tooltip and the .label chip, but it
+   also styles the page, headings and controls. Ouroboros keeps its own look,
+   whatever the user's theme. */
+html, input, textarea, select, button {
+  font-feature-settings: normal;
+}
+
+body {
+  font-size: 1rem;
+  line-height: normal;
+  letter-spacing: normal;
+  text-shadow: none;
+  text-rendering: auto;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+}
+
+button {
+  padding: 0;
+  color: ButtonText;
+  border-radius: 0;
+  transition: none;
+}
+
+input, textarea, select {
+  transition: none;
+}
+
 .game-container {
   container-type: inline-size;
   max-width: 62.5rem;

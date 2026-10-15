@@ -31,10 +31,12 @@
   touch-action: manipulation;
 }
 
-.ctrl-btn:hover {
-  background: rgba(74, 222, 128, 0.12);
-  border-color: rgba(74, 222, 128, 0.35);
-  color: #4ade80;
+@media (hover: hover) {
+  .ctrl-btn:hover {
+    background: rgba(74, 222, 128, 0.12);
+    border-color: rgba(74, 222, 128, 0.35);
+    color: #4ade80;
+  }
 }
 
 .ctrl-btn:active {

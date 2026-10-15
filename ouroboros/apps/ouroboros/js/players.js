@@ -1,6 +1,6 @@
 // Ouroboros: the current player and the list of known players.
 //
-// The current player is remembered per device (localStorage); the list of
+// The current player is remembered per device (lucidos.storage.local); the list of
 // known players lives in the active store so every device sees it.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();

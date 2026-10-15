@@ -19,16 +19,15 @@
 // The active board's proxy is what `lucidos.proxy(<name>).fetch(...)` is
 // called against. Local is always available as the implicit "private" board.
 //
-// What lives in localStorage:
+// What lives in per-device storage (lucidos.storage.local, via SafeStorage):
 //   snake-store-mode    → 'local' | 'shared'
 //   snake-store-active  → proxy name of the active shared board, e.g. 'snake-storage-family'
 //   snake-store-boards  → JSON array of hand-registered { label, proxy } pairs
 // Which scoreboard a device is looking at is a per-device setting, so it stays
-// in localStorage rather than lucidos.data (workspace-wide). In frames where
-// localStorage is unavailable, the store falls back to 'local' mode and still
-// works.
+// there rather than in lucidos.data (workspace-wide). If storage cannot be
+// read, the store falls back to 'local' mode and still works.
 //
-// What does NOT live in localStorage or the iframe's state:
+// What does NOT live in per-device storage or the iframe's state:
 //   The auth token. It lives in the engine credential store and is applied
 //   server-side by lucidos.proxy(<name>).fetch(...). Discovery reads only the
 //   proxy names out of apis.json and keeps nothing else.

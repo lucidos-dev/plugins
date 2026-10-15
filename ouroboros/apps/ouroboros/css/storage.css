@@ -62,8 +62,10 @@
   text-transform: none;
 }
 
-.board-pick:hover {
-  background: rgba(74, 222, 128, 0.08);
+@media (hover: hover) {
+  .board-pick:hover {
+    background: rgba(74, 222, 128, 0.08);
+  }
 }
 
 .board-icon {
@@ -119,14 +121,18 @@
   transition: var(--transition);
 }
 
-.board-action-btn:hover {
-  color: #4ade80;
-  background: rgba(74, 222, 128, 0.08);
+@media (hover: hover) {
+  .board-action-btn:hover {
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.08);
+  }
 }
 
-.board-action-btn.danger:hover {
-  color: #f85149;
-  background: rgba(248, 81, 73, 0.08);
+@media (hover: hover) {
+  .board-action-btn.danger:hover {
+    color: #f85149;
+    background: rgba(248, 81, 73, 0.08);
+  }
 }
 
 .storage-status-area {

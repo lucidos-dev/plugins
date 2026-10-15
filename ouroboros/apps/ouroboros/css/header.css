@@ -20,17 +20,9 @@
   letter-spacing: -0.5px;
 }
 
+/* The shared .label draws the chip; the pulse says a replay is running. */
 .header-replay-badge {
-  background: rgba(239, 68, 68, 0.85);
-  color: #fff;
-  font-size: 0.6rem;
-  font-weight: 700;
-  padding: 0.1875rem 0.5rem;
-  border-radius: 0.25rem;
-  letter-spacing: 1px;
   animation: replay-header-pulse 1.8s ease-in-out infinite;
-  white-space: nowrap;
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.3);
 }
 
 .header-right {
@@ -40,9 +32,10 @@
   min-width: 0;
 }
 
-/* min-width: 0 lets a long name shrink to its ellipsis on a narrow phone
-   instead of pushing the header off the screen. */
+/* A button: tap it to switch player. min-width: 0 lets a long name shrink to
+   its ellipsis on a narrow phone instead of pushing the header off the screen. */
 .player-badge {
+  color: inherit;
   display: flex;
   align-items: center;
   min-width: 0;
@@ -57,11 +50,13 @@
   box-shadow: 0 0 14px rgba(74, 222, 128, 0.30), 0 0 28px rgba(74, 222, 128, 0.12);
 }
 
-.player-badge:hover {
-  background: rgba(74, 222, 128, 0.32);
-  border-color: rgba(74, 222, 128, 0.6);
-  color: #4ade80;
-  box-shadow: 0 0 18px rgba(74, 222, 128, 0.40), 0 0 36px rgba(74, 222, 128, 0.18);
+@media (hover: hover) {
+  .player-badge:hover {
+    background: rgba(74, 222, 128, 0.32);
+    border-color: rgba(74, 222, 128, 0.6);
+    color: #4ade80;
+    box-shadow: 0 0 18px rgba(74, 222, 128, 0.40), 0 0 36px rgba(74, 222, 128, 0.18);
+  }
 }
 
 .player-name {
@@ -99,9 +94,11 @@
   line-height: 1;
 }
 
-.audio-toggle:hover {
-  background: rgba(74, 222, 128, 0.12);
-  border-color: rgba(74, 222, 128, 0.35);
+@media (hover: hover) {
+  .audio-toggle:hover {
+    background: rgba(74, 222, 128, 0.12);
+    border-color: rgba(74, 222, 128, 0.35);
+  }
 }
 
 .audio-toggle.active {
@@ -154,16 +151,13 @@
   0% {
     transform: scaleY(1);
     opacity: 0.88;
-    box-shadow: 0 0 4px rgba(239, 68, 68, 0.15);
   }
   50% {
     transform: scale(1.03, 1.12);
     opacity: 1;
-    box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
   }
   100% {
     transform: scaleY(1);
     opacity: 0.88;
-    box-shadow: 0 0 4px rgba(239, 68, 68, 0.15);
   }
 }

@@ -1,11 +1,13 @@
 // Ouroboros, controller: game state, the render loop, replays, the death
 // sequence, and wiring between the UI modules.
-(function (O) {
+(async function (O) {
   'use strict';
 
   const { config, Game, Scores, Replay, Timing, Audio, Board, Effects, ScreenFx, GameOver, Screens, Scoreboard, StorageScreen, Input } = O;
   const $ = id => document.getElementById(id);
 
+  // The store reads this device's saved board and player as it is made.
+  await O.SafeStorage.ready();
   const storage = O.SafeStorage.createSafeStorage();
   const store = O.createStore({ lucidos: () => window.lucidos, storage });
   const players = O.createPlayers({ store, storage });

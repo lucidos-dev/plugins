@@ -24,7 +24,7 @@ apps/ouroboros/
   js/main.js                ← creates the store, reloads scores/players on a switch
   css/storage.css           ← .board-list, .board-row, .firebase-status
   index.html                ← storage-screen markup
-  tests/unit/store.test.js  ← registry + backend tests (fake lucidos, fake localStorage)
+  tests/unit/store.test.js  ← registry + backend tests (fake lucidos, fake storage)
   knowhow/
     storage-backends.md     ← this doc
 ```
@@ -33,7 +33,10 @@ apps/ouroboros/
 
 `createStore({ lucidos, storage })` builds the store. `lucidos` is a function
 returning the SDK object (read lazily, the SDK loads late); `storage` is a
-SafeStorage (`js/core/safe-storage.js`), a localStorage wrapper that never throws.
+SafeStorage (`js/core/safe-storage.js`), a wrapper around `lucidos.storage.local`
+that never throws. `main.js` awaits `SafeStorage.ready()` (which awaits
+`lucidos.storage.ready`) before it makes the store, since the store reads the
+saved board as it is made.
 In the browser it is `window.Ouroboros.createStore`; under Node it is
 `require('js/store.js').createStore`.
 
@@ -63,7 +66,7 @@ inherits the previous board's scores.
 
 ### Storage of the board choice
 
-The active selection, plus any hand-registered boards from older versions, are kept in the iframe's `localStorage`:
+The active selection, plus any hand-registered boards from older versions, are kept per device in `lucidos.storage.local`. The frame's own `localStorage` throws, so it is never used:
 
 | key                       | value                                          |
 | ------------------------- | ---------------------------------------------- |
