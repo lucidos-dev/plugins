@@ -1,0 +1,8 @@
+{
+  "name": "theme-studio",
+  "private": true,
+  "description": "Theme Studio (Lucidos app). No build step and no dependencies; this file only holds the test command.",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\""
+  }
+}
