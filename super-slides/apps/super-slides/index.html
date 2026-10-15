@@ -12,6 +12,9 @@
   Requires Lucidos 0.39.1 or newer. On 0.39.0 a subresource answered 401
   behind a gateway and every file below had to be inlined into this page.
 -->
+<!-- The shared stylesheet paints the SDK tooltip and the .mini-spinner. It
+     comes first, so the deck's own styles win wherever the two overlap. -->
+<link rel="stylesheet" href="/api/v1/sdk-iframe.css">
 <link rel="stylesheet" href="styles.css">
 <link rel="stylesheet" href="remote-mode.css">
 </head>
@@ -20,7 +23,7 @@
 <!-- Bottom bar: menu + nav hint -->
 <div class="bottom-bar">
   <div class="menu-wrapper">
-    <button class="menu-btn" id="menuBtn" title="Choose presentation">▦</button>
+    <button class="menu-btn" id="menuBtn" data-tooltip="Choose presentation" aria-label="Choose presentation">▦</button>
     <div class="menu-dropdown" id="menuDropdown">
       <div class="menu-label">Presentations</div>
       <div class="menu-items" id="menuItems"></div>
@@ -32,7 +35,6 @@
 <!-- Presentation renders here -->
 <div id="app">
   <div class="ss-loading">
-    <div class="ss-loading-spinner"></div>
     <p>Loading presentations…</p>
   </div>
 </div>
@@ -52,6 +54,7 @@ window.addEventListener('pageshow', function(e) {
 <script src="drive.js"></script>
 <script src="nav-logic.js"></script>
 <script src="engine.js"></script>
+<script src="device-mode.js"></script>
 <script src="remote-mode.js"></script>
 <script src="init.js"></script>
 <script src="zoom.js"></script>

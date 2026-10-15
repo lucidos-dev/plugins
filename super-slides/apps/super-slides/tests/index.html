@@ -52,6 +52,9 @@ SS.appState = SS.appState || { _d: {}, set(k, v) { this._d[k] = v; }, get(k) { r
      top-level DOM side effects — everything runs inside the function,
      only invoked when a test calls SS.initEngine()). -->
 <script src="../engine.js"></script>
+<!-- Real production module under test (defines SS.deviceMode; reads
+     window.lucidos only when called). -->
+<script src="../device-mode.js"></script>
 
 <!-- Test suites -->
 <script src="test-sync.js"></script>

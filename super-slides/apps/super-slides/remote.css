@@ -219,7 +219,9 @@ body.remote-body {
   transition: background 0.15s, transform 0.05s;
   font-family: inherit;
 }
-.remote-nav-btn:hover { background: #232333; }
+@media (hover: hover) {
+  .remote-nav-btn:hover { background: #232333; }
+}
 .remote-nav-btn:active { transform: scale(0.97); }
 
 .remote-nav-btn-primary {
@@ -227,7 +229,9 @@ body.remote-body {
   border-color: var(--r-accent);
   color: white;
 }
-.remote-nav-btn-primary:hover { background: #4f52e0; }
+@media (hover: hover) {
+  .remote-nav-btn-primary:hover { background: #4f52e0; }
+}
 
 .remote-nav-picker {
   font-size: 14px;
@@ -284,7 +288,9 @@ body.remote-body {
   cursor: pointer;
   padding: 4px 8px;
 }
-.remote-picker-close:hover { color: var(--r-text); }
+@media (hover: hover) {
+  .remote-picker-close:hover { color: var(--r-text); }
+}
 
 .remote-picker-list {
   overflow-y: auto;
@@ -313,7 +319,9 @@ body.remote-body {
   cursor: pointer;
   font-family: inherit;
 }
-.remote-picker-item:hover { background: var(--r-surface-2); }
+@media (hover: hover) {
+  .remote-picker-item:hover { background: var(--r-surface-2); }
+}
 .remote-picker-item.active {
   background: var(--r-surface-2);
   border-left-color: var(--r-accent);

@@ -10,8 +10,9 @@
    "Engine Error — The operation is insecure." and nothing else.
 
    These tests install a `localStorage` that throws exactly that error,
-   then run the real restore code and assert it degrades to "no
-   remembered position" instead of propagating.
+   then run the real startup code and assert it never reaches for it:
+   workspace state lives in SS.appState, and the per-device presenter or
+   remote mode lives in lucidos.storage.local (device-mode.js).
    ══════════════════════════════════════════════════════ */
 
 // localStorage is a configurable accessor property on window, so we can
@@ -70,45 +71,79 @@ suite('Storage guards — engine.js startup restore', (t) => {
   });
 });
 
-/* ── init.js:91 (mirrors the guarded read) ──────────────
-   init.js is the app's top-level bootstrap script: it runs a full
-   discover → load → init-engine → restore-mode pipeline the moment it
-   loads and isn't structured for isolated re-import, so this reproduces
-   its guarded read verbatim. Keep this in sync if that line changes. */
-suite('Storage guards — init.js device-mode restore (mirrors init.js:91)', (t) => {
-  function readSavedMode() {
-    let savedMode = null;
-    try { savedMode = localStorage.getItem('ss-mode'); } catch (e) {}
-    return savedMode;
-  }
+/* ── device-mode.js: presenter vs remote, per device ──
+   `ss-mode` is a per-device fact, so it lives in lucidos.storage.local, the
+   SDK's per-device store for an app frame. The frame's own localStorage is
+   never touched: these tests make it throw, and nothing catches that. */
 
-  t.test('a SecurityError on read yields no saved mode instead of throwing', () => {
-    let result;
-    withThrowingLocalStorage(() => { result = readSavedMode(); });
-    assertEqual(result, null, 'no crash, no remembered device mode');
+// Like withThrowingLocalStorage, but for an async body.
+async function withThrowingLocalStorageAsync(fn) {
+  const original = Object.getOwnPropertyDescriptor(window, 'localStorage');
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    get() { throw new DOMException('The operation is insecure.', 'SecurityError'); },
   });
-});
-
-/* ── remote.js:31-32 (mirrors the guarded reads) ────────
-   remote.js is the speaker-remote page's bootstrap script (only loaded by
-   remote.html): it calls lucidos.sse.connect() and wires up its own DOM
-   the moment it loads, so it can't be loaded standalone here either.
-   Reproduces its guarded reads verbatim. Keep this in sync if they change. */
-suite('Storage guards — remote.js saved position (mirrors remote.js:31-32)', (t) => {
-  function ssGet(key) {
-    try { return localStorage.getItem(key); } catch (e) { return null; }
+  try {
+    return await fn();
+  } finally {
+    Object.defineProperty(window, 'localStorage', original);
   }
-  function readSavedPosition() {
-    return {
-      presId: ssGet('ss-pres'),
-      slide: parseInt(ssGet('ss-slide')) || 0,
+}
+
+// The shape of lucidos.storage: a read sees nothing until the host has primed
+// this app's values, which is when `ready` resolves.
+function fakeDeviceStorage(stored) {
+  const mirror = new Map();
+  let prime;
+  const ready = new Promise((resolve) => {
+    prime = () => {
+      Object.entries(stored || {}).forEach(([k, v]) => mirror.set(k, v));
+      resolve();
     };
-  }
+  });
+  return {
+    prime,
+    storage: {
+      ready,
+      local: {
+        getItem: (k) => (mirror.has(k) ? mirror.get(k) : null),
+        setItem: (k, v) => { mirror.set(k, String(v)); },
+        removeItem: (k) => { mirror.delete(k); },
+      },
+    },
+  };
+}
 
-  t.test('a SecurityError on read yields sane defaults instead of throwing', () => {
-    let result;
-    withThrowingLocalStorage(() => { result = readSavedPosition(); });
-    assertEqual(result.presId, null, 'no remembered presentation id');
-    assertEqual(result.slide, 0, 'defaults to slide 0');
+asuite('Storage guards — device mode in lucidos.storage.local', (t) => {
+  let savedLucidos;
+  t.beforeEach(() => { savedLucidos = window.lucidos; });
+  t.afterEach(() => { window.lucidos = savedLucidos; });
+
+  t.test('restore() waits for lucidos.storage.ready, then reads the saved remote mode', async () => {
+    const fake = fakeDeviceStorage({ 'ss-mode': 'remote' });
+    window.lucidos = { storage: fake.storage };
+    await withThrowingLocalStorageAsync(async () => {
+      const restoring = SS.deviceMode.restore();
+      await Promise.resolve();
+      fake.prime();
+      assertEqual(await restoring, 'remote', 'the mode saved on this device');
+    });
+  });
+
+  t.test('restore() starts in presenter mode when this device saved nothing', async () => {
+    const fake = fakeDeviceStorage({});
+    fake.prime();
+    window.lucidos = { storage: fake.storage };
+    assertEqual(await SS.deviceMode.restore(), 'presenter', 'the default mode');
+  });
+
+  t.test('remember() writes lucidos.storage.local, never the frame localStorage', async () => {
+    const fake = fakeDeviceStorage({});
+    fake.prime();
+    window.lucidos = { storage: fake.storage };
+    await withThrowingLocalStorageAsync(async () => {
+      SS.deviceMode.remember('remote');
+    });
+    assertEqual(fake.storage.local.getItem('ss-mode'), 'remote', 'stored per device');
   });
 });

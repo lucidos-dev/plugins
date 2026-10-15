@@ -449,13 +449,9 @@ SS.drive = (function () {
     return pres;
   }
 
-  function toast(msg, type, opts) {
-    if (window.lucidos && lucidos.ui && lucidos.ui.toast) lucidos.ui.toast(msg, type || 'info', opts);
-  }
-
   return {
     save, resolveSaveContent, list, download, meta, share, parseFileId, importDeck, findByPresId,
-    knownFileId, toast,
+    knownFileId,
     getParents, moveFile, createFolder, listFolders, listSharedDrives, listInFolder, ancestry,
     rememberFolder, lastFolder, loadPinned, pinnedFolder, setPinned,
   };
@@ -526,7 +522,7 @@ SS.driveUI = (function () {
   function busyCard(message) {
     return modal(
       `<div class="ss-drive-busy">
-         <div class="ss-loading-spinner"></div>
+         <span class="mini-spinner" aria-hidden="true"></span>
          <div class="ss-drive-busy-msg">${escapeHtml(message)}</div>
        </div>`
     );
@@ -615,13 +611,13 @@ SS.driveUI = (function () {
       const pinned = SS.drive.pinnedFolder();
       const isPinned = pinned && pinned.id === loc.id;
       const pinBtn = inRealFolder
-        ? `<button class="remote-modal-btn ss-drive-pin" id="ssPinHere" title="${isPinned
+        ? `<button class="remote-modal-btn ss-drive-pin" id="ssPinHere" data-tooltip="${isPinned
               ? 'This is your default folder — click to unpin'
               : 'Open the browser here by default'}">${isPinned ? 'Default ✓' : 'Pin as default'}</button>`
         : '';
 
       const newFolderBtn = inRealFolder
-        ? `<button class="remote-modal-btn ss-drive-newfolder" id="ssNewFolder" title="Create a folder here">
+        ? `<button class="remote-modal-btn ss-drive-newfolder" id="ssNewFolder" data-tooltip="Create a folder here">
              <span class="remote-modal-btn-icon">＋</span> New folder
            </button>`
         : '';
@@ -647,10 +643,10 @@ SS.driveUI = (function () {
         actionsEl.querySelector('#ssPinHere').addEventListener('click', async () => {
           if (isPinned) {
             await SS.drive.setPinned(null);
-            SS.drive.toast('Default folder cleared', 'info');
+            lucidos.ui.toast('Default folder cleared', 'info');
           } else {
             await SS.drive.setPinned(loc.id, loc.name, pathHere());
-            SS.drive.toast(`“${loc.name}” pinned as default`, 'success');
+            lucidos.ui.toast(`“${loc.name}” pinned as default`, 'success');
           }
           renderActions();
         });
@@ -684,17 +680,17 @@ SS.driveUI = (function () {
       actionsEl.querySelector('#ssNewFolderCancel').addEventListener('click', renderActions);
       const create = async () => {
         const name = (input.value || '').trim();
-        if (!name) { SS.drive.toast('Enter a folder name', 'warning'); return; }
+        if (!name) { lucidos.ui.toast('Enter a folder name', 'warning'); return; }
         const btn = actionsEl.querySelector('#ssNewFolderCreate');
         btn.disabled = true; btn.textContent = 'Creating…';
         try {
           const folder = await SS.drive.createFolder(parent.id, name);
-          SS.drive.toast(`Created “${folder.name}”`, 'success');
+          lucidos.ui.toast(`Created “${folder.name}”`, 'success');
           stack.push({ id: folder.id, name: folder.name });
           render(); // navigate into the new (empty) folder
         } catch (err) {
           btn.disabled = false; btn.textContent = 'Create';
-          SS.drive.toast(err.message, 'error');
+          lucidos.ui.toast(err.message, 'error');
         }
       };
       actionsEl.querySelector('#ssNewFolderCreate').addEventListener('click', create);
@@ -795,7 +791,7 @@ SS.driveUI = (function () {
   // deck already lives in a different Drive folder.
   async function doSave(folder, path) {
     const pres = SS._currentPres;
-    if (!pres) { SS.drive.toast('No presentation open', 'warning'); return; }
+    if (!pres) { lucidos.ui.toast('No presentation open', 'warning'); return; }
     SS.drive.rememberFolder(folder.id, folder.name, path);
 
     let existingId = SS.drive.knownFileId(pres.id);
@@ -868,7 +864,7 @@ SS.driveUI = (function () {
      opens — otherwise a save could create a duplicate Drive file. */
   async function saveCurrent() {
     const pres = SS._currentPres;
-    if (!pres) { SS.drive.toast('No presentation open', 'warning'); return; }
+    if (!pres) { lucidos.ui.toast('No presentation open', 'warning'); return; }
     await SS.appState.ready();
     await SS.drive.loadPinned();
     folderBrowser('save');
@@ -882,14 +878,14 @@ SS.driveUI = (function () {
 
   async function pickFile(fileId, name) {
     const openKey = 'ss-drive-open';
-    SS.drive.toast('Opening from Drive…', 'info', { key: openKey, dismissable: false });
+    lucidos.ui.toast('Opening from Drive…', 'info', { key: openKey, dismissable: false });
     closeModal();
     try {
       const raw = await SS.drive.download(fileId);
       const pres = await SS.drive.importDeck(raw, name, fileId);
-      SS.drive.toast(`Opened “${pres.title || name}”`, 'success', { key: openKey, durationMs: 2500, dismissable: true });
+      lucidos.ui.toast(`Opened “${pres.title || name}”`, 'success', { key: openKey, durationMs: 2500, dismissable: true });
     } catch (err) {
-      SS.drive.toast(`Couldn’t open “${name}”`, 'error', { key: openKey, dismissable: true });
+      lucidos.ui.toast(`Couldn’t open “${name}”`, 'error', { key: openKey, dismissable: true });
       errorCard('Open failed', err.message);
     }
   }
@@ -897,13 +893,13 @@ SS.driveUI = (function () {
   /* ── Share current deck ── */
   async function shareCurrent() {
     const pres = SS._currentPres;
-    if (!pres) { SS.drive.toast('No presentation open', 'warning'); return; }
+    if (!pres) { lucidos.ui.toast('No presentation open', 'warning'); return; }
     // Ensure it's saved first (need a Drive file id to share).
     let fileId = SS.drive.knownFileId(pres.id);
     let link = null;
     try {
       if (!fileId) {
-        SS.drive.toast('Saving to Drive first…');
+        lucidos.ui.toast('Saving to Drive first…');
         const file = await SS.drive.save(pres);
         fileId = file.id; link = file.webViewLink;
       }
@@ -950,13 +946,13 @@ SS.driveUI = (function () {
         btn.onclick = () => {
           navigator.clipboard.writeText(link).then(() => {
             btn.innerHTML = '<span class="remote-modal-btn-icon">✓</span> Copied!';
-            SS.drive.toast('Link copied', 'success');
+            lucidos.ui.toast('Link copied', 'success');
           });
         };
       } catch (err) {
         btn.disabled = false;
         btn.innerHTML = '<span class="remote-modal-btn-icon">🔗</span> Get view link';
-        SS.drive.toast(err.message, 'error');
+        lucidos.ui.toast(err.message, 'error');
       }
     });
 
@@ -964,14 +960,14 @@ SS.driveUI = (function () {
       const emailEl = m.querySelector('#ssDriveEmail');
       const email = (emailEl.value || '').trim();
       if (!email || !/^[^@]+@[^@]+\.[^@]+$/.test(email)) {
-        SS.drive.toast('Enter a valid email', 'warning'); return;
+        lucidos.ui.toast('Enter a valid email', 'warning'); return;
       }
       try {
         await SS.drive.share(fileId, 'user', email);
-        SS.drive.toast(`Shared with ${email}`, 'success');
+        lucidos.ui.toast(`Shared with ${email}`, 'success');
         emailEl.value = '';
       } catch (err) {
-        SS.drive.toast(err.message, 'error');
+        lucidos.ui.toast(err.message, 'error');
       }
     });
   }

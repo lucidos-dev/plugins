@@ -44,9 +44,10 @@ all of them already handled in the code — don't undo them:
    behind `SS.appState` (`components.js`). Two rules for callers: the read is
    **asynchronous**, so paint a default and reconcile in `ready().then(…)`; and
    writes are **debounced**, because a data write makes a git commit.
-   `ss-mode` (presenter vs remote) is the one exception — it is genuinely
-   per-device, so it stays in `localStorage`, wrapped in `try/catch`, and is
-   simply not remembered inside the frame.
+   `ss-mode` (presenter vs remote) is the one exception: it is genuinely
+   per-device, so it lives in `lucidos.storage.local` behind `SS.deviceMode`
+   (`device-mode.js`). `init.js` awaits `lucidos.storage.ready` once at
+   startup, through `SS.deviceMode.restore()`, before it reads the mode.
 
 ## Core Rules
 

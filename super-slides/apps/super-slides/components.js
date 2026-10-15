@@ -38,8 +38,8 @@ const SS = {};
       slide navigation persists on every step.
 
    `ss-mode` deliberately did NOT move here — it is a per-device
-   fact (presenter on the laptop, remote on the phone). See init.js
-   and remote-mode.js.
+   fact (presenter on the laptop, remote on the phone), kept in
+   lucidos.storage.local. See device-mode.js.
    ══════════════════════════════════════════════ */
 
 SS.appState = (function () {

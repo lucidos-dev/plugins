@@ -33,16 +33,52 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* sdk-iframe.css is linked for the SDK tooltip and the .mini-spinner, but it
+   also styles the page, headings, links and controls. The deck keeps its own
+   look, whatever the user's theme. `revert` hands a property back to the
+   browser default, which is what the deck had before. These rules come before
+   the deck's own, so the deck's rules still win. */
+html, input, textarea, select, button, code, pre, kbd, samp {
+  font-feature-settings: normal;
+}
+body {
+  font-size: 16px;
+  line-height: normal;
+  letter-spacing: normal;
+  text-shadow: none;
+  text-rendering: auto;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+h1, h2, h3, h4, h5, h6 { margin: 0; color: inherit; font-size: revert; }
+a { color: revert; text-decoration: revert; text-shadow: none; }
+button, input, textarea, select {
+  padding: 0;
+  background: revert;
+  color: revert;
+  border: revert;
+  border-radius: revert;
+  box-shadow: none;
+  font-family: revert;
+  font-size: revert;
+  cursor: revert;
+  transition: revert;
+}
+
 :root { --ss-zoom: 1; }
 #app { height: calc(100vh / var(--ss-zoom)); zoom: var(--ss-zoom); touch-action: manipulation; }
 
 .ss-zoom-ctl { display: flex; align-items: center; gap: 2px; opacity: 0.4; transition: opacity 0.2s; }
-.ss-zoom-ctl:hover { opacity: 1; }
+@media (hover: hover) {
+  .ss-zoom-ctl:hover { opacity: 1; }
+}
 .ss-zoom-ctl button {
   background: none; border: 1px solid transparent; color: var(--text-dim);
   font: inherit; font-size: 13px; cursor: pointer; padding: 2px 7px; border-radius: 6px;
 }
-.ss-zoom-ctl button:hover { border-color: var(--text-dim); }
+@media (hover: hover) {
+  .ss-zoom-ctl button:hover { border-color: var(--text-dim); }
+}
 
 body {
   font-family: 'Exo 2', system-ui, sans-serif;
@@ -77,10 +113,12 @@ body {
   transition: opacity 0.2s, border-color 0.2s, background 0.2s;
   line-height: 1;
 }
-.menu-btn:hover {
-  opacity: 0.9;
-  border-color: var(--border);
-  background: rgba(255,255,255,0.04);
+@media (hover: hover) {
+  .menu-btn:hover {
+    opacity: 0.9;
+    border-color: var(--border);
+    background: rgba(255,255,255,0.04);
+  }
 }
 
 .menu-dropdown {
@@ -118,15 +156,19 @@ body {
   align-items: center;
   gap: 10px;
 }
-.menu-item:hover {
-  background: rgba(255,255,255,0.06);
+@media (hover: hover) {
+  .menu-item:hover {
+    background: rgba(255,255,255,0.06);
+  }
 }
 .menu-item.active {
   color: var(--text);
   background: rgba(255,255,255,0.10);
 }
-.menu-item.active:hover {
-  background: rgba(255,255,255,0.14);
+@media (hover: hover) {
+  .menu-item.active:hover {
+    background: rgba(255,255,255,0.14);
+  }
 }
 .menu-item .menu-dot {
   width: 6px; height: 6px; border-radius: 50%;
@@ -147,8 +189,10 @@ body {
   color: var(--text-dim);
   font-size: 12px;
 }
-.menu-item-action:hover {
-  color: var(--text);
+@media (hover: hover) {
+  .menu-item-action:hover {
+    color: var(--text);
+  }
 }
 .menu-item-action .menu-dot-remote {
   width: auto; height: auto;
@@ -181,9 +225,11 @@ body {
   opacity: 0.6;
   user-select: none;
 }
-.counter:hover {
-  opacity: 1; border-color: var(--border);
-  background: rgba(255,255,255,0.04);
+@media (hover: hover) {
+  .counter:hover {
+    opacity: 1; border-color: var(--border);
+    background: rgba(255,255,255,0.04);
+  }
 }
 
 .slide-picker {
@@ -203,7 +249,9 @@ body {
   cursor: pointer; display: flex; align-items: center; gap: 10px;
   transition: background 0.15s;
 }
-.slide-picker-item:hover { background: rgba(255,255,255,0.06); }
+@media (hover: hover) {
+  .slide-picker-item:hover { background: rgba(255,255,255,0.06); }
+}
 .slide-picker-item.active { color: var(--accent); }
 .slide-picker-item .picker-num {
   font-family: 'JetBrains Mono', monospace;
@@ -797,8 +845,10 @@ h3 { font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 600; let
   box-sizing: border-box;
 }
 
-.section-pip:hover {
-  opacity: 0.7;
+@media (hover: hover) {
+  .section-pip:hover {
+    opacity: 0.7;
+  }
 }
 
 .section-pip.active {
@@ -878,19 +928,6 @@ h3 { font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 600; let
   font-size: 14px;
   color: var(--text-dim);
   letter-spacing: 0.5px;
-}
-
-.ss-loading-spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid rgba(99, 102, 241, 0.15);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: ss-spin 0.8s linear infinite;
-}
-
-@keyframes ss-spin {
-  to { transform: rotate(360deg); }
 }
 
 /* ══════════════════════════════════════
@@ -976,9 +1013,11 @@ h3 { font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 600; let
 }
 
 /* Hover hint — editing requires long-press (touch) or double-click (desktop) */
-body:not(.ss-editing-disabled) .ss-editable:hover {
-  background: rgba(99, 102, 241, 0.08);
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2);
+@media (hover: hover) {
+  body:not(.ss-editing-disabled) .ss-editable:hover {
+    background: rgba(99, 102, 241, 0.08);
+    box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2);
+  }
 }
 
 /* Allow clicking editable elements inside the title scroller — but ONLY when visible.
@@ -1234,9 +1273,11 @@ body.ss-editing-disabled .deck {
   transition: background 0.15s, border-color 0.15s;
 }
 
-.remote-modal-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--accent);
+@media (hover: hover) {
+  .remote-modal-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--accent);
+  }
 }
 
 .remote-modal-btn:active {
@@ -1249,6 +1290,9 @@ body.ss-editing-disabled .deck {
 
 /* ── Google Drive modals ── */
 .ss-drive-card { max-width: 440px; }
+
+/* A save in flight: the shared spinner beside the words that say what runs. */
+.ss-drive-busy { display: flex; align-items: center; gap: 10px; }
 
 .ss-drive-list {
   max-height: 240px;
@@ -1269,7 +1313,9 @@ body.ss-editing-disabled .deck {
   transition: background 0.12s;
 }
 .ss-drive-item:last-child { border-bottom: none; }
-.ss-drive-item:hover { background: rgba(255, 255, 255, 0.05); }
+@media (hover: hover) {
+  .ss-drive-item:hover { background: rgba(255, 255, 255, 0.05); }
+}
 
 .ss-drive-item-name {
   font-size: 14px;
@@ -1344,8 +1390,10 @@ body.ss-editing-disabled .deck {
   border-radius: 5px;
   color: var(--accent);
 }
-.ss-drive-crumb:hover,
-.ss-crumb:hover { background: rgba(255, 255, 255, 0.06); }
+@media (hover: hover) {
+  .ss-drive-crumb:hover,
+  .ss-crumb:hover { background: rgba(255, 255, 255, 0.06); }
+}
 .ss-drive-crumb-sep,
 .ss-crumb-sep { opacity: 0.5; }
 
@@ -1364,7 +1412,9 @@ body.ss-editing-disabled .deck {
   cursor: pointer;
 }
 .ss-drive-row:last-child { border-bottom: none; }
-.ss-drive-row:hover { background: rgba(255, 255, 255, 0.05); }
+@media (hover: hover) {
+  .ss-drive-row:hover { background: rgba(255, 255, 255, 0.05); }
+}
 .ss-drive-row-icon { flex: 0 0 auto; font-size: 15px; }
 .ss-drive-row-name {
   flex: 1;
@@ -1508,11 +1558,19 @@ body.ss-editing-disabled .deck {
     user-select: none;
     -webkit-user-select: none;
   }
-  .menu-btn:hover, .menu-btn:active {
+  .menu-btn:active {
     opacity: 1;
     background: var(--accent);
     border-color: rgba(255,255,255,0.35);
     transform: scale(0.96);            /* visible feedback on press */
+  }
+  @media (hover: hover) {
+    .menu-btn:hover {
+      opacity: 1;
+      background: var(--accent);
+      border-color: rgba(255,255,255,0.35);
+      transform: scale(0.96);
+    }
   }
   /* Lift counter & picker above the bigger FAB */
   .counter { bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important; }

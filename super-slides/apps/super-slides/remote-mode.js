@@ -23,12 +23,12 @@
     <!-- Main UI (shown when connected) -->
     <div class="rm-main" id="rmMain" hidden>
       <nav class="rm-nav">
-        <button class="rm-nav-btn rm-slide-btn" id="rmSlidePrev" title="Prev slide">«</button>
-        <button class="rm-nav-btn rm-card-btn" id="rmCardPrev" title="Prev card">‹</button>
-        <button class="rm-counter" id="rmCounter" title="Jump to slide">—</button>
-        <button class="rm-nav-btn rm-card-btn" id="rmCardNext" title="Next card">›</button>
-        <button class="rm-nav-btn rm-slide-btn" id="rmSlideNext" title="Next slide">»</button>
-        <button class="rm-nav-btn rm-exit" id="rmExit" title="Exit" aria-label="Exit"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg></button>
+        <button class="rm-nav-btn rm-slide-btn" id="rmSlidePrev" data-tooltip="Prev slide" aria-label="Prev slide">«</button>
+        <button class="rm-nav-btn rm-card-btn" id="rmCardPrev" data-tooltip="Prev card" aria-label="Prev card">‹</button>
+        <button class="rm-counter" id="rmCounter" data-tooltip="Jump to slide">—</button>
+        <button class="rm-nav-btn rm-card-btn" id="rmCardNext" data-tooltip="Next card" aria-label="Next card">›</button>
+        <button class="rm-nav-btn rm-slide-btn" id="rmSlideNext" data-tooltip="Next slide" aria-label="Next slide">»</button>
+        <button class="rm-nav-btn rm-exit" id="rmExit" data-tooltip="Exit" aria-label="Exit"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg></button>
       </nav>
 
       <div class="rm-timer" id="rmTimer">
@@ -738,22 +738,13 @@
 
   /* ── Public API ──────────────────────────────────── */
 
-  // `ss-mode` is deliberately PER-DEVICE — presenter on the laptop, remote on
-  // the phone — so it stays out of the workspace-wide SS.appState document,
-  // which every device shares. localStorage throws SecurityError in the
-  // isolated app frame, so both writes are guarded and the mode simply isn't
-  // remembered there, until Lucidos grows a per-device storage affordance.
-  function rememberMode(mode) {
-    try { localStorage.setItem('ss-mode', mode); } catch (err) { /* no storage in this frame */ }
-  }
-
   SS.toggleRemoteMode = function () {
     if (S.active) {
       SS.closeRemoteMode();
     } else {
       S.active = true;
       container.hidden = false;
-      rememberMode('remote');
+      SS.deviceMode.remember('remote');
       showConnecting();
       ping();
     }
@@ -765,7 +756,7 @@
     S.connected = false;
     clearTimeout(connTimer);
     resetTimer();
-    rememberMode('presenter');
+    SS.deviceMode.remember('presenter');
     container.hidden = true;
   };
 })();

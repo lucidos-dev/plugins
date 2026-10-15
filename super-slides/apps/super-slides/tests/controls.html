@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Super Slides control tests</title>
+<!-- Control tests load the real remote-mode.js, zoom.js and drive.js, which
+     build their buttons into the page, against a stub SDK. They also fetch the
+     app's HTML and CSS, so serve the app folder over http, for example
+     `python3 -m http.server` in apps/super-slides, then open
+     /tests/controls.html. -->
+</head>
+<body>
+<div class="bottom-bar"></div>
+<div id="results"></div>
+<script src="harness.js"></script>
+<script>
+var SS = {};
+/* Workspace state, as components.js would keep it. drive.js reads the last
+   Drive folder from here, so the folder browser opens inside a real folder. */
+SS.appState = {
+  _d: { driveLastFolder: { id: 'f1', name: 'Decks', path: [{ id: 'f1', name: 'Decks' }] } },
+  get(k, dflt) { return k in this._d ? this._d[k] : dflt; },
+  set(k, v) { this._d[k] = v; },
+  ready() { return Promise.resolve(); },
+};
+/* Stub SDK. Toasts are recorded. Drive reads answer an empty folder, and an
+   upload never answers, so the busy card stays up for the test to look at. */
+window.__toasts = [];
+window.__deviceStore = new Map();
+window.lucidos = {
+  events: { emit: async () => {} },
+  sse: { on: () => {} },
+  data: {
+    read: async () => JSON.stringify({ id: 'deck', title: 'Deck', slides: [] }),
+    write: async () => {},
+    edit: async () => {},
+  },
+  storage: {
+    ready: Promise.resolve(),
+    local: {
+      getItem: (k) => (window.__deviceStore.has(k) ? window.__deviceStore.get(k) : null),
+      setItem: (k, v) => { window.__deviceStore.set(k, String(v)); },
+      removeItem: (k) => { window.__deviceStore.delete(k); },
+    },
+  },
+  ui: { toast: (...args) => { window.__toasts.push(args); } },
+  proxy: () => ({
+    fetch: (path) => path.indexOf('/upload/') === 0
+      ? new Promise(() => {})
+      : Promise.resolve(new Response('{"files":[]}', { status: 200 })),
+  }),
+};
+</script>
+<script src="../device-mode.js"></script>
+<script src="../drive.js"></script>
+<script src="../remote-mode.js"></script>
+<script src="../zoom.js"></script>
+<script src="test-controls.js"></script>
+<script>bootstrap('results');</script>
+</body>
+</html>

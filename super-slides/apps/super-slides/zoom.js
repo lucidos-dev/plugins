@@ -41,9 +41,9 @@
     const box = document.createElement('div');
     box.className = 'ss-zoom-ctl';
     box.innerHTML =
-      '<button type="button" id="ssZoomOut" title="Zoom out (Ctrl -)">−</button>' +
-      '<button type="button" id="ssZoomLabel" title="Reset zoom (Ctrl 0)">100%</button>' +
-      '<button type="button" id="ssZoomIn" title="Zoom in (Ctrl +)">+</button>';
+      '<button type="button" id="ssZoomOut" data-tooltip="Zoom out (Ctrl -)" aria-label="Zoom out">−</button>' +
+      '<button type="button" id="ssZoomLabel" data-tooltip="Reset zoom (Ctrl 0)">100%</button>' +
+      '<button type="button" id="ssZoomIn" data-tooltip="Zoom in (Ctrl +)" aria-label="Zoom in">+</button>';
     bar.appendChild(box);
     box.querySelector('#ssZoomOut').addEventListener('click', SS.zoom.out);
     box.querySelector('#ssZoomIn').addEventListener('click', SS.zoom.in);
