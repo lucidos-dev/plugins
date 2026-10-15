@@ -125,27 +125,70 @@ function installSampler() {
   requestAnimationFrame(sample);
 }
 
+// The game must stay silent in tests: WebKit has no --mute-audio flag, so a
+// test browser plays out loud on the developer's speakers. Turn music and
+// sound effects off in this device's storage before the page loads. A muted
+// round still runs the full Game Over sequence: the fanfare and trombone
+// return their timing without playing.
+async function muteGame(page) {
+  await page.addInitScript(() => {
+    localStorage.setItem('device:snake-music', '0');
+    localStorage.setItem('device:snake-sfx', '0');
+  });
+}
+
+// Call once the start or name screen shows, which is after the app has read
+// its prefs.
+async function assertMuted(page) {
+  const prefs = await page.evaluate(() => {
+    const A = window.Ouroboros.AudioEngine;
+    return { musicEnabled: A.musicEnabled, sfxEnabled: A.sfxEnabled };
+  });
+  assert.deepEqual(prefs, { musicEnabled: false, sfxEnabled: false }, 'the test page has sound on');
+}
+
 async function openApp(browserType, baseUrl, { fps30 = false, init = null } = {}) {
   const browser = await browserType.launch();
-  const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
-  const errors = [];
-  page.on('pageerror', e => errors.push(e.message));
-  await page.addInitScript(() => localStorage.setItem('device:snake-player', 'TEST'));
-  if (init) await page.addInitScript(init);
-  if (fps30) {
-    // Simulate Safari's 30 Hz cap (Low Power Mode): run callbacks every other frame
-    await page.addInitScript(() => {
-      const raf = window.requestAnimationFrame.bind(window);
-      window.requestAnimationFrame = cb => raf(() => raf(cb));
-    });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await muteGame(page);
+    await page.addInitScript(() => localStorage.setItem('device:snake-player', 'TEST'));
+    if (init) await page.addInitScript(init);
+    if (fps30) {
+      // Simulate Safari's 30 Hz cap (Low Power Mode): run callbacks every other frame
+      await page.addInitScript(() => {
+        const raf = window.requestAnimationFrame.bind(window);
+        window.requestAnimationFrame = cb => raf(() => raf(cb));
+      });
+    }
+    await page.goto(baseUrl + '/app/index.html');
+    await page.waitForSelector('#btn-start', { state: 'visible' });
+    await assertMuted(page);
+    return { browser, page, errors };
+  } catch (e) {
+    // The caller never gets the browser, so close it here or node hangs
+    await browser.close();
+    throw e;
   }
-  await page.goto(baseUrl + '/app/index.html');
-  await page.waitForSelector('#btn-start', { state: 'visible' });
-  return { browser, page, errors };
 }
 
 // Put the first food right in front of the snake so the round scores a point
 // and the placement label ("NO 1, ...") shows.
+// Counts each sound the page starts. The 1-sample buffer that unlocks audio
+// on a gesture is silent, so it does not count.
+function countSounds() {
+  window.__soundStarts = 0;
+  for (const Node of [OscillatorNode, AudioBufferSourceNode]) {
+    const start = Node.prototype.start;
+    Node.prototype.start = function (...args) {
+      if (!(this.buffer && this.buffer.length <= 1)) window.__soundStarts++;
+      return start.apply(this, args);
+    };
+  }
+}
+
 async function scoreOnePoint(page) {
   await page.evaluate(() => {
     const G = window.Ouroboros.Game;
@@ -174,6 +217,7 @@ test('e2e', { skip: pw ? false : 'playwright-core not found (set PLAYWRIGHT_CORE
       const { browser, page, errors } = await openApp(pw[v.type], baseUrl, v);
       try {
         await scoreOnePoint(page);
+        await page.evaluate(countSounds);
         await page.click('#btn-start');
         await page.waitForFunction(() => document.getElementById('game-over-svg').classList.contains('falling'), null, { timeout: 10000 });
         await page.evaluate(installSampler);
@@ -210,6 +254,7 @@ test('e2e', { skip: pw ? false : 'playwright-core not found (set PLAYWRIGHT_CORE
           !document.getElementById('start-screen').classList.contains('hidden') &&
           document.getElementById('dissolution-canvas').classList.contains('hidden') &&
           !document.getElementById('overlay').classList.contains('dissolve-fade-in'), null, { timeout: 5000 });
+        assert.equal(await page.evaluate(() => window.__soundStarts), 0, 'the round played sound');
         assert.deepEqual(errors, []);
       } finally {
         await browser.close();
@@ -223,12 +268,14 @@ test('e2e', { skip: pw ? false : 'playwright-core not found (set PLAYWRIGHT_CORE
     const browser = await pw.webkit.launch();
     try {
       const page = await browser.newPage();
+      await muteGame(page);
       await page.addInitScript(() => {
         const session = { type: 'auto' };
         Object.defineProperty(Navigator.prototype, 'audioSession', { configurable: true, get: () => session });
       });
       await page.goto(baseUrl + '/app/index.html');
-      await page.waitForSelector('#name-screen', { state: 'visible' });
+      await page.waitForSelector('.game-container.loaded #name-screen', { state: 'visible' });
+      await assertMuted(page);
       assert.equal(await page.evaluate(() => navigator.audioSession.type), 'playback');
     } finally {
       await browser.close();
@@ -277,9 +324,11 @@ test('e2e', { skip: pw ? false : 'playwright-core not found (set PLAYWRIGHT_CORE
       const page = await browser.newPage();
       const errors = [];
       page.on('pageerror', e => errors.push(e.message));
+      await muteGame(page);
       await page.goto(baseUrl + '/app/index.html');
       // The page shows itself once it has read this device's storage
       await page.waitForSelector('.game-container.loaded #name-screen', { state: 'visible' });
+      await assertMuted(page);
       await page.fill('#name-input', 'Anna');
       await page.click('#btn-name-ok');
       await page.waitForSelector('#btn-start', { state: 'visible' });
