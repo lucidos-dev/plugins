@@ -10,6 +10,8 @@ today's rate cards, so the widget prices calls after the cursor live.
 import os, sys, json, re, subprocess, datetime, pathlib
 WS = os.environ.get('LUCIDOS_WORKSPACE')
 if not WS: raise SystemExit('LUCIDOS_WORKSPACE is not set: run this from a Lucidos trigger, run_python or run_bash')
+# The engine sets no PG* vars (ADR 0481); the workspace URL is the only way in.
+if not os.environ.get('LUCIDOS_DATABASE_URL'): raise SystemExit('LUCIDOS_DATABASE_URL is not set: run this from a Lucidos trigger, run_python or run_bash')
 os.chdir(WS)
 def local_tz():
     # Same rule as apps/token-cost/scripts/rollup.py: days are bucketed in the
@@ -22,7 +24,7 @@ def local_tz():
     except OSError: pass
     return os.environ.get('TZ') or 'UTC'
 def psql(sql):
-    r=subprocess.run(["psql","-A","-t","-c",sql],capture_output=True,text=True)
+    r=subprocess.run(["psql",os.environ["LUCIDOS_DATABASE_URL"],"-A","-t","-c",sql],capture_output=True,text=True)
     if r.returncode: raise SystemExit(r.stderr)
     return r.stdout
 TZ=local_tz()

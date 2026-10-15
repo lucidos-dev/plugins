@@ -697,7 +697,13 @@ COPY (
 
 
 def psql(sql: str) -> str:
-    r = subprocess.run(["psql", "-A", "-t", "-c", sql], capture_output=True, text=True)
+    # The engine sets no PG* vars (ADR 0481); the workspace URL is the only way in.
+    if not os.environ.get("LUCIDOS_DATABASE_URL"):
+        sys.exit("LUCIDOS_DATABASE_URL is not set: run this from a Lucidos trigger, run_python or run_bash")
+    r = subprocess.run(
+        ["psql", os.environ["LUCIDOS_DATABASE_URL"], "-A", "-t", "-c", sql],
+        capture_output=True, text=True,
+    )
     if r.returncode != 0:
         sys.exit(f"psql failed: {r.stderr.strip()}")
     return r.stdout.strip()
