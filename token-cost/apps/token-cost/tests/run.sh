@@ -18,13 +18,15 @@
 #   defaults    the app carries no prices of its own (pricing.json is the
 #               only table), and the built-in sounds play without a fetch
 #               the frame is refused
+#   markup      rate badges use the shared .label tones, and every :hover
+#               rule sits inside @media (hover: hover)
 #   rollup      the daily rollup splits long context at the same dated card
 #               the app prices with (python3, SQL run in sqlite, no Postgres)
 set -euo pipefail
 cd "$(dirname "$0")"
 export TZ="${TZ:-Europe/Oslo}"
 fail=0
-for t in accounting.test.mjs freshness.test.mjs save.test.mjs defaults-and-sounds.test.mjs; do
+for t in accounting.test.mjs freshness.test.mjs save.test.mjs defaults-and-sounds.test.mjs markup.test.mjs; do
   echo "== $t"
   if ! node "$t"; then fail=1; echo "   ^ $t FAILED"; fi
 done

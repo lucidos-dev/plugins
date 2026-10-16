@@ -305,5 +305,46 @@ check("each stops at the cursor", all("sequence <= 4242" in q for q in reads), T
 check("no placeholder is left in any query", any("%(" in q for q in asked), False)
 check("the cursor written is that same ceiling", written and written[0]["last_sequence"], 4242)
 
+# 16. A Flex call is summed apart, never also as a long call, and a file
+# from before the Flex bucket is rebuilt once.
+check("the rollup sums Flex calls apart",
+      "FILTER (WHERE flex AND in_tok <= long_cut) AS flex_in" in rollup.ROLLUP_SQL, True)
+check("a Flex call is read off its usage block",
+      "payload->'usage'->>'service_tier'" in rollup.ROLLUP_SQL, True)
+check("a file from before the Flex bucket is rebuilt",
+      rollup.needs_rebuild({"rollup_version": 5}, {}) is not None, True)
+
+# 17. psql connects through LUCIDOS_DATABASE_URL. The engine sets no PG* vars
+# (ADR 0481), so a bare `psql` tries the local socket and reaches nothing.
+def psql_argv(env):
+    import os
+    seen = []
+
+    class Done:
+        returncode, stdout, stderr = 0, "1\n", ""
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd)
+        return Done()
+
+    real_run, real_env = rollup.subprocess.run, dict(os.environ)
+    rollup.subprocess.run = fake_run
+    os.environ.clear()
+    os.environ.update(env)
+    try:
+        out = rollup.psql("SELECT 1")
+    finally:
+        rollup.subprocess.run = real_run
+        os.environ.clear()
+        os.environ.update(real_env)
+    return seen[0], out
+
+
+argv, out = psql_argv({"LUCIDOS_DATABASE_URL": "postgresql://ro@db.invalid/ws"})
+check("psql is handed the workspace URL first", argv[:2], ["psql", "postgresql://ro@db.invalid/ws"])
+check("psql keeps its flags and query", argv[2:], ["-A", "-t", "-c", "SELECT 1"])
+check("psql output is still stripped", out, "1")
+check("the rollup never asks for a write", "READ WRITE" in " ".join(argv), False)
+
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

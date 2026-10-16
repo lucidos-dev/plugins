@@ -645,6 +645,10 @@ COPY (
       sum(out_tok) FILTER (WHERE in_tok > long_cut) AS long_out,
       sum(cr)      FILTER (WHERE in_tok > long_cut) AS long_cr,
       sum(cw)      FILTER (WHERE in_tok > long_cut) AS long_cw,
+      sum(in_tok)  FILTER (WHERE flex AND in_tok <= long_cut) AS flex_in,
+      sum(out_tok) FILTER (WHERE flex AND in_tok <= long_cut) AS flex_out,
+      sum(cr)      FILTER (WHERE flex AND in_tok <= long_cut) AS flex_cr,
+      sum(cw)      FILTER (WHERE flex AND in_tok <= long_cut) AS flex_cw,
       max(in_tok) AS max_in
     FROM (
       SELECT
@@ -665,6 +669,7 @@ COPY (
         coalesce((payload->'usage'->>'cache_read_tokens')::bigint, 0) AS cr,
         coalesce((payload->'usage'->>'cache_creation_tokens')::bigint, 0) AS cw,
         (payload->'usage'->>'output_tokens')::bigint AS out_tok,
+        coalesce(payload->'usage'->>'service_tier', '') = 'flex' AS flex,
         """
     + LONG_CUT_MARK
     + """ AS long_cut,
@@ -782,7 +787,9 @@ COPY (
 #   5  2026-10-10: a row is filed under the model it is priced as (the
 #      served model on a reroute) and carries `routed_from`. The split
 #      fingerprint also moves, but only when pricing.json has a tier.
-ROLLUP_VERSION = 5
+#   6  2026-10-13: a call served on OpenAI's Flex tier (`usage.service_tier`)
+#      is kept apart in `flex`, which the app prices at the card's `flex` rates
+ROLLUP_VERSION = 6
 
 
 def needs_rebuild(state: dict | None, env: dict, split: str | None = None) -> str | None:
@@ -870,6 +877,7 @@ def main() -> None:
             "seconds": 0,
             "buckets": [0] * 6,
             "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0},
+            "flex": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0},
             "max_in": 0,
         }
 
@@ -886,6 +894,13 @@ def main() -> None:
         dst["long"]["out"] += int(x["long_out"] or 0)
         dst["long"]["cache_read"] += int(x["long_cr"] or 0)
         dst["long"]["cache_write"] += int(x["long_cw"] or 0)
+        # A Flex call over the long cut stays in `long`, so no token is priced
+        # twice. Compactor calls, the ones that ask for Flex, are never long.
+        flex = dst.setdefault("flex", {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0})
+        flex["in"] += int(x.get("flex_in") or 0)
+        flex["out"] += int(x.get("flex_out") or 0)
+        flex["cache_read"] += int(x.get("flex_cr") or 0)
+        flex["cache_write"] += int(x.get("flex_cw") or 0)
         dst["max_in"] = max(dst["max_in"], int(x["max_in"]))
         # Calls another model answered, by the id Lucidos asked for. Absent
         # on nearly every bucket, so it is only written when it has a count.

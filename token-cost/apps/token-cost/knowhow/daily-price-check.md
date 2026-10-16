@@ -1,6 +1,6 @@
 ---
 name: Token Cost price check (first seed and daily check)
-description: How Token Cost gets and keeps its model prices. Reads the official provider pricing pages and writes dated price cards to artifacts/token-cost/pricing.json. Covers the first seed after install (a fresh workspace has no prices, so every model shows as unpriced), the daily check, which provider pages to read, how to add a dated card without repricing the past, retired or rerouted models, promo end dates, and when to notify. Load when the Token Cost plugin is set up, when the daily model price check trigger fires, when a provider changes a price, when a model shows as unpriced or has no price card, or when the user asks whether model prices are up to date.
+description: How Token Cost gets and keeps model prices: read official pricing pages, write dated price cards to artifacts/token-cost/pricing.json. Covers the first seed after install, the daily check, retired or rerouted models and promo end dates. Load when the plugin is set up, the daily price check fires, a provider changes a price, a model shows unpriced, or prices need checking.
 ---
 
 # Token Cost price check
@@ -48,6 +48,10 @@ The format, which the `_comment` should state in full sentences:
 - `long` is the long-context tier: `threshold_tokens` plus its own four rates. A
   call is long only when its prompt is OVER the threshold. Add `inclusive: true`
   only when the provider bills "at or over" (xAI says "200k tokens or greater").
+- `flex` is OpenAI's Flex tier: its own four rates, for calls whose capture
+  says `usage.service_tier: "flex"`. Lucidos sends its Tree memory backfill
+  there. A card without `flex` prices those calls at its base rates, so add it
+  for every OpenAI model the Flex table lists.
 - `per_minute` prices a model that is billed by time (realtime and live models).
 - Every card has a `source`: the URL, the quoted sentence, and "checked <date>".
 
@@ -91,7 +95,7 @@ Free, local and stealth models (`*-free`, ids served by a local Ollama,
 
 1. Collect every model id in `daily.json`, all days.
 2. For each one, read the provider's current rates, including the long tier,
-   the cache rates and per-minute rates.
+   the Flex tier, the cache rates and per-minute rates.
 3. Write one card per model. If the provider's changelog shows a price change
    inside the usage period, write the older card too, with the newer card's
    `from` set to the change day. Otherwise write one undated card, which prices

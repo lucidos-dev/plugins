@@ -537,5 +537,42 @@ ok(!threw, 'an SDK without escapeHtmlAttr still renders: '+(threw && threw.messa
 const oldTags = document.getElementById('tbody').children[0].innerHTML.match(/<[^>]*>/g).join('');
 ok(!/onmouseover="|onfocus="/.test(oldTags), 'and still escapes the quotes itself');
 
+console.log('\n29. a call served on the Flex tier takes the card\'s Flex rates');
+tc.setPricing({
+  currency:'USD',
+  models:{
+    'gpt-6.1-sol': { uncached_in:2, cache_write:2.5, cache_read:0.1, out:10,
+                     flex:{ uncached_in:1, cache_write:1.25, cache_read:0.05, out:5 } },
+    'gpt-5.5': { uncached_in:5, cache_write:0, cache_read:0.5, out:30 },
+  },
+  long_context_multiplier:{ threshold_tokens:200000, in_multiplier:1, out_multiplier:1 },
+  producers:{}, fx:{ rates:{USD:1} },
+});
+const noTier = { in:0, out:0, cache_read:0, cache_write:0 };
+const flexCall = { in:7000, cache_read:5000, cache_write:1500, out:100 };
+const stdUsd = (500*2 + 1500*2.5 + 5000*0.1 + 100*10)/1e6;
+const flexUsd = (500*1 + 1500*1.25 + 5000*0.05 + 100*5)/1e6;
+const nearUsd = (a, b) => Math.abs(a - b) < 1e-12;
+const allFlex = { calls:1, ...flexCall, seconds:0, long:noTier, flex:{...flexCall} };
+ok(nearUsd(tc.costOf('gpt-6.1-sol', allFlex, allFlex.long), flexUsd),
+   'a Flex call costs the Flex card, got '+tc.costOf('gpt-6.1-sol', allFlex, allFlex.long));
+const mixed = { calls:2, in:14000, cache_read:10000, cache_write:3000, out:200, seconds:0,
+                long:noTier, flex:{...flexCall} };
+ok(nearUsd(tc.costOf('gpt-6.1-sol', mixed, mixed.long), stdUsd + flexUsd),
+   'a bundle prices its Flex share at Flex and the rest at the base card');
+const plainCard = { calls:1, ...flexCall, seconds:0, long:noTier, flex:{...flexCall} };
+ok(nearUsd(tc.costOf('gpt-5.5', plainCard, plainCard.long), (500*5 + 5000*0.5 + 100*30)/1e6),
+   'a card with no Flex block prices Flex tokens at its base rates');
+tc.setDaily({...empty, days:{}});
+tc.resetLive();
+const flexAt = '2026-08-12T11:00:00Z';
+const flexEv = mk(999101, flexAt, 'auxiliary', 'gpt-6.1-sol', [7000,5000,1500,100]);
+flexEv.event.usage.service_tier = 'flex';
+tc.pushLive(flexEv, {quiet:true});
+const s29 = tc.seriesForDay(tc.localDay(new Date(flexAt)));
+const bucket29 = Object.values(s29)[0];
+ok(bucket29 && bucket29.flex.in === 7000 && bucket29.flex.cache_write === 1500,
+   'a live Flex call lands in the flex bucket, got '+JSON.stringify(bucket29 && bucket29.flex));
+
 console.log('\n'+pass+' passed, '+fail+' failed');
 process.exit(fail?1:0);

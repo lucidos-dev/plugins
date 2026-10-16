@@ -1,5 +1,5 @@
 {
   "name": "Token Cost",
-  "description": "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream, cache-hit share, context-size distribution, and per-model/per-producer cost from an editable pricing table.",
+  "description": "Real-time token usage and running cost across every model call: live totals as agents stream, cache-hit share, context-size spread, and cost per model and producer.",
   "icon": "assets/icon.svg"
 }

@@ -17,6 +17,7 @@
   .check { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: var(--font-size-xs); white-space: nowrap;
     color: var(--text-secondary); cursor: pointer; user-select: none; }
   .check[hidden], .controls-group[hidden], .segmented-control[hidden] { display: none; }
+  .check:has(input:disabled) { opacity: 0.45; cursor: default; }
   .controls-group { display: contents; }
   .list { display: flex; flex-direction: column; gap: 0.125rem; }
   .row { border-top: 1px solid var(--border-color); }
@@ -98,7 +99,7 @@
         <button class="segmented-btn" id="s-latest">Latest</button>
       </div>
     </div>
-    <label class="check" id="subs-wrap" hidden><input type="checkbox" id="f-subs"> Sub-threads</label>
+    <label class="check" id="subs-wrap" hidden><input type="checkbox" id="f-subs"> <span id="subs-text">Sub-threads</span></label>
   </div>
   <div class="list" id="list"></div>
   <div id="sentinel" aria-hidden="true"></div>
@@ -148,13 +149,19 @@ function render(animate) {
     rows.forEach(r => { const t = active.get(r.id); r.status = t.status; if (!r.lastMs) r.lastMs = ms(t.last_activity); });
   } else if (mode === 'today' && !thisOnly) rows = rows.filter(r => r.today > 0);
   let subCount = 0;
+  // The tree is walked whenever This thread is shown, so the box knows if
+  // there is anything to add. Until the walk lands, and on a thread with no
+  // sub-threads, the box is disabled and the headline is this thread alone.
+  const known = !!focus && subsFor === focus;
+  const hasSubs = known && subIds.size > 0;
+  const useSubs = withSubs && hasSubs;
   if (thisOnly) {
     if (focus && !rows.some(r => r.id === focus)) {
       const base = find(focus), t = active.get(focus);
       rows.push(base ? { ...base, lastMs: ms(base.last) } : { id: focus, title: titles.get(focus) || (t && t.title) || 'This thread', all: 0, today: 0, calls: 0, models: {}, lastMs: 0 });
     }
     const ids = new Set([focus]);
-    if (withSubs && focus && subsFor === focus) {
+    if (useSubs) {
       subCount = subIds.size;
       for (const id of subIds) {
         ids.add(id);
@@ -168,9 +175,13 @@ function render(animate) {
   const sum = rows.reduce((n, r) => n + r[key], 0);
   document.getElementById('subs-wrap').hidden = !thisOnly;
   document.getElementById('all-controls').hidden = thisOnly;
-  document.getElementById('f-subs').checked = withSubs;
+  const box = document.getElementById('f-subs');
+  box.disabled = !hasSubs;
+  box.checked = useSubs;
+  document.getElementById('subs-wrap').dataset.tooltip = !known ? 'Looking for sub-threads' : hasSubs ? '' : 'This thread has no sub-threads';
+  document.getElementById('subs-text').textContent = hasSubs ? `Sub-threads (${subIds.size})` : 'Sub-threads';
   document.getElementById('label').textContent = thisOnly
-    ? 'This thread' + (withSubs ? ` + ${subCount} sub-thread${subCount === 1 ? '' : 's'}` : '')
+    ? 'This thread' + (useSubs ? ` + ${subCount} sub-thread${subCount === 1 ? '' : 's'}` : '')
     : flight
     ? `In flight, ${rows.length} thread${rows.length === 1 ? '' : 's'}`
     : (mode === 'today' ? 'Today, all threads' : `All time, ${data.threads.toLocaleString()} threads`);
@@ -257,8 +268,8 @@ document.getElementById('b-flight').onclick = async () => { mode = 'flight'; fli
 document.getElementById('s-cost').onclick = () => { sort = 'cost'; shown = PAGE; render(true); };
 document.getElementById('s-latest').onclick = () => { sort = 'latest'; shown = PAGE; render(true); };
 document.getElementById('sc-all').onclick = () => { if (!thisOnly) return; thisOnly = false; shown = PAGE; render(true); };
-document.getElementById('f-this').onclick = () => { if (thisOnly) return; thisOnly = true; shown = PAGE; render(true); if (withSubs) loadSubs(); };
-document.getElementById('f-subs').onchange = e => { withSubs = e.target.checked; shown = PAGE; render(true); if (withSubs) loadSubs(); };
+document.getElementById('f-this').onclick = () => { if (thisOnly) return; thisOnly = true; shown = PAGE; render(true); loadSubs(); };
+document.getElementById('f-subs').onchange = e => { withSubs = e.target.checked; shown = PAGE; render(true); };
 // Every descendant of the focused thread, walked level by level through
 // threads.list({ parent }), which returns direct children only.
 async function loadSubs() {
@@ -284,7 +295,7 @@ async function loadSubs() {
   if (focus === root) { subIds = found; subsFor = root; dirty = true; }
 }
 // New sub-threads spawn while you watch, so the tree is re-walked.
-setInterval(() => { if (thisOnly && withSubs && !document.hidden) loadSubs(); }, 15000);
+setInterval(() => { if (thisOnly && !document.hidden) loadSubs(); }, 15000);
 // Infinite scroll: when the list end comes into view, add the next page.
 // Re-observing after a render makes the observer fire again if the end is
 // still visible (a tall window), so it keeps filling until it can scroll.
@@ -356,15 +367,25 @@ function fold(seq, tid, p, at) {
   const m = e.models[c.model] || (e.models[c.model] = { cost: 0, calls: 0 });
   m.cost += c.cost; m.calls += 1;
   liveToday += c.cost; liveAll += c.cost; dirty = true;
-  if (!titles.has(tid) && !known(tid)) titles.set(tid, null);
+  if (!titles.has(tid) && !find(tid)) titles.set(tid, null);
 }
 // The period's spend per model, most expensive first.
 function breakdown(r, key) {
   return Object.entries(r.models || {}).map(([name, v]) => ({ name, cost: v[key] || 0, calls: v.calls || 0 }))
     .filter(m => m.cost > 0).sort((a, b) => b.cost - a.cost);
 }
-const find = tid => data.top_all.find(r => r.id === tid) || data.top_today.find(r => r.id === tid);
-const known = tid => !!find(tid);
+const listed = tid => data.top_all.find(r => r.id === tid) || data.top_today.find(r => r.id === tid);
+// A thread in neither list comes from the snapshot's compact `rest` map.
+function find(tid) {
+  const top = listed(tid);
+  if (top) return top;
+  const c = data.rest && data.rest[tid];
+  if (!c) return undefined;
+  const [title, all, today, calls, last, byModel] = c;
+  const models = {};
+  for (const [k, [a, t, n]] of Object.entries(byModel || {})) models[k] = { all: a, today: t, calls: n };
+  return { id: tid, title: title || 'Untitled', all, today, calls, last, models };
+}
 function pool(key) {
   // Today: every thread with spend today. All time: the 300 most expensive plus
   // today's threads, so "Latest" also finds recent cheap threads.
@@ -441,7 +462,7 @@ async function load(animate) {
     return; // Not inside Lucidos: no thread to follow, so the filter stays hidden.
   }
   document.getElementById('scope').hidden = false;
-  lucidos.ui.onFocusedThreadChange(id => { focus = id; if (thisOnly) { render(false); if (withSubs) loadSubs(); } });
+  lucidos.ui.onFocusedThreadChange(id => { focus = id; if (thisOnly) { render(false); loadSubs(); } });
   render(false);
 })();
 lucidos.sse.connect();

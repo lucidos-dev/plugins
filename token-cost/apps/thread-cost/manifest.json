@@ -1,9 +1,9 @@
 {
   "name": "Thread cost",
-  "description": "Live running cost per thread: today and all-time totals, top threads ranked. A row unfolds its spend per model, and its arrow opens the thread. Hourly snapshot plus every new model call priced as it lands.",
+  "description": "Live running cost per thread: today and all-time totals, top threads ranked. A row unfolds its spend per model; its arrow opens the thread. Hourly snapshot, plus each new call priced as it lands.",
   "icon": "assets/icon.svg",
+  "reveal": "on-ready",
   "kind": "widget",
   "reusable": true,
-  "origin_plugin_id": "token-cost",
-  "reveal": "on-ready"
+  "origin_plugin_id": "token-cost"
 }
