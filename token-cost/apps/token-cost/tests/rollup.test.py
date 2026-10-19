@@ -4,8 +4,11 @@ The rollup files each call's prompt as short or long in SQL, and the app then
 prices the long part at the tier card. When the two disagree on a model's
 threshold, rolled-up days charge 200k-272k GPT calls at a rate OpenAI does not
 bill. These pin that the rollup picks the same card the app's rateFor() does,
-on the same day: pricing.json keeps a dated price history, and a tier that
+on the same day: the price table keeps a dated price history, and a tier that
 starts mid-history must split only the days it covers.
+
+The table is Lucidos's (`lucidos model-prices`, ADR 0525). These feed it
+through the TOKEN_COST_PRICE_TABLE seam, a file holding the same JSON.
 
 The generated SQL is run for real in sqlite, with Postgres's regexp_replace
 registered as a Python function, so the test needs no database server.
@@ -34,11 +37,19 @@ def check(name, got, want):
 
 
 def with_pricing(models, **extra):
-    """Point rollup at a temporary pricing.json holding these cards."""
+    """Point rollup at a temporary price table holding these cards, shaped
+    as `lucidos model-prices` prints it: every card carries its origin."""
+    def tagged(entry):
+        if isinstance(entry, list):
+            return [dict(c, origin="shipped") if isinstance(c, dict) else c for c in entry]
+        return dict(entry, origin="shipped") if isinstance(entry, dict) else entry
     f = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
-    json.dump({"models": models, **extra}, f)
+    json.dump({"currency": "USD", "checked": "2026-10-16",
+               "models": {m: tagged(e) for m, e in models.items()},
+               "override": {"path": "data/config/model-prices.json", "present": False, "checked": None, "error": None},
+               **extra}, f)
     f.close()
-    rollup.PRICING = pathlib.Path(f.name)
+    rollup.PRICE_TABLE = f.name
 
 
 DB = sqlite3.connect(":memory:")
@@ -61,7 +72,7 @@ def is_long(model, prompt, day="2026-10-10"):
 
 GPT = {"uncached_in": 5, "out": 30, "long": {"threshold_tokens": 272000}}
 
-# 1. A model's tier comes from pricing.json, the only table.
+# 1. A model's tier comes from the price table, the only table.
 with_pricing({"gpt-5.5": GPT, "claude-opus-5": {"uncached_in": 5, "out": 25}})
 check("gpt-5.5 splits at its card's 272k", cutoff("gpt-5.5"), 272000)
 check("claude-opus-5[1m] stays at 200k", cutoff("claude-opus-5[1m]"), 200000)
@@ -166,12 +177,13 @@ check("an xAI prompt of exactly 200,000 is long", is_long("grok-4.6", 200000), T
 check("one token under is short", is_long("grok-4.6", 199999), False)
 check("a tier-less model at exactly 200,000 is short", is_long("claude-opus-5", 200000), False)
 
-# 9. A card with no tier splits at the GLOBAL threshold, as the app's
-# longThreshold() falls back to it, not at a fixed 200k.
+# 9. A card with no tier splits at 200k, as the app's longRule() does. The
+# global `long_context_multiplier` of pricing.json is gone: its multipliers
+# were all 1.0, and long tiers live on cards. A stray one moves nothing.
 with_pricing({"acme": {"uncached_in": 1, "out": 1}, "gpt-5.5": GPT},
              long_context_multiplier={"threshold_tokens": 150000, "in_multiplier": 2})
-check("a tier-less card splits at the global threshold", cutoff("acme"), 150000)
-check("so does an unlisted model", cutoff("acme/mystery-7b"), 150000)
+check("a tier-less card splits at 200k", cutoff("acme"), 200000)
+check("so does an unlisted model", cutoff("acme/mystery-7b"), 200000)
 check("a card's own tier still wins", cutoff("gpt-5.5"), 272000)
 with_pricing({"acme": {"uncached_in": 1, "out": 1, "long": {"threshold_tokens": "abc"}},
               "acme-2": {"uncached_in": 1, "out": 1, "long": {"threshold_tokens": True}}})
@@ -185,20 +197,59 @@ for spelled in ("anthropic/claude-haiku-5.5", "us.anthropic.claude-haiku-5-5-202
     check(f"{spelled} splits at Haiku 5.5's 100k", cutoff(spelled), 100000)
 check("a dotted non-Claude id is left alone", cutoff("gpt-5.5"), 200000)
 
-# 11. An unreadable pricing.json stops the run; a missing one splits at 200k.
+# 11. A price table that cannot be read stops the run. Splitting at 200k
+# instead would file every 200k-272k GPT call as long until the next rebuild.
+def stops(name):
+    try:
+        rollup.long_cutoff_sql("m", "d")
+        check(name, "no error", "PricingUnreadable")
+    except rollup.PricingUnreadable:
+        check(name, True, True)
+
+
 broken = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
 broken.write('{"models": {"gpt-5.5": ')
 broken.close()
-rollup.PRICING = pathlib.Path(broken.name)
-try:
-    rollup.long_cutoff_sql("m", "d")
-    check("a half-written pricing.json stops the run", "no error", "PricingUnreadable")
-except rollup.PricingUnreadable:
-    check("a half-written pricing.json stops the run", True, True)
-rollup.PRICING = pathlib.Path(tempfile.mkdtemp()) / "missing.json"
-check("a missing pricing.json splits every model at 200k", cutoff("gpt-5.5"), 200000)
+rollup.PRICE_TABLE = broken.name
+stops("a half-written table stops the run")
+rollup.PRICE_TABLE = str(pathlib.Path(tempfile.mkdtemp()) / "missing.json")
+stops("a missing table file stops the run")
 
-# 12. A threshold change in pricing.json rebuilds every day once.
+
+def via_cli(returncode, stdout, stderr=""):
+    """Read the table the way a live run does, through `lucidos model-prices`."""
+    seen = []
+
+    class Done:
+        pass
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd)
+        d = Done()
+        d.returncode, d.stdout, d.stderr = returncode, stdout, stderr
+        return d
+
+    real = rollup.subprocess.run, rollup.PRICE_TABLE
+    rollup.subprocess.run, rollup.PRICE_TABLE = fake_run, None
+    try:
+        return seen, rollup.read_pricing()
+    except rollup.PricingUnreadable as e:
+        return seen, e
+    finally:
+        rollup.subprocess.run, rollup.PRICE_TABLE = real
+
+
+table = {"currency": "USD", "models": {"gpt-5.5": [dict(GPT, origin="override")]}}
+seen, got = via_cli(0, json.dumps(table))
+check("a live run asks `lucidos model-prices`", seen, [["lucidos", "model-prices"]])
+check("and reads the table it prints", got, table)
+seen, got = via_cli(2, "", "error: unrecognized subcommand 'model-prices'")
+check("an engine with no price table stops the run, and says why",
+      isinstance(got, rollup.PricingUnreadable) and "model-prices" in str(got), True)
+seen, got = via_cli(0, '{"error": "not found"}')
+check("a reply with no models stops the run", isinstance(got, rollup.PricingUnreadable), True)
+
+# 12. A threshold change in the price table rebuilds every day once.
 with_pricing({"gpt-5.5": GPT})
 sig = rollup.split_signature(rollup.long_cutoff_sql("payload->>'model'", "d"))
 with_pricing({"gpt-5.5": [GPT, {"from": "2026-11-01", **GPT, "uncached_in": 4}]})
@@ -223,7 +274,7 @@ check("the current stamp is not",
 check("TOKEN_COST_REBUILD=1 still forces it",
       rollup.needs_rebuild({"rollup_version": rollup.ROLLUP_VERSION}, {"TOKEN_COST_REBUILD": "1"}) is not None, True)
 check("the stamp is written", '"rollup_version": ROLLUP_VERSION' in (HERE.parent / "scripts" / "rollup.py").read_text(), True)
-check("a file from before served-model filing is rebuilt, whatever pricing.json holds",
+check("a file from before served-model filing is rebuilt, whatever the table holds",
       rollup.needs_rebuild({"rollup_version": 4}, {}) is not None, True)
 
 # 14. Jev spend ends at the proxy cutover, where the engine's own rows begin.
@@ -287,13 +338,14 @@ def run_main(head):
         written.append(json.loads(kw["input"]))
         return Done()
 
-    real = rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.WS
+    real = rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS
     tmp = pathlib.Path(tempfile.mkdtemp())
-    rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.WS = fake_psql, fake_run, tmp / "daily.json", tmp
+    rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS = (
+        fake_psql, fake_run, tmp / "daily.json", tmp / "threads-daily.json", tmp)
     try:
         rollup.main()
     finally:
-        rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.WS = real
+        rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS = real
     return asked, written
 
 
@@ -304,6 +356,8 @@ check("the rollup, the voice pass and the row count all ran", len(reads), 3)
 check("each stops at the cursor", all("sequence <= 4242" in q for q in reads), True)
 check("no placeholder is left in any query", any("%(" in q for q in asked), False)
 check("the cursor written is that same ceiling", written and written[0]["last_sequence"], 4242)
+check("the thread file is written second", len(written), 2)
+check("the thread file carries the same cursor", written[1]["last_sequence"], 4242)
 
 # 16. A Flex call is summed apart, never also as a long call, and a file
 # from before the Flex bucket is rebuilt once.
@@ -345,6 +399,42 @@ check("psql is handed the workspace URL first", argv[:2], ["psql", "postgresql:/
 check("psql keeps its flags and query", argv[2:], ["-A", "-t", "-c", "SELECT 1"])
 check("psql output is still stripped", out, "1")
 check("the rollup never asks for a write", "READ WRITE" in " ".join(argv), False)
+
+# 18. Per-thread rows, for the app's Thread group-by.
+doc = {"a": 1, "days": {"2026-10-18": {"t": {"k": [1]}}, "2026-10-19": {}}, "hours": {}}
+text = rollup.dumps_by_day(doc)
+check("the thread file is still one JSON document", json.loads(text), doc)
+check("with each day on its own line", sum(1 for l in text.splitlines() if l.startswith('"2026-10-')), 2)
+check("a thread row drops its trailing zeros",
+      rollup.thread_row({"calls": 3, "cached_calls": 2, "in": 900, "cache_read": 600,
+                         "cache_write": 0, "out": 40, "seconds": 0, "max_in": 400,
+                         "long": {"in": 0}, "flex": {}}),
+      [3, 2, 900, 600, 0, 40, 0, 400])
+check("a long call keeps its tail",
+      rollup.thread_row({"calls": 1, "in": 300000, "long": {"in": 300000}})[:9],
+      [1, 0, 300000, 0, 0, 0, 0, 0, 300000])
+check("the rollup counts calls that read the cache",
+      "count(*) FILTER (WHERE cr > 0) AS cached_calls" in rollup.ROLLUP_SQL, True)
+check("the rollup groups by thread", "GROUP BY 1, 2, 3, 4, 5, 6" in rollup.ROLLUP_SQL, True)
+check("a file from before the thread split is rebuilt",
+      rollup.needs_rebuild({"rollup_version": 6}, {}) is not None, True)
+
+
+def meta_from(doc):
+    real = rollup.psql
+    rollup.psql = lambda sql: json.dumps(doc)
+    try:
+        return rollup.thread_meta({"kid", "gone"})
+    finally:
+        rollup.psql = real
+
+
+meta = meta_from({"kid": ["Fix test", "mid"], "mid": ["Sub", "root"], "root": ["Parent", None],
+                  "other": ["Unrelated", None]})
+check("a sub-thread brings its ancestors along", sorted(meta), ["kid", "mid", "root"])
+check("a root carries no parent", meta["root"], ["Parent"])
+check("a thread the summaries lost is left out", "gone" in meta, False)
+check("unreadable summaries give no titles, not a crash", meta_from([]), {})
 
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

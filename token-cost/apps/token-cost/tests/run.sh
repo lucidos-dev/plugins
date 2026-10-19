@@ -13,15 +13,21 @@
 #               priced at the card in force that day
 #   freshness   a dead stream, a hole behind it, and a failing reconcile are
 #               all recovered from and reported
-#   save        an edit typed mid-save is still written, and a save never
-#               writes a stale table over a newer pricing.json
-#   defaults    the app carries no prices of its own (pricing.json is the
-#               only table), and the built-in sounds play without a fetch
-#               the frame is refused
+#   save        a price edit lands in the override (config/model-prices.json),
+#               never the shipped cards; an edit typed mid-save is still
+#               written; a save never writes a stale file over a newer one,
+#               nor over an override Lucidos ignores
+#   defaults    the app carries no prices of its own (Lucidos's price table
+#               is the only table), and the built-in sounds play without a
+#               fetch the frame is refused
 #   markup      rate badges use the shared .label tones, and every :hover
 #               rule sits inside @media (hover: hover)
 #   rollup      the daily rollup splits long context at the same dated card
 #               the app prices with (python3, SQL run in sqlite, no Postgres)
+#
+# The app tests price from tests/fixtures/price-table.json: the table as
+# lucidos.priceTable.get() returns it, the cards Lucidos shipped on 2026-10-16
+# merged with a migrated workspace override.
 set -euo pipefail
 cd "$(dirname "$0")"
 export TZ="${TZ:-Europe/Oslo}"

@@ -62,13 +62,16 @@ global.URL = URL;
 global.Intl = Intl;
 
 const daily = JSON.parse(fs.readFileSync(P('data/artifacts/token-cost/daily.json'),'utf8'));
-const pricingRaw = fs.readFileSync(P('data/artifacts/token-cost/pricing.json'),'utf8');
+// The price table as lucidos.priceTable.get() returns it: the cards Lucidos
+// shipped on 2026-10-16 merged with this workspace's migrated override.
+const priceTableRaw = fs.readFileSync(new URL('./fixtures/price-table.json', import.meta.url),'utf8');
 
 global.lucidos = {
   apiUrl: (s) => '/dev/api/v1' + (s.startsWith('/') ? s : '/' + s),
   ui:{ applyPreferences(){}, watchPreferences(){}, enhanceSelects(){}, toast(){},
        Select:{ create:(o)=>({element:mkEl('sel'), getValue:()=>o.value, setValue(){}, setOptions(){}, destroy(){}}) } },
-  data:{ read: async (p)=> p.includes('pricing') ? pricingRaw : p.includes('ui-state') ? '{}' : JSON.stringify(daily), write: async()=>({success:true}), url:(p)=> p.startsWith('system-knowhow/') ? '/dev/api/v1/data/'+p : '/dev/data/'+p },
+  priceTable:{ get: async () => JSON.parse(priceTableRaw) },
+  data:{ read: async (p)=> p.includes('model-prices') || p.includes('settings.json') ? Promise.reject(Object.assign(new Error('HTTP 404'), { httpCode: 404 })) : p.includes('ui-state') ? '{}' : JSON.stringify(daily), write: async()=>({success:true}), url:(p)=> p.startsWith('system-knowhow/') ? '/dev/api/v1/data/'+p : '/dev/data/'+p },
   events:{
     // The catch-up pager reads the store through here now, not a raw fetch: an
     // app frame has an opaque origin (ADR 0227), so a direct fetch of the

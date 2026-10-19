@@ -1,18 +1,23 @@
 id = "token-cost"
-version = "0.4.4"
+version = "0.5.0"
 name = "Token Cost"
-description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, cache-hit share, context-size distribution, and per-model/per-producer cost from a dated price history: each day is priced at the rate in force that day, and each call at the model that actually served it. A dead stream, a gap behind it, or a stale rollup are each detected and named in the header. Also ships the Thread cost widget: what the open thread costs, sub-threads included, with its model mix and savings suggestions. Ships an incremental rollup script, a per-thread snapshot script and a price-check recipe; setup fills in real prices and offers an hourly rollup, an hourly thread snapshot and a daily price check."
+description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, an analysis table and chart grouped by any mix of model, producer, thread and day, cache-hit share and context size, all priced from Lucidos's dated price table: each day is priced at the rate in force that day, and each call at the model that actually served it. A dead stream, a gap behind it, or a stale rollup are each detected and named in the header. Also ships the Thread cost widget: what the open thread costs, sub-threads included, with its model mix and savings suggestions. Ships an incremental rollup script and a per-thread snapshot script; setup offers an hourly rollup and an hourly thread snapshot."
 source = "https://github.com/lucidos-dev/plugins/tree/main/token-cost"
-engine = ">=0.49.0"
+engine = ">=0.50.0"
 categories = ["developer-tools", "data"]
 icon = "media/icon.svg"
 screenshots = ["media/dashboard.png", "media/thread-cost-widget.png", "media/settings.png"]
 
 setup = """
-This plugin needs five things wired up: a schedule for its rollup script, the
-proxy entry its currency refresh uses, a first set of model prices, a seed and
-a schedule for the Thread cost widget's snapshot, and optionally a daily price
-check.
+This plugin needs four things wired up: a schedule for its rollup script, the
+proxy entry its currency refresh uses, a seed and a schedule for the Thread
+cost widget's snapshot, and a word with the user about keeping prices current.
+
+The plugin carries no prices. The app, the rollup and the snapshot all read
+Lucidos's price table: the dated cards Lucidos ships, merged with the
+workspace override in `data/config/model-prices.json`. Run
+`lucidos model-prices` to see it. A rate the user edits in the app's Settings
+tab lands in that override. There is nothing to seed.
 
 1. Ask the user how often they want the rollup to run. Hourly at five past
    (`0 5 * * * *`) is a good default: the dashboard folds live calls on top of
@@ -31,36 +36,31 @@ check.
 4. Run the rollup once so `artifacts/token-cost/daily.json` exists. The first
    run reads every `ContextCaptured` row and can take a minute on a busy
    workspace; later runs resume from the recorded sequence.
-5. **Seed the prices.** The app carries no prices of its own, so until
-   `artifacts/token-cost/pricing.json` has cards every model shows as unpriced.
-   Load the knowhow `token-cost/daily-price-check` and follow its seed mode:
-   read each provider's official pricing page for every model in `daily.json`,
-   and write sourced price cards. If `pricing.json` already has models (an
-   update from 0.2.x), skip the seed and run a daily check instead, which only
-   adds what is missing or changed.
-6. **Seed the Thread cost widget.** After the prices exist, run
-   `scripts/token-cost/thread_costs.py` once (with `LUCIDOS_WORKSPACE` set, as
-   any run_python or run_bash call has it). It prices every call per thread
-   and writes `artifacts/token-cost/threads-cost.json` through `lucidos data
-   write`. The widget prices newer calls live on top of that snapshot, and
-   shows "No data yet" until the first run.
-7. Offer an hourly refresh for that snapshot, so the widget's thread titles
+5. **Seed the Thread cost widget.** Run `scripts/token-cost/thread_costs.py`
+   once (with `LUCIDOS_WORKSPACE` set, as any run_python or run_bash call has
+   it). It prices every call per thread and writes
+   `artifacts/token-cost/threads-cost.json` through `lucidos data write`. The
+   widget prices newer calls live on top of that snapshot, and shows "No data
+   yet" until the first run.
+6. Offer an hourly refresh for that snapshot, so the widget's thread titles
    and totals stay current. Ten past the hour (`0 10 * * * *`) is a good
    default, five minutes after the rollup. If the user wants it, create a
    **script** trigger with `app_id = "thread-cost"` running
    `scripts/token-cost/thread_costs.py`, with `go_to_review` off. It prints
    one summary line and notifies nothing.
-8. Offer a daily price check, so a provider's price change reaches the
-   dashboard without the user typing it. Suggest 07:30 local time and let the
-   user pick. If they want it, create an intent trigger as the knowhow's last
-   section describes. If they decline, tell them prices stay as seeded until
-   they edit them in Settings.
-9. Tell the user it is done, say how many models are priced and which are not,
-   link the app, and tell them they can ask for the Thread cost widget in any
-   thread.
+7. **Prices.** Tell the user that keeping prices current is Lucidos's job, not
+   this plugin's: **Keep prices current** in Settings > Intelligence checks
+   the providers' own pages on a schedule and writes any change to the
+   override. Do not create a price-check trigger here. If an older install
+   left one behind (an intent trigger with `app_id = "token-cost"` that checks
+   prices), offer to delete it, because it follows a recipe that no longer
+   exists.
+8. Tell the user it is done, name any model in `daily.json` that the price
+   table does not price, link the app, and tell them they can ask for the
+   Thread cost widget in any thread.
 
 Both scripts talk to the workspace Postgres through `psql`, passing the
-read-only `LUCIDOS_DATABASE_URL` the engine gives every spawned script. They
-stop with a clear message if it is missing. Nothing here needs a credential or
-an API key.
+read-only `LUCIDOS_DATABASE_URL` the engine gives every spawned script, and
+read prices with `lucidos model-prices`. They stop with a clear message if
+either is missing. Nothing here needs a credential or an API key.
 """

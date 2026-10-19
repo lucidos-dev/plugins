@@ -7,7 +7,9 @@ makes: chat turns, trigger fires, and coding-agent sessions alike.
 
 - **Spend**, over today / 7 days / 30 days / all time, per producer.
 - **Per day** stacked bars split into fresh input, cache write, cache read and output.
-- **By model**, sorted by cost, with the token breakdown behind each number.
+- **Analysis**, one table and chart grouped by any mix of model, producer,
+  thread and day, by cost, calls, or cached against cold calls. Sub-threads
+  fold into their root thread.
 - **Context size per call**, the histogram that tells you where a long-context
   premium is actually biting.
 - **Live calls**, streamed over SSE as they land, including calls from other
@@ -21,11 +23,12 @@ the provider's own `usage` block. Two halves read it:
 - `scripts/rollup.py` folds those events into a per-day, per-model rollup at
   `artifacts/token-cost/daily.json`. It is incremental: it resumes from the
   `last_sequence` recorded in the file and only reads rows above it, then
-  recomputes each touched day in full so a rerun is idempotent.
+  recomputes each touched day in full so a rerun is idempotent. The same pass
+  writes the per-thread rows to `artifacts/token-cost/threads-daily.json`.
 - The app reads that rollup, then folds anything that has arrived over SSE since
   on top of it, so today's number is live rather than an hour stale.
 
-Cost is computed in the browser from the rates in Settings, never stored. A call
+Cost is computed in the browser from Lucidos's price table, never stored. A call
 is priced as the model that served it, which can differ from the model asked
 for when a provider reroutes a retired model; the dashboard marks those calls.
 Adding a dated card changes prices from its day on and leaves the past alone.
@@ -39,12 +42,14 @@ The **Settings** tab holds everything the dashboard prices with:
   history, and each day is priced at the card in force that day. A model with no
   card shows as unpriced and stays out of the total: there is no fallback rate,
   because a guessed price looks exactly like a real one.
-- **Long-context premium**: the threshold, and the input and output multipliers
-  applied to calls over it on a model whose id ends in `[1m]`.
+- **Currency**: the exchange rates for display, refreshed from frankfurter.dev.
 - **Producer labels**, how each producer id is named in the table and the filter.
 
-Saving writes `artifacts/token-cost/pricing.json`, so the table is
-version-controlled with the rest of the workspace and still editable by hand.
+A rate you edit is written to `data/config/model-prices.json`, the workspace
+override of Lucidos's price table, and never to the cards Lucidos ships.
+Producer labels and exchange rates go to `artifacts/token-cost/settings.json`.
+Both are version-controlled with the rest of the workspace and still editable by
+hand.
 
 ## Staying honest
 
@@ -74,24 +79,28 @@ apps/token-cost/tests/run.sh
 
 ## Requirements
 
-Lucidos 0.47.2 or newer. Served-model pricing reads the `served_model` field
-that release adds to every model call.
+A Lucidos engine with the price table: it serves `GET /api/v1/model-prices`,
+`lucidos.priceTable.get()` and the `lucidos model-prices` command. On an older
+engine the app shows every model as unpriced and the rollup stops with a clear
+message.
 
 ## Prices
 
-The app ships no prices. Plugin setup fills `artifacts/token-cost/pricing.json`
-from each provider's official pricing page, following
-`knowhow/daily-price-check.md`, and offers a daily check that writes a new dated
-card when a provider changes a price. Every card names its source.
+The app ships no prices. The app, the rollup and the Thread cost snapshot all
+read Lucidos's price table: the dated cards Lucidos ships, merged with the
+workspace override in `data/config/model-prices.json`. To check prices against
+the providers' own pages, Lucidos has the system knowhow `model-price-check`.
+**Keep prices current** in Settings > Intelligence runs it on a schedule.
 
 ## Updating
 
-Your `pricing.json` is never replaced. When an update changes how the rollup
+Your price override is never replaced. When an update changes how the rollup
 sums a day, `daily.json` carries an older `rollup_version`, and the next
 scheduled run rebuilds every day once. Set `TOKEN_COST_REBUILD=1` to force one
 yourself.
 
 ## After install
 
-The setup step creates the rollup trigger, seeds the prices, and offers the
-daily price check. Hourly at five past is the suggested rollup cadence.
+The setup step creates the rollup trigger and the Thread cost snapshot, and
+points you to **Keep prices current** in Settings > Intelligence. Hourly at
+five past is the suggested rollup cadence.

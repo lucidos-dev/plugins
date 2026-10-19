@@ -78,6 +78,18 @@ kept only for the most recent HOURS_DAYS days (the only ones a single-day
 selection can land on) and pruned from older days, so the file does not grow
 24x.
 
+PER THREAD, IN A SECOND FILE
+----------------------------
+The query also groups by thread, and the same pass writes those rows to
+artifacts/token-cost/threads-daily.json as compact lists (see THREAD_FIELDS),
+with each thread's title and parent. The app reads it only when its Thread
+group-by is on, and folds sub-threads into their root there. One query feeds
+both files, so the per-thread rows always sum to daily.json. The two share a
+cursor; when they disagree, the next run rebuilds both.
+
+Each row also counts `cached_calls`, the calls that read any cache, so the app
+can show cached against cold calls rather than only token shares.
+
 State path is anchored on LUCIDOS_WORKSPACE, never on __file__ (see
 knowhow/script-state-paths.md).
 """
@@ -94,7 +106,15 @@ from datetime import datetime, timezone
 
 WS = pathlib.Path(os.environ.get("LUCIDOS_WORKSPACE", "."))
 OUT = WS / "data" / "artifacts" / "token-cost" / "daily.json"
-PRICING = WS / "data" / "artifacts" / "token-cost" / "pricing.json"
+# The same rows split by thread, for the app's Thread group-by. Its own file,
+# because it is ten times the size of daily.json and the app only reads it
+# when Thread is picked. See thread_row().
+THREADS_OUT = WS / "data" / "artifacts" / "token-cost" / "threads-daily.json"
+# The price table is Lucidos's: the cards it ships merged with the workspace
+# override, data/config/model-prices.json (ADR 0525). `lucidos model-prices`
+# prints it. TOKEN_COST_PRICE_TABLE names a file holding the same JSON
+# instead, which is how a test or a replay feeds the rollup a fixed table.
+PRICE_TABLE = os.environ.get("TOKEN_COST_PRICE_TABLE") or None
 
 BUCKET_EDGES = [0, 32000, 64000, 128000, 200000, 400000]
 LONG_CTX_THRESHOLD = 200000
@@ -162,6 +182,8 @@ def blank_bucket() -> dict:
         "out": 0, "seconds": 0, "buckets": [0] * 6,
         "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0},
         "max_in": 0,
+        # Jev calls carry no cache counts, so none of them read the cache.
+        "cached_calls": 0,
     }
 
 
@@ -264,13 +286,13 @@ DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 class PricingUnreadable(Exception):
-    """pricing.json exists but cannot be read as a price table."""
+    """The price table cannot be read."""
 
 
 def cards_of(entry) -> list:
     """A model's price history, oldest first, as the app's cardsOf() reads it.
 
-    pricing.json holds a LIST of cards per model, each in force from its
+    The price table holds a LIST of cards per model, each in force from its
     `from` day. An undated card sorts first (in force since the beginning),
     ties keep file order, and a plain object is one undated card: the shape
     every file had before history existed.
@@ -316,14 +338,9 @@ def over_cut(threshold, inclusive: bool):
 
 def default_cut(doc) -> int:
     """The split for a card with no tier of its own, and for a model with no
-    card: the global `long_context_multiplier` threshold, as the app's
-    longThreshold() falls back to it. 200k when the file sets none."""
-    block = doc.get("long_context_multiplier") if isinstance(doc, dict) else None
-    block = block if isinstance(block, dict) else {}
-    t = threshold_of(block.get("threshold_tokens"))
-    if t is None:
-        return LONG_CTX_THRESHOLD
-    return over_cut(t, block.get("inclusive") is True)
+    card: 200k, as the app's longRule() falls back to it. Such a call is
+    priced at the flat rate either way, so the split only sorts its tokens."""
+    return LONG_CTX_THRESHOLD
 
 
 def threshold_schedule(entry, default) -> list:
@@ -350,40 +367,49 @@ def threshold_schedule(entry, default) -> list:
 
 
 def read_pricing() -> dict:
-    """pricing.json as a dict. Missing is {}: every model splits at 200k, as
-    an unpriced model does in the app.
+    """The price table as a dict, from `lucidos model-prices` (or the
+    TOKEN_COST_PRICE_TABLE file).
 
-    A file that is THERE but unreadable stops the run instead. Splitting at
-    200k then would quietly file every 200k-272k GPT call as long, and the
+    A table that cannot be read stops the run. Splitting every model at 200k
+    instead would quietly file every 200k-272k GPT call as long, and the
     rolled-up days would keep that until the next rebuild. A failed run
-    leaves daily.json as it was, and the next hour tries again.
+    leaves daily.json as it was, and the next hour tries again. An engine
+    from before the price table has no `model-prices` command, so on it the
+    rollup stops here and says so.
     """
-    try:
-        text = PRICING.read_text()
-    except FileNotFoundError:
-        return {}
-    except OSError as e:
-        raise PricingUnreadable(f"cannot read {PRICING}: {e}") from e
+    where = PRICE_TABLE or "lucidos model-prices"
+    if PRICE_TABLE:
+        try:
+            text = pathlib.Path(PRICE_TABLE).read_text()
+        except OSError as e:
+            raise PricingUnreadable(f"cannot read {where}: {e}") from e
+    else:
+        try:
+            r = subprocess.run(["lucidos", "model-prices"], capture_output=True, text=True)
+        except OSError as e:
+            raise PricingUnreadable(f"cannot run {where}: {e}") from e
+        if r.returncode != 0:
+            raise PricingUnreadable(f"{where} failed: {(r.stderr or r.stdout).strip()[:300]}")
+        text = r.stdout
     try:
         doc = json.loads(text)
     except ValueError as e:
-        raise PricingUnreadable(f"{PRICING} is not valid JSON: {e}") from e
-    if not isinstance(doc, dict) or not isinstance(doc.get("models", {}), dict):
-        raise PricingUnreadable(f"{PRICING} has no models table")
+        raise PricingUnreadable(f"{where} is not valid JSON: {e}") from e
+    if not isinstance(doc, dict) or not isinstance(doc.get("models"), dict):
+        raise PricingUnreadable(f"{where} has no models table")
     return doc
 
 
 def long_schedules(doc: dict) -> dict:
-    """Model id -> its cut schedule, for every model pricing.json prices.
+    """Model id -> its cut schedule, for every model the price table prices.
 
-    Read from pricing.json, because the threshold is a fact about the
+    Read from the price table, because the threshold is a fact about the
     PROVIDER and differs between them: OpenAI's tier starts over 272k,
     xAI's at 200k, Gemini Pro's over 200k, Haiku 5.5's over 100k, and
     Anthropic's other models charge no premium at all. One global 200k
     split filed every 200k-272k GPT call as long and the app then priced
-    it at a rate OpenAI does not charge. pricing.json is the only table:
-    the app carries no prices of its own, so there is nothing else to
-    agree with.
+    it at a rate OpenAI does not charge. The app prices from the same
+    table, so there is nothing else to agree with.
     """
     default = default_cut(doc)
     out = {}
@@ -566,7 +592,7 @@ def split_signature(cutoff_sql: str) -> str:
 
     The split happens HERE, at rollup time, and the app then prices each
     day's `long` share at the card in force. A tier added, moved or dated
-    in pricing.json after a day was rolled up would price that day's old
+    in the price table after a day was rolled up would price that day's old
     split at the new card. A changed fingerprint rebuilds every day once,
     so the two cannot drift.
     """
@@ -609,7 +635,7 @@ E_DAY = f"((e.created AT TIME ZONE '{TZ}')::date)"
 E_HOUR = f"(extract(hour FROM (e.created AT TIME ZONE '{TZ}'))::int)"
 
 # Each row's cut comes from the card in force on that row's local day. Built
-# in main(), from the pricing.json of that run, and spliced in for this mark.
+# in main(), from the price table of that run, and spliced in for this mark.
 LONG_CUT_MARK = "%(long_cut)s"
 
 # `usage` tuple, spelled once for the value and once inside the LAG.
@@ -630,7 +656,9 @@ COPY (
       producer,
       model,
       asked,
+      thread_id::text AS thread,
       count(*) AS calls,
+      count(*) FILTER (WHERE cr > 0) AS cached_calls,
       sum(in_tok) AS total_in,
       sum(cr) AS cache_read,
       sum(cw) AS cache_write,
@@ -658,6 +686,7 @@ COPY (
         """
     + LOCAL_HOUR
     + """ AS local_hour,
+        thread_id,
         payload->>'producer' AS producer,
         """
     + PRICED_MODEL
@@ -694,7 +723,7 @@ COPY (
     ) s
     WHERE NOT dup
       AND local_day = ANY (%(days)s)
-    GROUP BY 1, 2, 3, 4, 5
+    GROUP BY 1, 2, 3, 4, 5, 6
   ) t
 ) TO STDOUT;
 """
@@ -703,8 +732,6 @@ COPY (
 
 def psql(sql: str) -> str:
     # The engine sets no PG* vars (ADR 0481); the workspace URL is the only way in.
-    if not os.environ.get("LUCIDOS_DATABASE_URL"):
-        sys.exit("LUCIDOS_DATABASE_URL is not set: run this from a Lucidos trigger, run_python or run_bash")
     r = subprocess.run(
         ["psql", os.environ["LUCIDOS_DATABASE_URL"], "-A", "-t", "-c", sql],
         capture_output=True, text=True,
@@ -748,6 +775,7 @@ COPY (
     + """ AS hour,
       m.producer,
       m.model,
+      e.thread_id::text AS thread,
       sum((e.payload->>'duration_secs')::bigint) AS seconds
     FROM events e
     CROSS JOIN LATERAL (
@@ -765,7 +793,7 @@ COPY (
       AND """
     + E_DAY
     + """ = ANY (%(days)s)
-    GROUP BY 1, 2, 3, 4
+    GROUP BY 1, 2, 3, 4, 5
   ) t
 ) TO STDOUT;
 """
@@ -789,7 +817,79 @@ COPY (
 #      fingerprint also moves, but only when pricing.json has a tier.
 #   6  2026-10-13: a call served on OpenAI's Flex tier (`usage.service_tier`)
 #      is kept apart in `flex`, which the app prices at the card's `flex` rates
-ROLLUP_VERSION = 6
+#   7  2026-10-19: rows count `cached_calls` (calls that read any cache), and
+#      the same pass writes the per-thread file, threads-daily.json
+ROLLUP_VERSION = 7
+
+
+# A thread row is a flat list in this order, trailing zeros dropped. Most
+# threads never touch a long or Flex call, so most rows stop after `max_in`.
+# Spelled out as objects, the file ran to several megabytes.
+THREAD_FIELDS = (
+    "calls", "cached_calls", "in", "cache_read", "cache_write", "out", "seconds", "max_in",
+    "long.in", "long.cache_read", "long.cache_write", "long.out",
+    "flex.in", "flex.cache_read", "flex.cache_write", "flex.out",
+)
+
+
+def thread_row(b: dict) -> list:
+    """One bucket as a THREAD_FIELDS list."""
+    out = []
+    for f in THREAD_FIELDS:
+        head, _, sub = f.partition(".")
+        out.append(int((b.get(head) or {}).get(sub, 0) if sub else b.get(head, 0) or 0))
+    while out and out[-1] == 0:
+        out.pop()
+    return out
+
+
+# A plain SELECT, not COPY like the queries above: COPY's text format doubles
+# every backslash, and a title or first message holding one is no longer JSON.
+THREAD_META_SQL = """
+SELECT coalesce(json_object_agg(thread_id::text, json_build_array(
+  coalesce(nullif(title, ''), left(first_message, 80), ''), parent_thread_id::text)), '{}'::json)
+FROM thread_summaries;
+"""
+
+
+def thread_meta(tids: set) -> dict:
+    """Title and parent for every thread in the file, plus each one's
+    ancestors, so the app can fold a sub-thread into its root even when the
+    root itself made no call. A thread the summaries no longer hold is left
+    out, and the app shows it under its id."""
+    try:
+        doc = json.loads(psql(THREAD_META_SQL) or "{}")
+    except (SystemExit, ValueError):
+        return {}
+    if not isinstance(doc, dict):
+        return {}
+    meta, todo = {}, [t for t in tids if t]
+    while todo:
+        t = todo.pop()
+        if t in meta or t not in doc:
+            continue
+        title, parent = doc[t]
+        meta[t] = [title, parent] if parent else [title]
+        if parent:
+            todo.append(parent)
+    return meta
+
+
+def dumps_by_day(doc: dict) -> str:
+    """Compact JSON with each top-level key, and each day under `days` and
+    `hours`, on its own line. Still one valid document. The engine commits
+    every write to the workspace git, and on one 3 MB line an hourly run that
+    touched only today rewrote the whole line; this way git stores a delta of
+    the days that changed."""
+    c = lambda v: json.dumps(v, separators=(",", ":"))
+    parts = []
+    for k, v in doc.items():
+        if k in ("days", "hours") and isinstance(v, dict):
+            inner = ",\n".join(f"{c(d)}:{c(x)}" for d, x in v.items())
+            parts.append(f"{c(k)}:{{\n{inner}\n}}")
+        else:
+            parts.append(f"{c(k)}:{c(v)}")
+    return "{\n" + ",\n".join(parts) + "\n}\n"
 
 
 def needs_rebuild(state: dict | None, env: dict, split: str | None = None) -> str | None:
@@ -807,7 +907,7 @@ def needs_rebuild(state: dict | None, env: dict, split: str | None = None) -> st
     if have < ROLLUP_VERSION:
         return f"daily.json is from rollup version {have}, this is {ROLLUP_VERSION}"
     if split is not None and state.get("long_split") != split:
-        return "the long-context thresholds in pricing.json changed"
+        return "the long-context thresholds in the price table changed"
     return None
 
 
@@ -821,6 +921,14 @@ def main() -> None:
     split = split_signature(long_cut)
     existing = json.loads(OUT.read_text()) if OUT.exists() else None
     why = needs_rebuild(existing, os.environ, split)
+    threads_state = json.loads(THREADS_OUT.read_text()) if THREADS_OUT.exists() else None
+    # The two files are cut from one pass and share a cursor. If the thread
+    # file is missing or behind (its write failed, or it predates this
+    # version), an incremental run would leave its untouched days empty.
+    if not why and existing is not None and (
+        threads_state is None or threads_state.get("last_sequence") != existing.get("last_sequence")
+    ):
+        why = "threads-daily.json is missing or out of step with daily.json"
     if why:
         print(f"rebuilding every day: {why}")
 
@@ -879,10 +987,12 @@ def main() -> None:
             "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0},
             "flex": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0},
             "max_in": 0,
+            "cached_calls": 0,
         }
 
     def fold(dst: dict, x: dict) -> None:
         dst["calls"] += int(x["calls"])
+        dst["cached_calls"] = dst.get("cached_calls", 0) + int(x.get("cached_calls") or 0)
         dst["in"] += int(x["total_in"])
         dst["cache_read"] += int(x["cache_read"])
         dst["cache_write"] += int(x["cache_write"])
@@ -910,18 +1020,28 @@ def main() -> None:
 
     days = state.get("days", {})
     hours = state.get("hours", {})
+    # Per thread, as full buckets while folding. Untouched days are carried
+    # over from the thread file as they are, already in row form.
+    t_days = {} if why or threads_state is None else dict(threads_state.get("days", {}))
+    t_hours = {} if why or threads_state is None else dict(threads_state.get("hours", {}))
     for d in touched:
         days[d] = {}
         hours[d] = {}
+        t_days[d] = {}
+        t_hours[d] = {}
     kept = 0
-    # The query returns one row per (day, hour, producer, model). The day totals
-    # are that summed over hours, so the two views can never disagree.
+    # The query returns one row per (day, hour, producer, model, thread). The
+    # day totals are that summed over hours and threads, so no two views can
+    # disagree.
     for x in rows:
         kept += int(x["calls"])
         key = f"{x['producer']}|{x['model']}"
-        fold(days[x["day"]].setdefault(key, blank()), x)
+        tid = x.get("thread") or ""
         hr = str(int(x["hour"]))
+        fold(days[x["day"]].setdefault(key, blank()), x)
         fold(hours[x["day"]].setdefault(hr, {}).setdefault(key, blank()), x)
+        fold(t_days[x["day"]].setdefault(tid, {}).setdefault(key, blank()), x)
+        fold(t_hours[x["day"]].setdefault(hr, {}).setdefault(tid, {}).setdefault(key, blank()), x)
 
     # Voice seconds land in the same buckets, under their own field. A session
     # that started before midnight is filed on the day it ENDED, because that
@@ -933,15 +1053,42 @@ def main() -> None:
         n = int(x["seconds"] or 0)
         total_secs += n
         key = f"{x['producer']}|{x['model']}"
+        tid = x.get("thread") or ""
         days[x["day"]].setdefault(key, blank())["seconds"] += n
         hr = str(int(x["hour"]))
         hours[x["day"]].setdefault(hr, {}).setdefault(key, blank())["seconds"] += n
+        t_days[x["day"]].setdefault(tid, {}).setdefault(key, blank())["seconds"] += n
+        t_hours[x["day"]].setdefault(hr, {}).setdefault(tid, {}).setdefault(key, blank())["seconds"] += n
 
     # Hourly detail only for the days a single-day selection can reach.
     keep_hours = set(sorted(days)[-HOURS_DAYS:])
     hours = {d: v for d, v in hours.items() if d in keep_hours}
 
     jev_calls, jev_tokens = fold_jev(days, hours, keep_hours)
+
+    # Jev calls carry no thread, so they sit under the empty thread id, which
+    # the app shows as "No thread". Copied from the day rows fold_jev just
+    # rebuilt, so the thread file sums to exactly what daily.json says.
+    jev_key = f"{JEV_PRODUCER}|{JEV_MODEL}"
+    for d, bucket in days.items():
+        t_days.setdefault(d, {}).get("", {}).pop(jev_key, None)
+        if jev_key in bucket:
+            t_days[d].setdefault("", {})[jev_key] = bucket[jev_key]
+    for d, by_hour in hours.items():
+        for hr, bucket in by_hour.items():
+            t_hours.setdefault(d, {}).setdefault(hr, {}).get("", {}).pop(jev_key, None)
+            if jev_key in bucket:
+                t_hours[d][hr].setdefault("", {})[jev_key] = bucket[jev_key]
+    t_hours = {d: v for d, v in t_hours.items() if d in keep_hours}
+
+    # Buckets to rows. A day carried over from the old file is rows already.
+    as_rows = lambda per_tid: {
+        tid: {k: (b if isinstance(b, list) else thread_row(b)) for k, b in keys.items()}
+        for tid, keys in per_tid.items()
+    }
+    t_days = {d: as_rows(v) for d, v in t_days.items()}
+    t_hours = {d: {hr: as_rows(v) for hr, v in by_hour.items()} for d, by_hour in t_hours.items()}
+    tids = {t for v in t_days.values() for t in v}
 
     payload = {
         "generated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -955,7 +1102,7 @@ def main() -> None:
             "'in' is TOTAL prompt size (uncached + cache_read + cache_write). "
             "uncached = in - cache_read - cache_write. 'long' is the subset of rows "
             "whose prompt went over the model's own long-context threshold (or "
-            "reached it, on a card marked inclusive), from the pricing.json card "
+            "reached it, on a card marked inclusive), from the price table's card "
             "in force on that day (272k on OpenAI's flagships, 100k on Haiku 5.5, "
             "200k elsewhere), for the long-context price tier. 'long_split' "
             "fingerprints those thresholds; a change rebuilds every day. "
@@ -981,13 +1128,36 @@ def main() -> None:
         "hours": hours,
     }
 
-    # Write through the CLI so the engine stages, commits and announces the file.
-    w = subprocess.run(
-        ["lucidos", "data", "write", "artifacts/token-cost/daily.json", "--from", "-"],
-        input=json.dumps(payload, separators=(",", ":")), capture_output=True, text=True,
-    )
-    if w.returncode != 0:
-        sys.exit(f"lucidos data write failed: {w.stderr.strip()[:400]}")
+    threads_payload = {
+        "generated": payload["generated"],
+        "last_sequence": payload["last_sequence"],
+        "rollup_version": ROLLUP_VERSION,
+        "fields": list(THREAD_FIELDS),
+        "note": (
+            "The rows of daily.json split by thread: days[day][thread][producer|model] "
+            "and hours[day][hour][thread][producer|model], each a list in `fields` "
+            "order with trailing zeros dropped. Same dedupe, long split and Flex split "
+            "as daily.json, from the same query, so the two always sum alike. "
+            "threads[id] is [title] or [title, parent id]; a sub-thread folds into "
+            "its root by walking parents. The empty thread id holds calls with no "
+            "thread (Jev)."
+        ),
+        "threads": thread_meta(tids),
+        "days": t_days,
+        "hours": t_hours,
+    }
+
+    # Write through the CLI so the engine stages, commits and announces the
+    # file. daily.json first: if the thread file then fails, the next run sees
+    # the two cursors disagree and rebuilds both.
+    for rel, text in (("artifacts/token-cost/daily.json", json.dumps(payload, separators=(",", ":"))),
+                      ("artifacts/token-cost/threads-daily.json", dumps_by_day(threads_payload))):
+        w = subprocess.run(
+            ["lucidos", "data", "write", rel, "--from", "-"],
+            input=text, capture_output=True, text=True,
+        )
+        if w.returncode != 0:
+            sys.exit(f"lucidos data write failed for {rel}: {w.stderr.strip()[:400]}")
     print(
         f"rolled up {len(touched)} day(s) {touched[0]}..{touched[-1]}, "
         f"seq {since} -> {max_seq}, kept {kept} of {raw_rows} rows "

@@ -1,8 +1,8 @@
 // Defaults, and a fix from 2026-10-02 that failed only inside the real app frame:
 //
-//   rows    pricing.json is the only price table. The app carries no prices,
-//           so a first run is unpriced rather than wrong, and opening the app
-//           never rewrites the file.
+//   rows    Lucidos's price table is the only price table. The app carries
+//           no prices, so a model the table lacks is unpriced rather than
+//           wrong, and opening the app never writes a file.
 //   sounds  an app frame has an opaque origin, so fetch() of the app's own
 //           sounds/*.m4a failed ("Failed to fetch"). Built-ins now decode from
 //           the bundled base64 copy; an uploaded clip falls back to <audio>.
@@ -55,16 +55,18 @@ let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  ok  ' + m); } else { fail++; console.log('  FAIL ' + m); } };
 const settle = async () => { for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r)); };
 
-/** Boot a fresh copy of the app against `pricingText` (null: no file). */
-async function boot(pricingText) {
+/** Boot a fresh copy of the app against a price table (null: an older
+ *  Lucidos with none) and no override or settings file. */
+async function boot(table) {
   const writes = [];
   global.lucidos = {
     apiUrl: (s) => '/dev/api/v1' + (s.startsWith('/') ? s : '/' + s),
     ui: { applyPreferences() {}, watchPreferences() {}, enhanceSelects() {}, toast() {},
           Select: { create: (o) => ({ element: mkEl('sel'), getValue: () => o.value, setValue() {}, setOptions() {}, destroy() {} }) } },
+    ...(table ? { priceTable: { get: async () => JSON.parse(JSON.stringify(table)) } } : {}),
     data: {
       read: async (p) => {
-        if (p.includes('pricing')) { if (pricingText === null) throw new Error('404'); return pricingText; }
+        if (p.includes('model-prices') || p.includes('settings.json')) { const e = new Error('HTTP 404'); e.httpCode = 404; throw e; }
         if (p.includes('ui-state')) return '{}';
         return JSON.stringify({ days: {}, hours: {}, last_sequence: 0 });
       },
@@ -76,44 +78,49 @@ async function boot(pricingText) {
     utils: { escapeHtml: (s) => String(s), escapeHtmlAttr: (s) => String(s), timeAgo: () => '1m ago' },
   };
   global.window.lucidos = global.lucidos;
-  new Function(src + ';globalThis.__tc = { loadSound, DEFAULT_PRICING, rateFor, get pricing(){ return pricing; } };')();
+  new Function(src + ';globalThis.__tc = { loadSound, DEFAULT_SETTINGS, rateFor, get pricing(){ return pricing; } };')();
   await settle();
-  return { tc: globalThis.__tc, writes: writes.filter((w) => w.p.includes('pricing')) };
+  return { tc: globalThis.__tc, writes: writes.filter((w) => !w.p.includes('ui-state')) };
 }
 
 console.log('\n1. the app carries no prices of its own');
 {
-  // pricing.json is the one price table. A second copy in the app drifted
+  // The price table is the one price table. A second copy in the app drifted
   // from it and had to be edited in step with every provider change.
   const { tc } = await boot(null);
-  ok(Object.keys(tc.DEFAULT_PRICING.models).length === 0, 'DEFAULT_PRICING lists no model');
-  ok(!/uncached_in:\s*\d/.test(html.slice(html.indexOf('const DEFAULT_PRICING'), html.indexOf('const CURRENCY_NAMES'))),
+  ok(!('models' in tc.DEFAULT_SETTINGS), 'DEFAULT_SETTINGS holds no models');
+  ok(!/uncached_in:\s*\d/.test(html.slice(html.indexOf('const DEFAULT_SETTINGS'), html.indexOf('const CURRENCY_NAMES'))),
      'and no rate appears anywhere in the built-in block');
+  ok(!/pricing\.json/.test(html), 'and the app never names the old pricing.json');
 }
 
-console.log('\n2. a first run with no pricing.json is unpriced, not an error');
+const TABLE = { currency: 'USD', checked: '2026-10-16', unpriced_cache_shares: { read: 0.1, write_5m: 1.25, write_1h: 2 },
+  override: { path: 'data/config/model-prices.json', present: false, checked: null, error: null },
+  models: {
+    'claude-opus-5': [{ uncached_in: 5, cache_write: 6.25, cache_write_1h: 10, cache_read: 0.5, out: 25, source: 's', origin: 'shipped' }],
+    'gemini-3.8-flash': [
+      { uncached_in: 0.75, cache_write: 0.75, cache_read: 0.075, out: 3.75, source: 's', origin: 'shipped' },
+      { from: '2027-01-01', uncached_in: 1.5, cache_write: 1.5, cache_read: 0.15, out: 7.5, source: 's', origin: 'shipped' } ],
+  } };
+
+console.log('\n2. an older Lucidos with no price table is unpriced, not an error');
 {
   const { tc, writes } = await boot(null);
   ok(writes.length === 0, 'nothing is written on open: ' + writes.length);
-  ok(tc.rateFor('claude-opus-5') === null, 'a model has no price until one is added');
+  ok(tc.rateFor('claude-opus-5') === null, 'a model has no price until the table loads');
   ok(tc.pricing.producers.main_llm === 'Lucidos Agent', 'the producer labels still load');
 }
 
-console.log('\n3. pricing.json is read as it is, never rewritten on open');
+console.log('\n3. the price table is read as it is, and opening the app writes nothing');
 {
-  // A legacy file (plain cards) and a history file (card lists) both load,
-  // and opening the app writes neither: only an edit in Settings saves.
-  const legacy = { currency: 'USD', models: { 'claude-opus-5': { uncached_in: 5, cache_write: 6.25, cache_read: 0.5, out: 25 } } };
-  const { tc: a, writes: wa } = await boot(JSON.stringify(legacy));
-  ok(wa.length === 0, 'a legacy file is not rewritten: ' + wa.length);
-  ok(a.rateFor('claude-opus-5')?.out === 25, 'and its plain card prices the model');
-  const history = { currency: 'USD', models: { 'gemini-3.8-flash': [
-    { uncached_in: 0.75, cache_write: 0, cache_read: 0.075, out: 3.75 },
-    { from: '2027-01-01', uncached_in: 1.5, cache_write: 0, cache_read: 0.15, out: 7.5 } ] } };
-  const { tc: b, writes: wb } = await boot(JSON.stringify(history));
-  ok(wb.length === 0, 'a history file is not rewritten: ' + wb.length);
-  ok(b.rateFor('gemini-3.8-flash', '2026-12-31')?.out === 3.75 && b.rateFor('gemini-3.8-flash', '2027-01-01')?.out === 7.5,
+  const { tc, writes } = await boot(TABLE);
+  ok(writes.length === 0, 'no file is written on open: ' + writes.length);
+  ok(tc.rateFor('claude-opus-5')?.out === 25, 'a shipped card prices the model');
+  ok(tc.rateFor('gemini-3.8-flash', '2026-12-31')?.out === 3.75 && tc.rateFor('gemini-3.8-flash', '2027-01-01')?.out === 7.5,
      'and each day reads its own card');
+  ok(tc.rateFor('anthropic/claude-opus-5[1m]')?.out === 25, 'the app\'s own id normalisation runs over the merged models');
+  ok(tc.rateFor('acme-mystery-7b') === null, 'a model the table lacks is unpriced');
+  ok(tc.pricing.currency === 'USD' && tc.pricing.checked === '2026-10-16', 'the table\'s currency and checked day are read');
 }
 
 console.log('\n4. a built-in sound decodes from the bundled copy, never fetch');

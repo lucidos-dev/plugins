@@ -4,23 +4,23 @@ See what your workspace spends on AI, live. Every model call the workspace makes
 
 ## What you get
 
-- **The Token Cost app.** A dashboard with the running spend for the range you pick, calls, tokens in and out, and the share served from cache. A table splits the cost by model and by producer (the Lucidos Agent, Claude Code, Codex, auxiliary calls). Below it you find a live list of calls as they arrive, a cost per day chart, and how large each prompt was.
-- **Honest prices.** Each model has a price history. Each day is priced at the rate in force that day, and each call at the model that actually served it. A price change never reprices the past. You can edit any rate in Settings.
+- **The Token Cost app.** A dashboard with the running spend for the range you pick, calls, tokens in and out, and the share served from cache. An analysis table and chart group the cost by any mix of model, producer, thread and day (the Lucidos Agent, Claude Code, Codex, auxiliary calls). Below it you find a live list of calls as they arrive, a cost per day chart, and how large each prompt was.
+- **Honest prices.** Each model has a price history. Each day is priced at the rate in force that day, and each call at the model that actually served it. A price change never reprices the past. Prices come from Lucidos's own price table, and any rate you edit in Settings is saved as your workspace override.
 - **The Thread cost widget.** A small live card for the thread you have open. It shows what that thread costs, sub-threads always included: the total, today's share, the model mix and the costliest sub-threads, plus suggestions to save. It fits a small, medium or large dashboard tile. One tap opens Token Cost.
 - **Health in the header.** If the live stream drops, a gap opens behind it, or the rollup gets stale, the header says so.
 
 ## What it needs
 
-- Lucidos 0.48.0 or later.
+- Lucidos 0.50.0 or later, with the price table.
 - No API key and no account. The scripts read the workspace event store on your own machine.
-- Two schedules, which setup offers to create for you: an hourly rollup for the dashboard, and an hourly snapshot for the widget. Setup also offers a daily price check.
-- Prices. The plugin ships no prices of its own. At setup, the agent reads each provider's official pricing page and writes a price card for each model you use. Until then, models show as unpriced.
+- Two schedules, which setup offers to create for you: an hourly rollup for the dashboard, and an hourly snapshot for the widget.
+- Prices come from Lucidos. The plugin ships none of its own. To keep them current, turn on **Keep prices current** in Settings > Intelligence.
 
-All data stays in your workspace, under `artifacts/token-cost/`.
+All data stays in your workspace: usage under `artifacts/token-cost/`, and your price edits in `config/model-prices.json`.
 
 ## What to try first
 
-1. Open the app and look at **By model**. Which model costs you the most?
+1. Open the app and look at **Analysis**, grouped by model. Which model costs you the most?
 2. Start a chat and watch **Live calls** fill as the agent answers.
 3. Ask Lucidos to show the Thread cost widget in a thread that runs sub-threads, and watch its total grow as they work.
 4. Open **Settings** to check a rate, or add a price change from the day it took effect.

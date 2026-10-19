@@ -1,0 +1,1014 @@
+{
+ "currency": "USD",
+ "checked": "2026-10-19",
+ "unpriced_cache_shares": {
+  "read": 0.1,
+  "write_5m": 1.25,
+  "write_1h": 2.0
+ },
+ "models": {
+  "claude-fable-5": [
+   {
+    "uncached_in": 10.0,
+    "cache_write": 12.5,
+    "cache_write_1h": 20.0,
+    "cache_read": 1.0,
+    "out": 50.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-fable-5-1": [
+   {
+    "uncached_in": 10.0,
+    "cache_write": 12.5,
+    "cache_write_1h": 20.0,
+    "cache_read": 0.25,
+    "out": 50.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-haiku-4-5": [
+   {
+    "uncached_in": 1.0,
+    "cache_write": 1.25,
+    "cache_write_1h": 2.0,
+    "cache_read": 0.1,
+    "out": 5.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-haiku-4-5-20251001": [
+   {
+    "uncached_in": 1,
+    "cache_write": 1.25,
+    "cache_read": 0.1,
+    "out": 5,
+    "source": "platform.claude.com/docs/en/about-claude/pricing (checked 2026-10-10)",
+    "origin": "override"
+   }
+  ],
+  "claude-haiku-5-5": [
+   {
+    "uncached_in": 0.1,
+    "cache_write": 0.125,
+    "cache_write_1h": 0.2,
+    "cache_read": 0.01,
+    "out": 0.5,
+    "long": {
+     "threshold_tokens": 100000,
+     "uncached_in": 0.5,
+     "cache_write": 0.625,
+     "cache_write_1h": 1.0,
+     "cache_read": 0.05,
+     "out": 2.5
+    },
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing. A prompt over 100,000 tokens pays the long rates for the whole request.",
+    "origin": "shipped"
+   }
+  ],
+  "claude-mythos-5": [
+   {
+    "uncached_in": 10.0,
+    "cache_write": 12.5,
+    "cache_write_1h": 20.0,
+    "cache_read": 1.0,
+    "out": 50.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-mythos-5-1": [
+   {
+    "uncached_in": 10.0,
+    "cache_write": 12.5,
+    "cache_write_1h": 20.0,
+    "cache_read": 0.25,
+    "out": 50.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-opus-4-1": [
+   {
+    "uncached_in": 15,
+    "cache_write": 18.75,
+    "cache_read": 1.5,
+    "out": 75,
+    "source": "platform.claude.com/docs/en/about-claude/pricing (checked 2026-10-10). Retired on the Claude API on 2026-08-05 (still on Bedrock and Vertex).",
+    "origin": "override"
+   }
+  ],
+  "claude-opus-4-5": [
+   {
+    "uncached_in": 5.0,
+    "cache_write": 6.25,
+    "cache_write_1h": 10.0,
+    "cache_read": 0.5,
+    "out": 25.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-opus-4-6": [
+   {
+    "uncached_in": 5.0,
+    "cache_write": 6.25,
+    "cache_write_1h": 10.0,
+    "cache_read": 0.5,
+    "out": 25.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-opus-4-7": [
+   {
+    "uncached_in": 5.0,
+    "cache_write": 6.25,
+    "cache_write_1h": 10.0,
+    "cache_read": 0.5,
+    "out": 25.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-opus-4-8": [
+   {
+    "uncached_in": 5.0,
+    "cache_write": 6.25,
+    "cache_write_1h": 10.0,
+    "cache_read": 0.5,
+    "out": 25.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-opus-5": [
+   {
+    "uncached_in": 5.0,
+    "cache_write": 6.25,
+    "cache_write_1h": 10.0,
+    "cache_read": 0.5,
+    "out": 25.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-opus-5-5": [
+   {
+    "uncached_in": 4.0,
+    "cache_write": 5.0,
+    "cache_write_1h": 8.0,
+    "cache_read": 0.2,
+    "out": 20.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-sonnet-4-5": [
+   {
+    "uncached_in": 3.0,
+    "cache_write": 3.75,
+    "cache_write_1h": 6.0,
+    "cache_read": 0.3,
+    "out": 15.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-sonnet-4-6": [
+   {
+    "uncached_in": 3.0,
+    "cache_write": 3.75,
+    "cache_write_1h": 6.0,
+    "cache_read": 0.3,
+    "out": 15.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-sonnet-5": [
+   {
+    "uncached_in": 2.0,
+    "cache_write": 2.5,
+    "cache_write_1h": 4.0,
+    "cache_read": 0.2,
+    "out": 10.0,
+    "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "origin": "shipped"
+   }
+  ],
+  "claude-sonnet-5-5": [
+   {
+    "uncached_in": 2,
+    "cache_write": 2.5,
+    "cache_write_1h": 4.0,
+    "cache_read": 0.2,
+    "out": 10,
+    "source": "Launch price, 2026-09-28: Claude Code changelog 2.1.284 'Sonnet 5.5 ... with $0.20/Mtok cache reads'; platform.claude.com/docs/en/release-notes/api (2026-10-07) names $0.20 as the old rate.",
+    "origin": "override"
+   },
+   {
+    "from": "2026-10-07",
+    "uncached_in": 2,
+    "cache_write": 2.5,
+    "cache_write_1h": 4.0,
+    "cache_read": 0.1,
+    "out": 10,
+    "source": "platform.claude.com/docs/en/release-notes/api (2026-10-07): 'lowered the price of prompt cache reads on Claude Sonnet 5.5 from $0.20 USD to $0.10 USD per million tokens'. platform.claude.com/docs/en/about-claude/pricing (checked 2026-10-10).",
+    "origin": "override"
+   }
+  ],
+  "gemini-2.5-flash-lite": [
+   {
+    "uncached_in": 0.1,
+    "cache_write": 0,
+    "cache_read": 0.01,
+    "out": 0.4,
+    "source": "ai.google.dev/gemini-api/docs/pricing (checked 2026-10-10). Text rates. Unchanged in every archived copy since 2026-03-16.",
+    "origin": "override"
+   }
+  ],
+  "gemini-3-flash-preview": [
+   {
+    "uncached_in": 0.5,
+    "cache_write": 0,
+    "cache_read": 0.05,
+    "out": 3,
+    "source": "ai.google.dev/gemini-api/docs/pricing (checked 2026-10-10). Text rates. Unchanged in every archived copy since 2026-03-16.",
+    "origin": "override"
+   }
+  ],
+  "gemini-3.1-flash-lite": [
+   {
+    "uncached_in": 0.25,
+    "cache_write": 0.25,
+    "cache_read": 0.025,
+    "out": 1.5,
+    "source": "https://ai.google.dev/gemini-api/docs/pricing. Implicit caching writes at no premium.",
+    "origin": "shipped"
+   }
+  ],
+  "gemini-3.1-pro-preview": [
+   {
+    "uncached_in": 2.0,
+    "cache_write": 2.0,
+    "cache_read": 0.2,
+    "out": 12.0,
+    "long": {
+     "threshold_tokens": 200000,
+     "uncached_in": 4.0,
+     "cache_write": 4.0,
+     "cache_read": 0.4,
+     "out": 18.0
+    },
+    "source": "https://ai.google.dev/gemini-api/docs/pricing. Implicit caching writes at no premium. A prompt over 200K tokens bills at the long rates.",
+    "origin": "shipped"
+   }
+  ],
+  "gemini-3.5-flash": [
+   {
+    "uncached_in": 1.5,
+    "cache_write": 0,
+    "cache_read": 0.15,
+    "out": 9,
+    "source": "Launch price, 2026-05-19 (web.archive.org/web/20260519184642/https://ai.google.dev/gemini-api/docs/pricing), unchanged in every archived copy to 2026-10-08.",
+    "origin": "override"
+   },
+   {
+    "from": "2026-10-08",
+    "uncached_in": 0.75,
+    "cache_write": 0,
+    "cache_read": 0.075,
+    "out": 3.75,
+    "source": "Deprecated 2026-10-08: 'All requests to gemini-3.5-flash are automatically routed to gemini-3.6-flash' (ai.google.dev/gemini-api/docs/changelog). Google does not say which price routed calls pay. ASSUMPTION (Kenneth's call, 2026-10-10): they pay gemini-3.6-flash's price, the introductory rate '$0.75 through December 31, 2026' (ai.google.dev/gemini-api/docs/pricing (checked 2026-10-10)).",
+    "origin": "override"
+   },
+   {
+    "from": "2027-01-01",
+    "uncached_in": 1.5,
+    "cache_write": 0,
+    "cache_read": 0.15,
+    "out": 7.5,
+    "source": "Deprecated 2026-10-08: 'All requests to gemini-3.5-flash are automatically routed to gemini-3.6-flash' (ai.google.dev/gemini-api/docs/changelog). Google does not say which price routed calls pay. ASSUMPTION (Kenneth's call, 2026-10-10): they pay gemini-3.6-flash's price, which doubles to $1.50 / $7.50 with $0.15 cached 'starting January 1, 2027' (ai.google.dev/gemini-api/docs/pricing (checked 2026-10-10)).",
+    "origin": "override"
+   }
+  ],
+  "gemini-3.8-flash": [
+   {
+    "uncached_in": 0.75,
+    "cache_write": 0.75,
+    "cache_read": 0.075,
+    "out": 3.75,
+    "source": "https://ai.google.dev/gemini-api/docs/pricing, the introductory price. Implicit caching writes at no premium.",
+    "origin": "shipped"
+   },
+   {
+    "from": "2027-01-01",
+    "uncached_in": 1.5,
+    "cache_write": 1.5,
+    "cache_read": 0.15,
+    "out": 7.5,
+    "source": "https://ai.google.dev/gemini-api/docs/pricing: the price from 1 January 2027.",
+    "origin": "shipped"
+   }
+  ],
+  "gpt-4o-mini-transcribe": [
+   {
+    "uncached_in": 1.25,
+    "cache_write": 0,
+    "cache_read": 0,
+    "out": 5,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10)",
+    "origin": "override"
+   }
+  ],
+  "gpt-4o-mini-tts": [
+   {
+    "uncached_in": 0.6,
+    "cache_write": 0,
+    "cache_read": 0.6,
+    "out": 12,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10). Text input $0.60, audio output $12.00. No cached rate is listed, so cached input takes the full rate.",
+    "origin": "override"
+   }
+  ],
+  "gpt-4o-mini-tts-2025-12-15": [
+   {
+    "uncached_in": 0.6,
+    "cache_write": 0,
+    "cache_read": 0.6,
+    "out": 12,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10). Text input $0.60, audio output $12.00. No cached rate is listed, so cached input takes the full rate.",
+    "origin": "override"
+   }
+  ],
+  "gpt-5.2-codex": [
+   {
+    "uncached_in": 1.75,
+    "cache_write": 0,
+    "cache_read": 0.175,
+    "out": 14,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10)",
+    "origin": "override"
+   }
+  ],
+  "gpt-5.3-codex": [
+   {
+    "uncached_in": 1.75,
+    "cache_write": 0,
+    "cache_read": 0.175,
+    "out": 14,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10)",
+    "origin": "override"
+   }
+  ],
+  "gpt-5.3-codex-spark": [
+   {
+    "uncached_in": 1.75,
+    "cache_write": 0,
+    "cache_read": 0.175,
+    "out": 14,
+    "source": "Not on OpenAI's pricing page and no model page (checked 2026-10-10). Priced as gpt-5.3-codex; unverified.",
+    "origin": "override"
+   }
+  ],
+  "gpt-5.4": [
+   {
+    "uncached_in": 2.5,
+    "cache_write": 0,
+    "cache_read": 0.25,
+    "out": 15,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 5,
+     "cache_write": 0,
+     "cache_read": 0.5,
+     "out": 22.5
+    },
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10)",
+    "origin": "override"
+   }
+  ],
+  "gpt-5.4-mini": [
+   {
+    "uncached_in": 0.75,
+    "cache_write": 0,
+    "cache_read": 0.075,
+    "out": 4.5,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10)",
+    "origin": "override"
+   }
+  ],
+  "gpt-5.5": [
+   {
+    "uncached_in": 5,
+    "cache_write": 0,
+    "cache_read": 0.5,
+    "out": 30,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 10,
+     "cache_write": 0,
+     "cache_read": 1,
+     "out": 45
+    },
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10)",
+    "origin": "override"
+   }
+  ],
+  "gpt-5.5-pro": [
+   {
+    "uncached_in": 30,
+    "cache_write": 0,
+    "cache_read": 0,
+    "out": 180,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 60,
+     "cache_write": 0,
+     "cache_read": 0,
+     "out": 270
+    },
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10)",
+    "origin": "override"
+   }
+  ],
+  "gpt-5.6-luna": [
+   {
+    "uncached_in": 1,
+    "cache_write": 1.25,
+    "cache_read": 0.1,
+    "out": 6,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 2,
+     "cache_write": 2.5,
+     "cache_read": 0.2,
+     "out": 9
+    },
+    "source": "Launch price, 2026-07-09 to 2026-07-29: $1 in, $0.10 cached, $6 out (community.openai.com/t/1388484, 'Luna costs 80% less' from July 30). Cache write and the long tier for this period are DERIVED, not quoted: cache write = 1.25x input (prompt-caching guide, 'For GPT-5.6 and later'), long tier = 2x input and cache, 1.5x output.",
+    "origin": "override"
+   },
+   {
+    "from": "2026-07-30",
+    "uncached_in": 0.2,
+    "cache_write": 0.25,
+    "cache_read": 0.02,
+    "out": 1.2,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 0.4,
+     "cache_write": 0.5,
+     "cache_read": 0.04,
+     "out": 1.8
+    },
+    "source": "developers.openai.com/api/docs/changelog: 'Starting July 30, GPT-5.6 Luna costs 80% less, while GPT-5.6 Terra costs 20% less.' developers.openai.com/api/docs/pricing (checked 2026-10-10).",
+    "origin": "override"
+   }
+  ],
+  "gpt-5.6-sol": [
+   {
+    "uncached_in": 5,
+    "cache_write": 6.25,
+    "cache_read": 0.5,
+    "out": 30,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 10,
+     "cache_write": 12.5,
+     "cache_read": 1,
+     "out": 45
+    },
+    "source": "Launch price, 2026-07-09 to 2026-08-20: $5 in, $0.50 cached, $30 out, as the 2026-08-21 cut states (developers.openai.com/api/docs/changelog). Cache write and the long tier for this period are DERIVED, not quoted: cache write = 1.25x input (prompt-caching guide, 'For GPT-5.6 and later'), long tier = 2x input and cache, 1.5x output.",
+    "origin": "override"
+   },
+   {
+    "from": "2026-08-21",
+    "uncached_in": 4,
+    "cache_write": 5,
+    "cache_read": 0.4,
+    "out": 20,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 8,
+     "cache_write": 10,
+     "cache_read": 0.8,
+     "out": 30
+    },
+    "source": "developers.openai.com/api/docs/changelog (2026-08-21): 'GPT-5.6 Sol now costs $4 per million input tokens and $20 per million output tokens'; the cut also covers long-context requests. developers.openai.com/api/docs/pricing (checked 2026-10-10) calls it promotional, 'available at least through November 21, 2026'. The price after that is not announced.",
+    "origin": "override"
+   }
+  ],
+  "gpt-5.6-terra": [
+   {
+    "uncached_in": 2.5,
+    "cache_write": 3.125,
+    "cache_read": 0.25,
+    "out": 15,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 5,
+     "cache_write": 6.25,
+     "cache_read": 0.5,
+     "out": 22.5
+    },
+    "source": "Launch price, 2026-07-09 to 2026-07-29: $2.50 in, $0.25 cached, $15 out (community.openai.com/t/1388484, 'Terra costs 20% less' from July 30). Cache write and the long tier for this period are DERIVED, not quoted: cache write = 1.25x input (prompt-caching guide, 'For GPT-5.6 and later'), long tier = 2x input and cache, 1.5x output.",
+    "origin": "override"
+   },
+   {
+    "from": "2026-07-30",
+    "uncached_in": 2,
+    "cache_write": 2.5,
+    "cache_read": 0.2,
+    "out": 12,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 4,
+     "cache_write": 5,
+     "cache_read": 0.4,
+     "out": 18
+    },
+    "source": "developers.openai.com/api/docs/changelog: 'Starting July 30, GPT-5.6 Luna costs 80% less, while GPT-5.6 Terra costs 20% less.' developers.openai.com/api/docs/pricing (checked 2026-10-10).",
+    "origin": "override"
+   }
+  ],
+  "gpt-6-astra": [
+   {
+    "uncached_in": 10,
+    "cache_write": 12.5,
+    "cache_read": 1,
+    "out": 50,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 20,
+     "cache_write": 25,
+     "cache_read": 2,
+     "out": 75
+    },
+    "flex": {
+     "uncached_in": 5,
+     "cache_write": 6.25,
+     "cache_read": 0.5,
+     "out": 25
+    },
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10) Flex: developers.openai.com/api/docs/pricing, the Flex table (checked 2026-10-14): 'gpt-6-astra $5.00 $0.50 $6.25 $25.00', every rate at half. No flex calls recorded for this model, so no history moves.",
+    "origin": "override"
+   }
+  ],
+  "gpt-6-luna": [
+   {
+    "uncached_in": 0.1,
+    "cache_write": 0.125,
+    "cache_read": 0.01,
+    "out": 0.5,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 0.2,
+     "cache_write": 0.25,
+     "cache_read": 0.02,
+     "out": 0.75
+    },
+    "flex": {
+     "uncached_in": 0.05,
+     "cache_write": 0.0625,
+     "cache_read": 0.005,
+     "out": 0.25
+    },
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-12): Standard 'gpt-6-luna $0.10 $0.01 $0.125 $0.50', long context '$0.20 $0.02 $0.25 $0.75'. developers.openai.com/api/docs/models/gpt-6-luna: 'Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request.' Same price since launch on 2026-09-22 (developers.openai.com/api/docs/changelog: 'GPT-6 Luna: $0.10 input, $0.01 cached input, and $0.50 output'). Flex: developers.openai.com/api/docs/pricing, the Flex table (checked 2026-10-14): 'gpt-6-luna $0.05 $0.005 $0.0625 $0.25', every rate at half. No flex calls recorded for this model, so no history moves.",
+    "origin": "override"
+   }
+  ],
+  "gpt-6-sol": [
+   {
+    "uncached_in": 2.0,
+    "cache_write": 2.5,
+    "cache_read": 0.2,
+    "out": 10.0,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 4.0,
+     "cache_write": 5.0,
+     "cache_read": 0.4,
+     "out": 15.0
+    },
+    "source": "https://developers.openai.com/api/docs/pricing. Cache writes bill at 1.25x input; a prompt over 272K input tokens bills the whole request at the long rates.",
+    "origin": "shipped"
+   }
+  ],
+  "gpt-6.1-sol": [
+   {
+    "uncached_in": 2,
+    "cache_write": 2.5,
+    "cache_read": 0.1,
+    "out": 10,
+    "long": {
+     "threshold_tokens": 272000,
+     "uncached_in": 4,
+     "cache_write": 5,
+     "cache_read": 0.2,
+     "out": 15
+    },
+    "flex": {
+     "uncached_in": 1,
+     "cache_write": 1.25,
+     "cache_read": 0.05,
+     "out": 5
+    },
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10); developers.openai.com/api/docs/models/gpt-6.1-sol: 'Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request.' Same price since launch on 2026-09-29 (developers.openai.com/api/docs/changelog). Flex: developers.openai.com/api/docs/pricing, the Flex table (checked 2026-10-13): every rate at half.",
+    "origin": "override"
+   }
+  ],
+  "gpt-image-2": [
+   {
+    "uncached_in": 5,
+    "cache_write": 0,
+    "cache_read": 1.25,
+    "out": 30,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10). Text input $5 and cached text input $1.25; output is image tokens at $30. Corrected 2026-10-10: the old card carried the $8/$2 IMAGE input rates.",
+    "origin": "override"
+   }
+  ],
+  "gpt-live-1": [
+   {
+    "uncached_in": 0,
+    "cache_write": 0,
+    "cache_read": 0,
+    "out": 0,
+    "per_minute": 0.05,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10). $0.05 per minute, billed per second, since GA on 2026-09-10 (developers.openai.com/api/docs/changelog). Backend model and tool use behind a session is billed on top and is not in this card.",
+    "origin": "override"
+   }
+  ],
+  "gpt-live-transcribe": [
+   {
+    "uncached_in": 0,
+    "cache_write": 0,
+    "cache_read": 0,
+    "out": 0,
+    "per_minute": 0.017,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10)",
+    "origin": "override"
+   }
+  ],
+  "gpt-realtime": [
+   {
+    "uncached_in": 32,
+    "cache_write": 0,
+    "cache_read": 0.4,
+    "out": 64,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10). Audio rates: audio dominates a voice call in both directions (text is $4/$16).",
+    "origin": "override"
+   }
+  ],
+  "gpt-realtime-2.1": [
+   {
+    "uncached_in": 32,
+    "cache_write": 0,
+    "cache_read": 0.4,
+    "out": 64,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10). Audio rates: audio dominates a voice call in both directions (text is $4/$24).",
+    "origin": "override"
+   }
+  ],
+  "grok-4.20": [
+   {
+    "uncached_in": 1.25,
+    "cache_write": 0,
+    "cache_read": 0.2,
+    "out": 2.5,
+    "long": {
+     "threshold_tokens": 200000,
+     "inclusive": true,
+     "uncached_in": 2.5,
+     "cache_write": 0,
+     "cache_read": 0.4,
+     "out": 5
+    },
+    "source": "docs.x.ai/developers/pricing (checked 2026-10-10). A prompt that REACHES 200k pays the long rates for every token.",
+    "origin": "override"
+   }
+  ],
+  "grok-4.3": [
+   {
+    "uncached_in": 1.25,
+    "cache_write": 0,
+    "cache_read": 0.2,
+    "out": 2.5,
+    "long": {
+     "threshold_tokens": 200000,
+     "inclusive": true,
+     "uncached_in": 2.5,
+     "cache_write": 0,
+     "cache_read": 0.4,
+     "out": 5
+    },
+    "source": "docs.x.ai/developers/pricing (checked 2026-10-10). A prompt that REACHES 200k pays the long rates for every token.",
+    "origin": "override"
+   }
+  ],
+  "grok-4.5": [
+   {
+    "uncached_in": 2,
+    "cache_write": 0,
+    "cache_read": 0.3,
+    "out": 6,
+    "long": {
+     "threshold_tokens": 200000,
+     "inclusive": true,
+     "uncached_in": 4,
+     "cache_write": 0,
+     "cache_read": 0.6,
+     "out": 12
+    },
+    "source": "docs.x.ai/developers/pricing (checked 2026-10-10). A prompt that REACHES 200k pays the long rates for every token.",
+    "origin": "override"
+   }
+  ],
+  "grok-4.6": [
+   {
+    "uncached_in": 2.0,
+    "cache_write": 2.0,
+    "cache_read": 0.5,
+    "out": 6.0,
+    "long": {
+     "threshold_tokens": 200000,
+     "inclusive": true,
+     "uncached_in": 4.0,
+     "cache_write": 4.0,
+     "cache_read": 1.0,
+     "out": 12.0
+    },
+    "source": "https://docs.x.ai/developers/models. Cache writes bill at the input rate. A prompt of 200K tokens or more bills at the long rates.",
+    "origin": "shipped"
+   }
+  ],
+  "haiku": [
+   {
+    "uncached_in": 1,
+    "cache_write": 1.25,
+    "cache_read": 0.1,
+    "out": 5,
+    "source": "Haiku 4.5, released 2025-10-15 (platform.claude.com/docs/en/about-claude/pricing (checked 2026-10-10)). Claude Code alias for the latest model of its family (code.claude.com/docs/en/model-config). The switch day is the model's launch day; the Claude Code changelog is undated, and an older client keeps the old model until it updates.",
+    "origin": "override"
+   },
+   {
+    "from": "2026-10-07",
+    "uncached_in": 0.1,
+    "cache_write": 0.125,
+    "cache_read": 0.01,
+    "out": 0.5,
+    "long": {
+     "threshold_tokens": 100000,
+     "uncached_in": 0.5,
+     "cache_write": 0.625,
+     "cache_read": 0.05,
+     "out": 2.5
+    },
+    "source": "Haiku 5.5, launched 2026-10-07 (platform.claude.com/docs/en/release-notes/api). platform.claude.com/docs/en/about-claude/pricing (checked 2026-10-10). Claude Code alias for the latest model of its family (code.claude.com/docs/en/model-config). The switch day is the model's launch day; the Claude Code changelog is undated, and an older client keeps the old model until it updates.",
+    "origin": "override"
+   }
+  ],
+  "hy3-free": [
+   {
+    "uncached_in": 0,
+    "cache_write": 0,
+    "cache_read": 0,
+    "out": 0,
+    "source": "Free tier as reported by the gateway. OpenRouter lists no free variant of this model on 2026-10-10 (only paid ids), so $0 is unverified.",
+    "origin": "override"
+   }
+  ],
+  "jev-1.13.0": [
+   {
+    "uncached_in": 0.042,
+    "cache_write": 0,
+    "cache_read": 0.042,
+    "out": 0,
+    "source": "docs.typesafe.ai/models.md (checked 2026-10-10): $42 per Btok input, output free, no cache tier. jev-latest and jev-preview point to jev-1.13.0.",
+    "origin": "override"
+   }
+  ],
+  "jev-latest": [
+   {
+    "uncached_in": 0.042,
+    "cache_write": 0,
+    "cache_read": 0.042,
+    "out": 0,
+    "source": "docs.typesafe.ai/models.md (checked 2026-10-10): $42 per Btok input, output free, no cache tier. jev-latest and jev-preview point to jev-1.13.0.",
+    "origin": "override"
+   }
+  ],
+  "jev-preview": [
+   {
+    "uncached_in": 0.042,
+    "cache_write": 0,
+    "cache_read": 0.042,
+    "out": 0,
+    "source": "docs.typesafe.ai/models.md (checked 2026-10-10): $42 per Btok input, output free, no cache tier. jev-latest and jev-preview point to jev-1.13.0.",
+    "origin": "override"
+   }
+  ],
+  "laguna-s-2.1-free": [
+   {
+    "uncached_in": 0,
+    "cache_write": 0,
+    "cache_read": 0,
+    "out": 0,
+    "source": "openrouter.ai/api/v1/models (checked 2026-10-10): a ':free' variant of this model is listed at $0.",
+    "origin": "override"
+   }
+  ],
+  "muse-glimmer:30b-mlx": [
+   {
+    "uncached_in": 0,
+    "cache_write": 0,
+    "cache_read": 0,
+    "out": 0,
+    "source": "A local model on this machine. Nobody bills for it.",
+    "origin": "override"
+   }
+  ],
+  "muse-spark-1.2-contributor-free": [
+   {
+    "uncached_in": 0,
+    "cache_write": 0,
+    "cache_read": 0,
+    "out": 0,
+    "source": "Free tier as reported by the gateway. OpenRouter lists no free variant of this model on 2026-10-10 (only paid ids), so $0 is unverified.",
+    "origin": "override"
+   }
+  ],
+  "nemotron-3-ultra-free": [
+   {
+    "uncached_in": 0,
+    "cache_write": 0,
+    "cache_read": 0,
+    "out": 0,
+    "source": "openrouter.ai/api/v1/models (checked 2026-10-10): a ':free' variant of this model is listed at $0.",
+    "origin": "override"
+   }
+  ],
+  "nemotron-3.5-lightning-free": [
+   {
+    "uncached_in": 0,
+    "cache_write": 0,
+    "cache_read": 0,
+    "out": 0,
+    "source": "openrouter.ai/api/v1/models (checked 2026-10-10): a ':free' variant of this model is listed at $0.",
+    "origin": "override"
+   }
+  ],
+  "opus": [
+   {
+    "uncached_in": 5,
+    "cache_write": 6.25,
+    "cache_read": 0.5,
+    "out": 25,
+    "source": "Opus 4.7 (from 2026-04-16), 4.8 (from 2026-05-28) and 5 (from 2026-07-24) all bill $5/$25 (platform.claude.com/docs/en/about-claude/pricing (checked 2026-10-10)). Claude Code alias for the latest model of its family (code.claude.com/docs/en/model-config). The switch day is the model's launch day; the Claude Code changelog is undated, and an older client keeps the old model until it updates.",
+    "origin": "override"
+   },
+   {
+    "from": "2026-09-22",
+    "uncached_in": 4,
+    "cache_write": 5,
+    "cache_read": 0.2,
+    "out": 20,
+    "source": "Opus 5.5, launched 2026-09-22 (platform.claude.com/docs/en/release-notes/api). platform.claude.com/docs/en/about-claude/pricing (checked 2026-10-10). Claude Code alias for the latest model of its family (code.claude.com/docs/en/model-config). The switch day is the model's launch day; the Claude Code changelog is undated, and an older client keeps the old model until it updates.",
+    "origin": "override"
+   }
+  ],
+  "sonnet": [
+   {
+    "uncached_in": 3,
+    "cache_write": 3.75,
+    "cache_read": 0.3,
+    "out": 15,
+    "source": "Sonnet 4.6, the latest Sonnet from 2026-02-17 until Sonnet 5 (platform.claude.com/docs/en/about-claude/pricing (checked 2026-10-10)). Claude Code alias for the latest model of its family (code.claude.com/docs/en/model-config). The switch day is the model's launch day; the Claude Code changelog is undated, and an older client keeps the old model until it updates.",
+    "origin": "override"
+   },
+   {
+    "from": "2026-06-30",
+    "uncached_in": 2,
+    "cache_write": 2.5,
+    "cache_read": 0.2,
+    "out": 10,
+    "source": "Sonnet 5, launched 2026-06-30 (platform.claude.com/docs/en/release-notes/api); Sonnet 5.5 from 2026-09-28 has the same card until its cache cut. Claude Code alias for the latest model of its family (code.claude.com/docs/en/model-config). The switch day is the model's launch day; the Claude Code changelog is undated, and an older client keeps the old model until it updates.",
+    "origin": "override"
+   },
+   {
+    "from": "2026-10-07",
+    "uncached_in": 2,
+    "cache_write": 2.5,
+    "cache_read": 0.1,
+    "out": 10,
+    "source": "Sonnet 5.5 cache read cut to $0.10 on 2026-10-07 (platform.claude.com/docs/en/release-notes/api). Claude Code alias for the latest model of its family (code.claude.com/docs/en/model-config). The switch day is the model's launch day; the Claude Code changelog is undated, and an older client keeps the old model until it updates.",
+    "origin": "override"
+   }
+  ],
+  "stealth/ox-alpha": [
+   {
+    "uncached_in": 0,
+    "cache_write": 0,
+    "cache_read": 0,
+    "out": 0,
+    "source": "A stealth model OpenRouter served free while unnamed. Delisted by 2026-10-10 (no endpoints), so the price on the days it was used cannot be checked.",
+    "origin": "override"
+   }
+  ],
+  "tts-1": [
+   {
+    "uncached_in": 15,
+    "cache_write": 0,
+    "cache_read": 15,
+    "out": 0,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10). $15.00 per 1M input CHARACTERS: the proxy records the character count as input tokens (ADR 0423).",
+    "origin": "override"
+   }
+  ],
+  "tts-1-hd": [
+   {
+    "uncached_in": 30,
+    "cache_write": 0,
+    "cache_read": 30,
+    "out": 0,
+    "source": "developers.openai.com/api/docs/pricing (checked 2026-10-10). $30.00 per 1M input CHARACTERS: the proxy records the character count as input tokens (ADR 0423).",
+    "origin": "override"
+   }
+  ],
+  "typesafe:jev-1.13.0": [
+   {
+    "uncached_in": 0.042,
+    "cache_write": 0,
+    "cache_read": 0.042,
+    "out": 0,
+    "source": "docs.typesafe.ai/models.md (checked 2026-10-10): $42 per Btok input, output free, no cache tier. jev-latest and jev-preview point to jev-1.13.0.",
+    "origin": "override"
+   }
+  ],
+  "x-ai/grok-4.20": [
+   {
+    "uncached_in": 1.25,
+    "cache_write": 0,
+    "cache_read": 0.2,
+    "out": 2.5,
+    "long": {
+     "threshold_tokens": 200000,
+     "inclusive": true,
+     "uncached_in": 2.5,
+     "cache_write": 0,
+     "cache_read": 0.4,
+     "out": 5
+    },
+    "source": "openrouter.ai/api/v1/models (checked 2026-10-10): passes the xAI price through, long tier from 200k. docs.x.ai/developers/pricing (checked 2026-10-10).",
+    "origin": "override"
+   }
+  ],
+  "x-ai/grok-4.6": [
+   {
+    "uncached_in": 2,
+    "cache_write": 0,
+    "cache_read": 0.5,
+    "out": 6,
+    "long": {
+     "threshold_tokens": 200000,
+     "inclusive": true,
+     "uncached_in": 4,
+     "cache_write": 0,
+     "cache_read": 1,
+     "out": 12
+    },
+    "source": "openrouter.ai/api/v1/models (checked 2026-10-10): passes the xAI price through, long tier from 200k. docs.x.ai/developers/pricing (checked 2026-10-10).",
+    "origin": "override"
+   }
+  ],
+  "x-preview-f-free": [
+   {
+    "uncached_in": 0,
+    "cache_write": 0,
+    "cache_read": 0,
+    "out": 0,
+    "source": "Free preview as reported by the gateway. Not found on OpenRouter on 2026-10-10; $0 is unverified.",
+    "origin": "override"
+   }
+  ],
+  "z-ai/glm-5.2": [
+   {
+    "uncached_in": 1.4,
+    "cache_write": 0,
+    "cache_read": 0.14,
+    "out": 4.4,
+    "source": "openrouter.ai/api/v1/models (checked 2026-10-10): the price depends on the provider. Mistral and BaseTen charge 1.40/4.40 with 0.14 cached, as here; Z.AI's own endpoint caches at 0.26.",
+    "origin": "override"
+   }
+  ]
+ },
+ "override": {
+  "path": "data/config/model-prices.json",
+  "present": true,
+  "checked": "2026-10-19",
+  "error": null
+ }
+}

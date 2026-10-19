@@ -2,12 +2,15 @@
 """Per-thread cost snapshot for the Thread cost widget.
 
 Prices every ContextCaptured call per thread at the dated, served-model rates in
-artifacts/token-cost/pricing.json (same rules as the Token Cost rollup), then
+Lucidos's price table, `lucidos model-prices` (same rules as the Token Cost
+rollup; TOKEN_COST_PRICE_TABLE names a file holding the same JSON instead), then
 writes artifacts/token-cost/threads-cost.json through `lucidos data write`, so
 the write is committed and announced. The snapshot carries `last_sequence` and
 today's rate cards, so the widget prices calls after the cursor live.
 """
 import os, sys, json, re, subprocess, datetime, pathlib
+# Resolved before the chdir below, so a relative path means the caller's.
+TABLE_FILE=os.path.abspath(os.environ['TOKEN_COST_PRICE_TABLE']) if os.environ.get('TOKEN_COST_PRICE_TABLE') else None
 WS = os.environ.get('LUCIDOS_WORKSPACE')
 if not WS: raise SystemExit('LUCIDOS_WORKSPACE is not set: run this from a Lucidos trigger, run_python or run_bash')
 # The engine sets no PG* vars (ADR 0481); the workspace URL is the only way in.
@@ -44,7 +47,12 @@ WHERE NOT dup GROUP BY 1,2,3,4) t"""
 max_seq=int(psql("SELECT coalesce(max(sequence),0) FROM events WHERE event_type='ContextCaptured'").strip())
 sql=sql.replace("WHERE event_type='ContextCaptured' AND",f"WHERE event_type='ContextCaptured' AND sequence<={max_seq} AND")
 rows=json.loads(psql(sql))
-P=json.load(open('data/artifacts/token-cost/pricing.json'))['models']
+def price_table():
+    if TABLE_FILE: return json.load(open(TABLE_FILE))
+    r=subprocess.run(['lucidos','model-prices'],capture_output=True,text=True)
+    if r.returncode: raise SystemExit('lucidos model-prices failed: '+(r.stderr or r.stdout)[:400])
+    return json.loads(r.stdout)
+P=price_table()['models']
 def key(m):
     m=re.sub(r'@[^\[]*','',m); m=m.replace('[1m]','')
     if m in P: return m
@@ -89,7 +97,8 @@ json.dump({'generated':datetime.datetime.now(datetime.UTC).isoformat(),'total_us
 print('total',round(total,2),'today',round(today,2),'threads',len(lst))
 print('unpriced',sorted(unpriced.items(),key=lambda x:-x[1])[:10])
 for x in lst[:20]: print(f"{x['cost_usd']:>9.2f} {x['calls']:>6} {x['first']}..{x['last']} {x['top_model'][:18]:18} {','.join(x['producers'])[:20]:20} {x['title'][:55]} {x['thread_id']}")
-print('top20 share', round(sum(x['cost_usd'] for x in lst[:20])/total*100,1))
+# A fresh workspace has no priced calls yet, and that still writes a snapshot.
+if total: print('top20 share', round(sum(x['cost_usd'] for x in lst[:20])/total*100,1))
 td=sorted(lst,key=lambda x:-x['today_usd'])[:10]
 print('TODAY'); [print(f"{x['today_usd']:>8.2f} {x['title'][:60]} {x['thread_id']}") for x in td]
 bands=[(1000,1e9),(100,1000),(10,100),(1,10),(0,1)]

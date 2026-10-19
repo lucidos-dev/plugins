@@ -48,7 +48,9 @@ global.URL = URL;
 global.Intl = Intl;
 
 const daily = JSON.parse(fs.readFileSync(P('data/artifacts/token-cost/daily.json'),'utf8'));
-const pricingRaw = fs.readFileSync(P('data/artifacts/token-cost/pricing.json'),'utf8');
+// The price table as lucidos.priceTable.get() returns it: the cards Lucidos
+// shipped on 2026-10-16 merged with this workspace's migrated override.
+const priceTableRaw = fs.readFileSync(new URL('./fixtures/price-table.json', import.meta.url),'utf8');
 
 global.lucidos = {
   // Both engine calls go over the SDK bridge: the pager through
@@ -57,7 +59,8 @@ global.lucidos = {
   apiUrl: (s) => '/dev/api/v1' + (s.startsWith('/') ? s : '/' + s),
   ui:{ applyPreferences(){}, watchPreferences(){}, enhanceSelects(){}, toast(){},
        Select:{ create:(o)=>({element:mkEl('sel'), getValue:()=>o.value, setValue(){}, setOptions(){}, destroy(){}}) } },
-  data:{ read: async (p)=> p.includes('pricing') ? pricingRaw : p.includes('ui-state') ? '{}' : JSON.stringify(daily), write: async()=>({success:true}), url:(p)=> p.startsWith('system-knowhow/') ? '/dev/api/v1/data/'+p : '/dev/data/'+p },
+  priceTable:{ get: async () => JSON.parse(priceTableRaw) },
+  data:{ read: async (p)=> p.includes('model-prices') || p.includes('settings.json') ? Promise.reject(Object.assign(new Error('HTTP 404'), { httpCode: 404 })) : p.includes('ui-state') ? '{}' : JSON.stringify(daily), write: async()=>({success:true}), url:(p)=> p.startsWith('system-knowhow/') ? '/dev/api/v1/data/'+p : '/dev/data/'+p },
   // The pager goes through lucidos.events.query; stubbed empty here because
   // these tests drive the accounting directly via pushLive. `/models` goes
   // through the generic bridged call, which has no labels to give.
@@ -73,8 +76,10 @@ const harness = src + `
 ;globalThis.__tc = {
   pushLive, render, get live(){return live;}, countedLive, get seenSeq(){return seenSeq;},
   seriesForDay, selectedDays, knownDays, localDay, costOf, longThreshold, isLongCall, rateFor, dayZoneLabel,
-  cardOn, cardsOf, savedModels, checkFrom, servedAsSent, pricedModel,
+  cardOn, cardsOf, overrideModels, checkFrom, servedAsSent, pricedModel,
   setDaily(d){ daily = d; }, setPricing(p){ pricing = p; },
+  setGroups(g){ groups = g; expanded.clear(); }, expand(p){ expanded.add(p); }, threadMeta,
+  setThreads(t){ threadsDaily = t; threadsState = t ? 'ready' : 'missing'; },
   get daily(){ return daily; },
   get metaText(){ return document.getElementById('meta').textContent; },
   resetLive(){ live=[]; seenSeq=new Set(); liveRevision++; }, get feedRows(){ return document.getElementById('feed').children.map(c=>c.dataset.at); }, renderFeed,
@@ -194,7 +199,6 @@ tc.setPricing({
                  long:{ threshold_tokens:272000, uncached_in:10, cache_write:0, cache_read:1, out:45 } },
     'claude-opus-5': { uncached_in:5, cache_write:6.25, cache_read:0.5, out:25 },
   },
-  long_context_multiplier:{ threshold_tokens:200000, in_multiplier:1, out_multiplier:1 },
   producers:{}, fx:{ rates:{USD:1} },
 });
 const zeroTokens = { calls:1, in:0, cache_read:0, cache_write:0, out:0, seconds:120,
@@ -218,7 +222,7 @@ const expShort = (240000*5 + 1000*30)/1e6;
 ok(Math.abs(tc.costOf('gpt-5.5', short240, short240.long) - expShort) < 1e-9,
    'a 240k GPT-5.5 call is priced short, got '+tc.costOf('gpt-5.5', short240, short240.long).toFixed(4)+' want '+expShort.toFixed(4));
 ok(tc.longThreshold('gpt-5.5') === 272000, 'GPT-5.5 splits at 272k, got '+tc.longThreshold('gpt-5.5'));
-ok(tc.longThreshold('claude-opus-5[1m]') === 200000, 'a card with no tier falls back to the global split');
+ok(tc.longThreshold('claude-opus-5[1m]') === 200000, 'a card with no tier splits at 200k');
 // Over the tier, every token of the call takes the long rate.
 const long300 = { calls:1, in:300000, cache_read:0, cache_write:0, out:1000, seconds:0,
                   long:{in:300000,out:1000,cache_read:0,cache_write:0} };
@@ -241,7 +245,6 @@ const storedWithDefault = () => ({
                  long:{ threshold_tokens:272000, uncached_in:10, cache_write:0, cache_read:1, out:45 } },
     'x-ai/grok-4.6': { uncached_in:2, cache_write:0, cache_read:0.5, out:6 },
   },
-  long_context_multiplier:{ threshold_tokens:200000, in_multiplier:1, out_multiplier:1 },
   producers:{}, fx:{ rates:{USD:1} },
 });
 const oneM = { calls:1, in:1e6, cache_read:0, cache_write:0, out:1e6, seconds:0,
@@ -266,7 +269,7 @@ ok(tc.longThreshold('openai/gpt-5.5') === 272000, 'and keeps its 272k long tier'
 ok(priceOf('x-ai/grok-4.6') === 8, 'a key that IS a prefixed id still matches literally');
 ok(priceOf('claude-opus-5@default[1m]') === 30, 'the engine\'s own decorations still strip');
 
-console.log('\n15. pricing.json is the only table');
+console.log('\n15. the price table is the only table');
 // The app used to carry its own copy of every price and fill gaps from it.
 // Now a model the stored table does not list is unpriced, never priced from
 // a second copy that drifts.
@@ -287,6 +290,8 @@ ok(priceOf('acme-mystery-7b') === null, 'a row "Add rate" left empty prices noth
 ok(priceOf('acme-half') === 2, 'a blank field on a priced row counts as 0, not NaN, got '+priceOf('acme-half'));
 
 console.log('\n17. the totals leave unpriced spend out and say so');
+// The rows below are model rows, so group by Model alone.
+tc.setGroups(['model']);
 tc.setPricing(storedWithDefault());
 const bucket = (calls, inT, out) => ({ calls, in:inT, cache_read:0, cache_write:0, out, seconds:0,
   buckets:[calls,0,0,0,0,0], long:{in:0,out:0,cache_read:0,cache_write:0} });
@@ -309,13 +314,13 @@ const rowsHtml = document.getElementById('tbody').children.map((r) => r.innerHTM
 ok(/data-add-rate="acme-mystery-7b"/.test(rowsHtml[0]) && /Unpriced/.test(rowsHtml[0]),
    'the unpriced row leads the table with an Add rate button');
 ok(/\$5\.00/.test(rowsHtml[1]), 'the priced row keeps its cost');
-const foot = document.getElementById('tfoot').innerHTML;
+const foot = document.getElementById('an-total').innerHTML;
 ok(/Total.*priced.*\$5\.00/.test(foot) && /Unpriced.*not in total/.test(foot), 'the footer splits priced and unpriced');
 ok(!/\$40\.00/.test(foot), 'and nothing anywhere folds the unpriced calls in at the Opus card');
 tc.setDaily({ ...empty, days:{ [today]: { 'main_llm|claude-opus-5': bucket(2, 1e6, 0) } }, hours:{} });
 tc.render();
 ok(document.getElementById('hero-unpriced').hidden === true, 'with every model priced the note hides');
-ok(!/Unpriced/.test(document.getElementById('tfoot').innerHTML), 'and the footer is one row again');
+ok(!/Unpriced/.test(document.getElementById('an-total').innerHTML), 'and the footer is one row again');
 
 console.log('\n18. the day selector names the zone days are cut in');
 // run.sh pins TZ=Europe/Oslo.
@@ -332,8 +337,7 @@ ok(document.getElementById('tz-note').textContent.startsWith('Days in Europe/Osl
 // that day, so a later price change never reprices the days before it.
 const dayOffset = (n) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + n); return tc.localDay(d); };
 const D2 = dayOffset(-2), D1 = dayOffset(-1);
-const tableWith = (models) => ({ currency:'USD', models,
-  long_context_multiplier:{ threshold_tokens:200000, in_multiplier:1, out_multiplier:1 }, producers:{}, fx:{ rates:{USD:1} } });
+const tableWith = (models) => ({ currency:'USD', models, producers:{}, fx:{ rates:{USD:1} } });
 const near = (a, b) => a !== null && Math.abs(a - b) < 1e-9;
 
 console.log('\n19. a price change mid-range prices each side at its own card');
@@ -358,19 +362,26 @@ tc.render();
 const hero19 = document.getElementById('hero-cost').querySelector('.live').textContent;
 ok(hero19 === '$59.00', 'the hero over both days is 35 + 24 = $59.00, got '+hero19);
 ok(/\$59\.00/.test(document.getElementById('tbody').children[0].innerHTML), 'and so is the model row');
-ok(/Total.*\$59\.00/.test(document.getElementById('tfoot').innerHTML), 'and the footer');
+ok(/Total.*\$59\.00/.test(document.getElementById('an-total').innerHTML), 'and the footer');
 
 console.log('\n20. a plain object card still loads, as one undated card');
 tc.setPricing(tableWith({ 'acme-1': { uncached_in:5, cache_write:0, cache_read:0.5, out:30 } }));
 ok(near(tc.costOf('acme-1', oneM, oneM.long, '2020-01-01'), 35), 'priced on an old day');
 ok(near(tc.costOf('acme-1', oneM, oneM.long, today), 35), 'and today');
 ok(near(tc.costOf('acme-1', oneM, oneM.long), 35), 'and with no day given');
-const saved = tc.savedModels({ 'acme-1': { uncached_in:5, out:30 }, 'acme-2': [
-  { from:'2026-08-21', uncached_in:4, out:20, source:'b' }, { uncached_in:5, out:30, source:'a' } ] });
+// The override is written as the engine reads it (llm/model_prices.rs): all
+// four rates on every card and a `source`, or Lucidos ignores the whole file.
+const saved = tc.overrideModels({ 'acme-1': { uncached_in:5, out:30, origin:'override' }, 'acme-2': [
+  { from:'2026-08-21', uncached_in:4, out:20, source:'b', origin:'override' }, { uncached_in:5, out:30, source:'a', origin:'shipped' } ],
+  'acme-3': [{ origin:'override' }] });
 ok(Array.isArray(saved['acme-1']) && saved['acme-1'].length === 1 && !('from' in saved['acme-1'][0]),
    'a save writes the plain card as a one-card list');
-ok(saved['acme-2'][0].source === 'a' && Object.keys(saved['acme-2'][1])[0] === 'from',
-   'cards are saved oldest first, `from` leading a dated card');
+ok(saved['acme-1'][0].cache_write === 0 && saved['acme-1'][0].cache_read === 0 && /Set by hand in Token Cost/.test(saved['acme-1'][0].source),
+   'a blank rate is written as 0, and a card with no source gets one');
+ok(!('origin' in saved['acme-1'][0]), 'the origin is the table\'s to say, never written');
+ok(saved['acme-2'].length === 1 && Object.keys(saved['acme-2'][0])[0] === 'from',
+   'a shipped card stays out of the override, `from` leads a dated card');
+ok(!('acme-3' in saved), 'an "Add rate" card with no number stays out');
 
 console.log('\n21. a future-dated card waits for its day');
 tc.setPricing(tableWith({
@@ -451,12 +462,11 @@ ok(tc.seriesForDay(today)['codex|gpt-5.5'].long.in === 0, 'a live 272,000-token 
 const exact = { calls:1, in:272000, cache_read:0, cache_write:0, out:1000, seconds:0, long:{in:0,out:0,cache_read:0,cache_write:0} };
 ok(near(tc.costOf('gpt-5.5', exact, exact.long, today), (272000*5 + 1000*30)/1e6), 'and is priced at the base card');
 
-console.log('\n25. a card without a usable threshold falls back to the global one');
-const withGlobal = (models, t) => ({ ...tableWith(models), long_context_multiplier:{ threshold_tokens:t, in_multiplier:1, out_multiplier:1 } });
-tc.setPricing(withGlobal({ 'acme-1': { uncached_in:1, out:1 },
-  'acme-2': { uncached_in:1, out:1, long:{ threshold_tokens:'abc', uncached_in:2, out:2 } } }, 150000));
-ok(tc.longThreshold('acme-1', today) === 150000, 'a tier-less card splits at the global threshold, as the rollup does');
-ok(tc.longThreshold('acme-2', today) === 150000, 'a threshold that is not a number is skipped');
+console.log('\n25. a card without a usable threshold splits at 200k');
+tc.setPricing(tableWith({ 'acme-1': { uncached_in:1, out:1 },
+  'acme-2': { uncached_in:1, out:1, long:{ threshold_tokens:'abc', uncached_in:2, out:2 } } }));
+ok(tc.longThreshold('acme-1', today) === 200000, 'a tier-less card splits at 200k, as the rollup does');
+ok(tc.longThreshold('acme-2', today) === 200000, 'a threshold that is not a number is skipped');
 ok(tc.isLongCall('acme-2', 10, today) === false, 'and never compared as text');
 
 
@@ -545,7 +555,6 @@ tc.setPricing({
                      flex:{ uncached_in:1, cache_write:1.25, cache_read:0.05, out:5 } },
     'gpt-5.5': { uncached_in:5, cache_write:0, cache_read:0.5, out:30 },
   },
-  long_context_multiplier:{ threshold_tokens:200000, in_multiplier:1, out_multiplier:1 },
   producers:{}, fx:{ rates:{USD:1} },
 });
 const noTier = { in:0, out:0, cache_read:0, cache_write:0 };
@@ -573,6 +582,60 @@ const s29 = tc.seriesForDay(tc.localDay(new Date(flexAt)));
 const bucket29 = Object.values(s29)[0];
 ok(bucket29 && bucket29.flex.in === 7000 && bucket29.flex.cache_write === 1500,
    'a live Flex call lands in the flex bucket, got '+JSON.stringify(bucket29 && bucket29.flex));
+
+console.log('\n30. the analysis tree: chip order nests, threads fold their subs');
+tc.setPricing(tableWith({ 'acme-1': { uncached_in:1, cache_write:0, cache_read:0, out:0 },
+                          'acme-2': { uncached_in:2, cache_write:0, cache_read:0, out:0 } }));
+tc.resetLive();
+tc.setDaily({ ...empty, days:{ [today]: {
+  'main_llm|acme-1': { ...bucket(2, 1e6, 0), cached_calls:1 },
+  'claude_code|acme-2': { ...bucket(4, 2e6, 0), cached_calls:4 },
+}}, hours:{} });
+const rowsOf = () => document.getElementById('tbody').children.map((r) => r.innerHTML);
+tc.setGroups(['type', 'model']);
+tc.render();
+let r30 = rowsOf();
+ok(r30.length === 2, 'Type then Model shows the two types, folded: '+r30.length);
+ok(/claude_code/.test(r30[0]) && /\$4\.00/.test(r30[0]), 'the dearer type leads');
+tc.expand('/type:claude_code');
+tc.render();
+r30 = rowsOf();
+ok(r30.length === 3 && /acme-2/.test(r30[1]), 'opening a type shows its models under it');
+ok(/4 <span class="muted">\/ 0/.test(r30[0]), 'cached / cold calls are counted: '+r30[0].match(/<td class="num">4[^<]*<span[^>]*>[^<]*/));
+tc.setGroups(['model', 'type']);
+tc.render();
+ok(/acme-2/.test(rowsOf()[0]), 'clicking Model first puts models on top');
+// An old rollup row has no cached_calls, so its split is unknown, not all cold.
+tc.setDaily({ ...empty, days:{ [today]: { 'main_llm|acme-1': bucket(2, 1e6, 0) } }, hours:{} });
+tc.render();
+ok(/Not counted yet/.test(rowsOf()[0]), 'a row from before the count says so instead of guessing');
+
+// Threads: a parent with a sub-thread rolls up into one row.
+tc.threadMeta.set('root', { title:'Parent thread', parent:null });
+tc.threadMeta.set('kid', { title:'Sub thread', parent:'root' });
+tc.threadMeta.set('solo', { title:'Lone thread', parent:null });
+tc.setDaily({ ...empty, last_sequence:0, days:{ [today]: { 'main_llm|acme-1': { ...bucket(6, 6e6, 0), cached_calls:6 } } }, hours:{} });
+tc.setThreads({ last_sequence:0, fields:['calls','cached_calls','in','cache_read','cache_write','out'],
+  days:{ [today]: {
+    root: { 'main_llm|acme-1': [1, 1, 1e6] },
+    kid:  { 'main_llm|acme-1': [3, 3, 3e6] },
+    solo: { 'main_llm|acme-1': [2, 2, 2e6] },
+  } }, hours:{} });
+tc.setGroups(['thread']);
+tc.render();
+r30 = rowsOf();
+ok(r30.length === 2, 'one row per root thread, the sub folded in: '+r30.length);
+ok(/Parent thread/.test(r30[0]) && /\$4\.00/.test(r30[0]) && /\+1 sub/.test(r30[0]), 'the parent carries its sub\'s cost and says so');
+tc.expand('/thread:root');
+tc.render();
+r30 = rowsOf();
+ok(/Sub thread/.test(r30[1]) && /\$3\.00/.test(r30[1]), 'opening it lists the sub-thread with its own cost');
+ok(/Total.*\$6\.00/.test(document.getElementById('an-total').innerHTML), 'and the total is the same with or without threads');
+tc.setThreads(null);
+tc.render();
+ok(!/Parent thread/.test(rowsOf().join('')) && /no per-thread rollup/.test(document.getElementById('an-note').textContent),
+   'with no thread file, Thread is left out and the note says why');
+tc.setThreads({ last_sequence:0, fields:[], days:{}, hours:{} });
 
 console.log('\n'+pass+' passed, '+fail+' failed');
 process.exit(fail?1:0);

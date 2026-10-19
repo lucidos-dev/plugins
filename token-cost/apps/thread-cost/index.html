@@ -46,6 +46,32 @@
   .tip b { color: var(--text-primary); font-weight: 600; }
   .tip.ok svg { color: var(--accent-green); }
 
+  /* Scope pill: this thread alone, or with its sub-threads. It never grows
+     past its box: buttons shrink and ellipsize instead of spilling out. */
+  .scope { display: inline-flex; justify-self: start; align-items: stretch; padding: 0.125rem; gap: 0.125rem; background: var(--bg-secondary);
+    border-radius: var(--radius-round); font-size: var(--font-size-xs); width: max-content; max-width: 100%; min-width: 0; overflow: hidden; box-sizing: border-box; }
+  .scope button { all: unset; box-sizing: border-box; display: block; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    text-align: center; height: 1.75rem; line-height: 1.75rem; cursor: pointer; padding: 0 var(--space-sm); border-radius: var(--radius-round);
+    color: var(--text-muted); font-weight: 600; white-space: nowrap; transition: background var(--duration-fast), color var(--duration-fast); }
+  /* Same weight pressed or not: a weight change would resize the pill on every tap. */
+  .scope button[aria-pressed="true"] { background: var(--accent); color: var(--bg-primary); }
+  .scope button:focus-visible { box-shadow: inset 0 0 0 0.125rem var(--text-primary); }
+  :root[data-motion="reduce"] .scope button { transition: none; }
+
+  /* ---- Layout rules that make overlap impossible ----
+     1. Every child of body sits in its own grid cell (auto rows, or one named
+        area each on medium). Nothing is positioned or given a negative margin.
+     2. The head slot holds the scope pill OR the label. CSS shows exactly one.
+     3. Every cell clips its own width (min-width: 0, ellipsis), so a long
+        value cannot reach into the next column.
+     4. On a fixed-height tile, fit() drops the lowest-value rows until the
+        content fits, so nothing is cut in half at the bottom edge. */
+  body > * { min-width: 0; }
+  .total, .today { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  body:has(> #scope:not([hidden])) > #label { display: none; }
+  html[data-widget-size="small"] #scope { display: none; }
+  html[data-widget-size="small"] body > #label { display: block; }
+  [data-fit-cut] { display: none !important; }
   .empty { color: var(--text-muted); font-size: var(--font-size-sm); }
   [hidden] { display: none !important; }
 
@@ -54,32 +80,43 @@
   :root[data-motion="reduce"] .enter { animation: none; }
   :root[data-motion="reduce"] .stack i, :root[data-motion="reduce"] .sub .bar i { transition: none; }
 
-  /* ---- Dashboard sizes. Inline and Canvas draw like large. ---- */
+  /* ---- Inline and Canvas: the card has a fixed height, so the body scrolls
+     inside it, by wheel, trackpad or finger. Tiles keep fit() instead. ---- */
+  html:not([data-widget-size]) body { height: 100vh; overflow-y: auto; overflow-x: hidden; align-content: start;
+    touch-action: pan-y; -webkit-overflow-scrolling: touch; scrollbar-width: thin; scrollbar-color: var(--border-color) transparent; }
+
+  /* ---- Dashboard sizes. ---- */
   html[data-widget-size] body { height: 100vh; overflow: hidden; align-content: start; }
-  /* Small: one square cell. The total, the mix bar, one line of advice. */
-  html[data-widget-size="small"] body { padding: var(--space-md); gap: var(--space-md); align-content: space-between; }
+  /* Small: one square cell. Label, total, mix bar, top model, one line of advice. */
+  html[data-widget-size="small"] body { padding: var(--space-md); gap: var(--space-sm); align-content: space-between; }
   html[data-widget-size="small"] .total { font-size: var(--font-size-2xl); }
-  html[data-widget-size="small"] .legend,
   html[data-widget-size="small"] .subs,
   html[data-widget-size="small"] .today { display: none; }
-  html[data-widget-size="small"] .tip { padding: 0; background: none; grid-template-columns: 1fr; }
+  /* The legend is sorted by cost, so its first row is the top model. */
+  html[data-widget-size="small"] .legend div:nth-child(n+2) { display: none; }
+  html[data-widget-size="small"] .tip { padding: 0; background: none; grid-template-columns: minmax(0, 1fr); }
   html[data-widget-size="small"] .tip svg { display: none; }
   html[data-widget-size="small"] .tip .long { display: none; }
   html[data-widget-size="small"] .tip:not(:first-child) { display: none; }
-  /* Medium: two cells wide. Total left, mix right, one tip under. */
+  /* Medium: two cells wide. One named area per child:
+     head across, total left, mix right, one tip across the bottom. */
   html[data-widget-size="medium"] body { padding: var(--space-md) var(--space-lg); gap: var(--space-sm) var(--space-lg);
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); grid-template-rows: auto 1fr; align-content: stretch; }
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); grid-template-rows: auto auto 1fr;
+    grid-template-areas: "head head" "hero mix" "tips tips"; align-content: stretch; }
+  html[data-widget-size="medium"] #label,
+  html[data-widget-size="medium"] #scope { grid-area: head; }
+  html[data-widget-size="medium"] .hero { grid-area: hero; }
+  html[data-widget-size="medium"] .mix { grid-area: mix; align-content: start; padding-top: var(--space-xs); }
+  html[data-widget-size="medium"] .tips { grid-area: tips; align-self: end; }
+  html[data-widget-size="medium"] .subs { display: none; }
   html[data-widget-size="medium"] .total { font-size: var(--font-size-2xl); }
-  html[data-widget-size="medium"] .mix { align-content: start; padding-top: var(--space-xs); }
-  html[data-widget-size="medium"] .tips { align-self: end; min-width: 0; }
   html[data-widget-size="medium"] .tip { padding: var(--space-xs) var(--space-sm); grid-template-columns: auto minmax(0, 1fr); align-items: center; }
   html[data-widget-size="medium"] .tip .long { display: none; }
   html[data-widget-size="medium"] .tip > :last-child { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-  html[data-widget-size="medium"] .tips { grid-column: 1 / -1; }
   html[data-widget-size="medium"] .tip:not(:first-child) { display: none; }
-  html[data-widget-size="medium"] .subs { display: none; }
   html[data-widget-size="medium"] .legend div:nth-child(n+3) { display: none; }
-  /* Large: two by two. Everything, three subs, two tips. */
+  /* Large: two by two. Everything, three subs, two tips; fit() trims the rest. */
+  html[data-widget-size="large"] body { gap: var(--space-md); }
   html[data-widget-size="large"] .subs .sub:nth-child(n+4) { display: none; }
   html[data-widget-size="large"] .tip:nth-child(n+3) { display: none; }
   /* Preview: param preview=small|medium|large draws one tile box inline. 10rem cell, 0.75rem gap. */
@@ -90,8 +127,12 @@
 </style>
 </head>
 <body tabindex="0" role="link" aria-label="Open Token Cost">
+  <div class="meta" id="label">This thread</div>
+  <div class="scope" id="scope" role="group" aria-label="Cost scope">
+    <button type="button" data-incl="0">This thread</button>
+    <button type="button" data-incl="1" id="scope-subs">+ sub-threads</button>
+  </div>
   <div class="hero">
-    <div class="meta" id="label">This thread</div>
     <div class="total" id="total">…</div>
     <div class="today" id="today"></div>
   </div>
@@ -118,7 +159,20 @@ let live = new Map(), seen = new Set(), lastUsage = new Map(), titles = new Map(
 // Tap anywhere opens the Token Cost app.
 const open = () => lucidos.ui.navigate('app', { app_id: 'token-cost' });
 document.body.addEventListener('click', open);
-document.body.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+document.body.addEventListener('keydown', e => { if (e.target !== document.body) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+
+// Include sub-threads: one saved choice, default on. Tapping the pill never opens Token Cost.
+const INCL_KEY = 'thread-cost.include-subs';
+let incl = (() => { try { return localStorage.getItem(INCL_KEY) !== '0'; } catch (e) { return true; } })();
+document.getElementById('scope').addEventListener('click', e => {
+  e.stopPropagation();
+  const b = e.target.closest('button[data-incl]');
+  if (!b) return;
+  incl = b.dataset.incl === '1';
+  try { localStorage.setItem(INCL_KEY, incl ? '1' : '0'); } catch (err) {}
+  render();
+});
+document.getElementById('scope').addEventListener('keydown', e => e.stopPropagation());
 
 // ---- Snapshot lookup -----------------------------------------------------
 function find(tid) {
@@ -151,7 +205,7 @@ function threadCost(tid) {
 // ---- Suggestions -----------------------------------------------------------
 // Each is a plain heuristic over the model mix and call counts the snapshot
 // holds. The saving is a rate-card estimate, never a measured value.
-function rateOf(m) { const k = rateKey(m); return k ? data.rates[k] : null; }
+function rateOf(m) { const k = rateKey(m); return k ? currentRates()[k] : null; }
 function blended(r) { return r ? (r.in + r.out) : 0; }
 function suggest(tree, models, total, calls) {
   const out = [];
@@ -178,6 +232,16 @@ function suggest(tree, models, total, calls) {
   if (!out.length) out.push({ ok: true, score: 0, html: `Spend looks lean<span class="long">: no expensive model share and no long-context sign</span>.` });
   return out.sort((a, b) => b.score - a.score);
 }
+// Write a region only when its markup changed, so a re-render that changes
+// nothing touches no nodes, and one that changes something swaps them once.
+function setHTML(el, html) { if (el._html !== html) { el._html = html; el.innerHTML = html; } }
+// Reuse the stack fills, so a scope switch tweens the widths instead of
+// rebuilding the bar.
+function setStack(el, parts, total) {
+  while (el.children.length > parts.length) el.lastElementChild.remove();
+  while (el.children.length < parts.length) el.appendChild(document.createElement('i'));
+  parts.forEach((p, i) => { const n = el.children[i]; n.className = p.c; n.style.flexGrow = String(Math.max(p.cost / (total || 1), 0.01)); });
+}
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ---- Render ----------------------------------------------------------------
@@ -186,15 +250,18 @@ function render() {
   const $ = id => document.getElementById(id);
   const anim = !drawn;
   if (!focus) {
+    $('scope').hidden = true; $('label').hidden = false;
     $('label').textContent = 'No thread open';
     $('total').textContent = '—';
     $('today').textContent = '';
     $('mix').hidden = true; $('subs').hidden = true;
-    $('tips').innerHTML = '<div class="empty">Open a thread to see what it costs.</div>';
+    setHTML($('tips'), '<div class="empty">Open a thread to see what it costs.</div>');
+    fit();
     return;
   }
   const known = subsFor === focus;
-  const ids = [focus, ...(known ? subIds : [])];
+  const avail = known ? subIds.size : 0;
+  const ids = [focus, ...(known && incl ? subIds : [])];
   const tree = ids.map(threadCost);
   const total = tree.reduce((n, r) => n + r.all, 0);
   const today = tree.reduce((n, r) => n + r.today, 0);
@@ -204,31 +271,71 @@ function render() {
     const o = mm[k] || (mm[k] = { name: k, cost: 0, calls: 0 }); o.cost += v.all || 0; o.calls += v.calls || 0;
   }
   const models = Object.values(mm).filter(m => m.cost > 0).sort((a, b) => b.cost - a.cost);
-  const n = known ? subIds.size : 0;
-  $('label').textContent = n ? `This thread + ${n} sub-thread${n === 1 ? '' : 's'}` : 'This thread';
+  const n = incl ? avail : 0;
+  // Pill shows only when there is something to switch; the meta label then
+  // drops out on medium and large, and the small tile keeps a short label.
+  // Always shown, so the layout never shifts, and the choice can be set
+  // before a thread has any sub-threads.
+  const pill = true;
+  $('scope').hidden = false;
+  $('scope-subs').textContent = known ? `+ ${avail} sub-thread${avail === 1 ? '' : 's'}` : '+ sub-threads';
+  for (const b of $('scope').querySelectorAll('button')) b.setAttribute('aria-pressed', String((b.dataset.incl === '1') === incl));
+  const small = document.documentElement.dataset.widgetSize === 'small';
+  $('label').hidden = false; // CSS picks label or pill for the head slot, never both
+  $('label').textContent = n ? (small ? `This thread +${n}` : `This thread + ${n} sub-thread${n === 1 ? '' : 's'}`) : 'This thread';
   $('total').textContent = usd(total);
   $('today').innerHTML = calls ? `<b>${usd(today)}</b> today · ${calls.toLocaleString()} calls` : 'No calls yet';
 
-  // Mix: top three models, the rest folded into one.
-  const top = models.slice(0, 3), rest = models.slice(3).reduce((s, m) => s + m.cost, 0);
+  // Mix: up to four models by name. Fold only when two or more remain,
+  // since "1 more" hides a name that fits in the same row.
+  const shown = models.length <= 4 ? 4 : 3;
+  const top = models.slice(0, shown), rest = models.slice(shown).reduce((s, m) => s + m.cost, 0);
   const parts = top.map((m, i) => ({ name: short(m.name), cost: m.cost, c: 'c' + i }));
   if (rest > 0) parts.push({ name: `${models.length - 3} more`, cost: rest, c: 'c3' });
   $('mix').hidden = !parts.length;
-  $('stack').innerHTML = parts.map(p => `<i class="${p.c}" style="flex-grow:${Math.max(p.cost / total, 0.01)}"></i>`).join('');
-  $('legend').innerHTML = parts.map(p => `<div><span class="sw ${p.c}"></span><span>${esc(p.name)}</span><span>${p.cost < 0.005 ? '<$0.01' : usd(p.cost)}</span></div>`).join('');
+  setStack($('stack'), parts, total);
+  setHTML($('legend'), parts.map(p => `<div><span class="sw ${p.c}"></span><span>${esc(p.name)}</span><span>${p.cost < 0.005 ? '<$0.01' : usd(p.cost)}</span></div>`).join(''));
 
   // Subs: only worth showing when the tree has more than the root.
   const ranked = tree.filter(r => r.all > 0).sort((a, b) => b.all - a.all);
   const max = Math.max(0.0001, ...ranked.map(r => r.all));
   $('subs').hidden = tree.length < 2;
-  $('subs').innerHTML = ranked.slice(0, 6).map((r, i) =>
-    `<div class="sub${r.id === focus ? ' root' : ''}${anim ? ' enter' : ''}" style="--i:${i}"><span>${r.id === focus ? 'This thread' : esc(titles.get(r.id) || r.title)}</span><span>${usd(r.all)}</span><span class="bar"><i style="transform:scaleX(${Math.max(0.02, r.all / max)})"></i></span></div>`).join('');
+  setHTML($('subs'), ranked.slice(0, 6).map((r, i) =>
+    `<div class="sub${r.id === focus ? ' root' : ''}${anim ? ' enter' : ''}" style="--i:${i}"><span>${r.id === focus ? 'This thread' : esc(titles.get(r.id) || r.title)}</span><span>${usd(r.all)}</span><span class="bar"><i style="transform:scaleX(${Math.max(0.02, r.all / max)})"></i></span></div>`).join(''));
 
   const tips = suggest(tree, models, total, calls);
-  $('tips').innerHTML = tips.map((t, i) =>
-    `<div class="tip${t.ok ? ' ok' : ''}${anim ? ' enter' : ''}" style="--i:${i + 1}"><svg aria-hidden="true"><use href="#${t.ok ? 'i-ok' : 'i-tip'}"/></svg><span>${t.html}</span></div>`).join('');
+  setHTML($('tips'), tips.map((t, i) =>
+    `<div class="tip${t.ok ? ' ok' : ''}${anim ? ' enter' : ''}" style="--i:${i + 1}"><svg aria-hidden="true"><use href="#${t.ok ? 'i-ok' : 'i-tip'}"/></svg><span>${t.html}</span></div>`).join(''));
   drawn = true;
+  fit();
 }
+
+// ---- Fit: a fixed-height tile never clips a row in half -------------------
+// Drop the lowest-value visible rows, in this order, until the content fits.
+// The total is never dropped.
+function fit() {
+  for (const n of document.querySelectorAll('[data-fit-cut]')) n.removeAttribute('data-fit-cut');
+  if (!document.documentElement.dataset.widgetSize) return;
+  const b = document.body, $$ = q => [...document.querySelectorAll(q)];
+  const over = () => b.scrollHeight > b.clientHeight + 1;
+  if (!over()) return;
+  const cuts = [
+    ...$$('#tips > .tip').slice(1).reverse(),
+    ...$$('#subs > .sub').reverse(),
+    ...$$('#legend > div').slice(1).reverse(),
+    document.getElementById('today'),
+    document.getElementById('tips'),
+    document.getElementById('subs'),
+    document.getElementById('legend'),
+  ];
+  for (const n of cuts) {
+    if (!n.getClientRects().length) continue; // already hidden at this size
+    n.setAttribute('data-fit-cut', '');
+    if (!over()) return;
+  }
+}
+window.addEventListener('resize', fit);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
 
 // ---- Sub-thread tree, walked level by level --------------------------------
 async function loadSubs() {
@@ -251,10 +358,63 @@ async function loadSubs() {
     }));
     frontier = next;
   }
-  if (focus === root) { subIds = found; subsFor = root; dirty = true; }
+  if (focus === root) {
+    subIds = found; subsFor = root;
+    remember(root, found);
+    render(); // paint now, not on the next 1 s tick
+  }
+}
+
+// Last known sub-thread tree per thread, so a thread you open again paints
+// its full scope at once and the walk only corrects it.
+const SUBS_KEY = 'thread-cost.subs';
+const subCache = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem(SUBS_KEY) || '{}'))); } catch (e) { return new Map(); } })();
+function remember(root, ids) {
+  const list = [...ids].map(id => [id, titles.get(id) || '']);
+  subCache.delete(root); subCache.set(root, list);
+  while (subCache.size > 40) subCache.delete(subCache.keys().next().value);
+  try { localStorage.setItem(SUBS_KEY, JSON.stringify(Object.fromEntries(subCache))); } catch (e) {}
+}
+function adoptCached(root) {
+  const c = root && subCache.get(root);
+  if (c) {
+    for (const [id, t] of c) if (t && !titles.has(id)) titles.set(id, t);
+    subIds = new Set(c.map(([id]) => id)); subsFor = root;
+  } else { subIds = new Set(); subsFor = null; }
 }
 
 // ---- Live pricing on top of the hourly snapshot ----------------------------
+// Today's rates come from Lucidos's price table (lucidos.priceTable.get(), ADR
+// 0525): the shipped cards merged with the workspace override. The snapshot
+// carries the same rates from its own run, and stands in only while the
+// table cannot be read.
+let tableRates = null;
+const localDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/** Each model's card in force today, in the snapshot's compact shape. */
+function ratesFromTable(table) {
+  const day = localDay(new Date()), out = {};
+  for (const [id, cards] of Object.entries((table && table.models) || {})) {
+    let c = null;
+    for (const card of cards || []) if (!card.from || card.from <= day) c = card;
+    if (!c || typeof c.uncached_in !== 'number' || typeof c.out !== 'number') continue;
+    const e = { in: c.uncached_in, cr: c.cache_read || 0, cw: c.cache_write || 0, out: c.out };
+    const lg = c.long;
+    if (lg && lg.threshold_tokens) {
+      e.long = { t: lg.threshold_tokens, inclusive: lg.inclusive === true, in: lg.uncached_in ?? e.in,
+                 cr: lg.cache_read ?? e.cr, cw: lg.cache_write ?? e.cw, out: lg.out ?? e.out };
+    }
+    out[id] = e;
+  }
+  return out;
+}
+async function loadRates() {
+  try {
+    if (!lucidos.priceTable) return;
+    tableRates = ratesFromTable(await lucidos.priceTable.get());
+    dirty = true;
+  } catch (e) { /* the snapshot's rates stand in */ }
+}
+const currentRates = () => tableRates || (data && data.rates) || {};
 const undated = id => id.replace(/-\d{3,}(?:-\d+)*$/, '');
 function servedAsSent(sent, served) {
   const bare = id => String(id || '').split('/').pop().replace(/\[1m\]$/, '').replace(/@/g, '-').toLowerCase();
@@ -264,7 +424,7 @@ function servedAsSent(sent, served) {
   return rest === '' || rest.startsWith(':') || /^-\d{3}/.test(rest);
 }
 function rateKey(m) {
-  const R = data.rates || {};
+  const R = currentRates();
   m = String(m || '').toLowerCase().replace(/@[^\[]*/, '').replace('[1m]', '');
   if (R[m]) return m;
   m = m.replace(/^(?:[a-z]{2,6}\.)?anthropic\./, '');
@@ -279,7 +439,7 @@ function priceCall(p) {
   const model = p.served_model && !servedAsSent(asked, p.served_model) ? p.served_model : asked;
   const k = rateKey(model);
   if (!k) return null;
-  let r = data.rates[k];
+  let r = currentRates()[k];
   const u = p.usage, i = u.input_tokens || 0, cr = u.cache_read_tokens || 0, cw = u.cache_creation_tokens || 0, o = u.output_tokens || 0;
   if (r.long && (r.long.inclusive ? i >= r.long.t : i > r.long.t)) r = r.long;
   return { model: k, cost: (Math.max(0, i - cr - cw) * r.in + cr * r.cr + cw * r.cw + o * r.out) / 1e6 };
@@ -317,16 +477,19 @@ async function catchUp() {
   rows.reverse().forEach(r => fold(r.sequence, r.thread_id, r.payload));
 }
 async function load() {
+  // Fetched again with each snapshot, so a new day picks its own cards.
+  const ratesReady = loadRates();
   try {
     data = JSON.parse(await lucidos.data.read(PATH));
     live = new Map(); seen = new Set([...seen].filter(s => s > (data.last_sequence || 0)));
     render();
-    await catchUp();
-    render();
   } catch (e) {
     if (!data) document.getElementById('total').textContent = 'No data yet';
   }
+  // Lift the cover on the snapshot paint; the live catch-up refines it after.
   lucidos.ui.ready && lucidos.ui.ready();
+  await ratesReady;
+  if (data) { try { await catchUp(); } catch (e) {} render(); }
 }
 
 // ---- Wiring ----------------------------------------------------------------
@@ -354,10 +517,10 @@ if (PREVIEW) new MutationObserver(pinPreview).observe(document.documentElement, 
 
 (async () => {
   try { focus = await lucidos.ui.focusedThread(); } catch (e) { focus = null; }
-  try { lucidos.ui.onFocusedThreadChange(id => { focus = id; subIds = new Set(); subsFor = null; drawn = false; render(); loadSubs(); }); } catch (e) {}
-  await load();
-  await loadSubs();
-  render();
+  adoptCached(focus);
+  try { lucidos.ui.onFocusedThreadChange(id => { focus = id; adoptCached(id); drawn = false; render(); loadSubs(); }); } catch (e) {}
+  // Snapshot read and sub-thread walk run side by side, not one after the other.
+  await Promise.all([load(), loadSubs()]);
   startTimers();
 })();
 lucidos.sse.connect();
@@ -367,6 +530,8 @@ lucidos.sse.on('ContextCaptured', ev => {
 });
 lucidos.sse.on('ArtifactUpdated', p => { if (p && p.artifact_path === 'token-cost/threads-cost.json') load(); });
 lucidos.sse.on('ArtifactCreated', p => { if (p && p.artifact_path === 'token-cost/threads-cost.json') load(); });
+// A price edit or the price check rewrites the override; take its prices.
+lucidos.sse.on('DataFileWritten', d => { if (String((d && (d.path || (d.event && d.event.path))) || '').endsWith('config/model-prices.json')) loadRates(); });
 </script>
 </body>
 </html>

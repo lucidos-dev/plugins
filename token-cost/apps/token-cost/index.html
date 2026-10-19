@@ -187,102 +187,67 @@
       td.money { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-primary); }
       .muted { color: var(--text-muted); }
 
-      /* By model on a narrow screen. Eight columns cannot fit a phone, so each
-         row stops being a grid row and becomes a stacked card. Driven purely by
-         the media query, never by a width read in JS, so rotating the phone or
-         dragging a desktop window across the breakpoint re-lays-out for free.
-
-         Scoped to table.model-table throughout, deliberately: the Settings
-         price tables are also <table>s and keep their own table-layout: auto
-         treatment, which these rules must not touch. */
-      @media (max-width: 40rem) {
-        table.model-table,
-        table.model-table tbody,
-        table.model-table tfoot,
-        table.model-table tr,
-        table.model-table td { display: block; width: auto; }
-
-        /* Left in the DOM, not removed: it is the label source for the
-           td::before pairs below and the row header for a screen reader. */
-        table.model-table thead {
-          position: absolute; width: 1px; height: 1px;
-          overflow: hidden; clip-path: inset(50%); white-space: nowrap;
-        }
-
-        table.model-table tbody tr,
-        table.model-table tfoot tr {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
-          gap: var(--space-sm) var(--space-md);
-          border: 1px solid var(--border-color);
-          border-radius: var(--radius-md);
-          padding: var(--space-md);
-          margin-bottom: var(--space-md);
-        }
-        table.model-table tfoot tr {
-          background: var(--bg-tertiary); margin-bottom: 0;
-        }
-        table.model-table tfoot td { border-top: none; }
-        table.model-table tfoot td.row-head { margin-bottom: var(--space-xs); }
-
-        table.model-table td { padding: 0; text-align: left; }
-        table.model-table td[colspan] { grid-column: 1 / -1; }
-
-        /* Model id and producer own the top of the card, full width and
-           unabridged. Truncating them is what made two rows indistinguishable,
-           and the ids differ only in their tail. */
-        table.model-table td.row-head,
-        table.model-table td.row-sub {
-          grid-column: 1 / -1;
-          width: auto; overflow: visible; white-space: normal;
-          overflow-wrap: anywhere;
-        }
-        table.model-table td.row-head {
-          font-family: var(--font-mono); font-weight: 600;
-          color: var(--text-primary); font-size: var(--font-size-md);
-        }
-        table.model-table td.row-sub {
-          font-size: var(--font-size-xs); margin-bottom: var(--space-xs);
-        }
-        table.model-table td.row-sub:empty { display: none; }
-
-        /* Each number carries its own label, so the six of them read as pairs
-           instead of one run of digits. */
-        table.model-table td[data-label] {
-          display: flex; flex-direction: column; gap: var(--space-xs);
-        }
-        table.model-table td[data-label]::before {
-          content: attr(data-label);
-          font-family: var(--font-ui);
-          font-size: var(--font-size-2xs); font-weight: 600;
-          text-transform: uppercase; letter-spacing: 0.06em;
-          color: var(--text-muted);
-        }
+      /* Analysis: group-by chips, metric toggle, chart, tree table */
+      .an-bar-top { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-md); }
+      .an-lbl { font-size: var(--font-size-xs); }
+      .an-chips { display: flex; gap: var(--space-xs); flex-wrap: wrap; }
+      .an-metric { margin-left: auto; }
+      .chip {
+        display: inline-flex; align-items: center; gap: var(--space-xs);
+        border: 1px solid var(--border-color); border-radius: 999px; background: none;
+        padding: 0.1875rem 0.75rem; font: inherit; font-size: var(--font-size-sm);
+        color: var(--text-secondary); cursor: pointer;
+      }
+      @media (hover: hover) { .chip:hover { color: var(--text-primary); border-color: var(--text-muted); } }
+      .chip.on {
+        color: var(--text-primary); border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 18%, transparent);
+      }
+      .chip .n {
+        display: inline-block; min-width: 1rem; height: 1rem; line-height: 1rem; border-radius: 999px;
+        background: var(--accent); color: var(--bg-primary); font-size: var(--font-size-2xs);
+        font-weight: 700; text-align: center;
       }
 
-      /* Daily bars */
-      .bars { display: flex; align-items: stretch; gap: 0.1875rem; height: 9rem; }
-      .bar-col { flex: 1 1 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; cursor: default; }
-      .bar-seg { width: 100%; flex: none; }
-      .bar-seg.read   { background: var(--accent); opacity: 0.35; }
-      .bar-seg.write  { background: var(--accent); opacity: 0.7; }
-      .bar-seg.fresh  { background: var(--accent-yellow); }
-      .bar-seg.out    { background: var(--accent-green); }
-      .bar-seg.voice  { background: var(--accent-purple, var(--accent-red)); }
-      @media (hover: hover) { .bar-col:hover .bar-seg { filter: brightness(1.25); } }
-      .bar-col:first-child .bar-seg:last-child { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
-      .bar-seg:first-child { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+      .an-chart { display: flex; align-items: stretch; gap: 0.1875rem; height: 8rem; }
+      .an-col { flex: 1 1 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; cursor: default; }
+      .an-seg { width: 100%; flex: none; }
+      .an-seg:first-child { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+      .an-col.now { box-shadow: inset 0 -2px 0 var(--accent-yellow); }
+      @media (hover: hover) { .an-col:hover .an-seg { filter: brightness(1.25); } }
+      .an-chart .empty-state { flex: 1; align-self: center; }
       .axis { display: flex; justify-content: space-between; color: var(--text-muted); font-size: var(--font-size-2xs); margin-top: var(--space-sm); }
       .legend { display: flex; gap: var(--space-lg); flex-wrap: wrap; margin-top: var(--space-md); font-size: var(--font-size-xs); color: var(--text-secondary); }
-      .swatch { display: inline-block; width: 0.625rem; height: 0.625rem; border-radius: var(--radius-sm); margin-right: var(--space-xs); vertical-align: baseline; }
+      .swatch { display: inline-block; width: 0.625rem; height: 0.625rem; border-radius: var(--radius-sm); margin-right: var(--space-xs); vertical-align: baseline; flex: none; }
 
-      /* Context histogram */
-      .hist-row { display: flex; align-items: center; gap: var(--space-md); margin-bottom: var(--space-sm); }
-      .hist-label { width: 7rem; flex: none; color: var(--text-secondary); font-size: var(--font-size-xs); font-family: var(--font-mono); }
-      .hist-track { flex: 1; background: var(--bg-tertiary); border-radius: var(--radius-sm); height: 1.125rem; overflow: hidden; }
-      .hist-fill { height: 100%; background: var(--accent); opacity: 0.75; }
-      .hist-fill.hot { background: var(--accent-yellow); opacity: 0.9; }
-      .hist-n { width: 8rem; flex: none; text-align: right; color: var(--text-muted); font-size: var(--font-size-xs); font-family: var(--font-mono); }
+      #an-legend > .lg-item { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .an-scroll { overflow-x: auto; margin-top: var(--space-lg); }
+      table.an-table { table-layout: auto; min-width: 46rem; }
+      table.an-table th, table.an-table td { width: auto; white-space: nowrap; }
+      table.an-table td:first-child { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; }
+      table.an-table td:nth-child(2) { overflow: visible; }
+      #an-total tr { border-bottom: 1px solid var(--border-color); }
+      #an-total td { font-weight: 600; color: var(--text-primary); }
+      #an-total .sub { font-weight: 400; color: var(--text-muted); }
+      tr.an-row.kids { cursor: pointer; }
+      @media (hover: hover) { tr.an-row.kids:hover { background: var(--bg-hover); } }
+      tr.an-row.deep td { color: var(--text-secondary); }
+      .tw { display: inline-block; width: 1rem; color: var(--text-muted); }
+      .an-link { color: inherit; text-decoration: none; cursor: pointer; }
+      @media (hover: hover) { .an-link:hover { color: var(--accent); text-decoration: underline; } }
+      .an-link:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: var(--radius-sm); }
+      .an-sub { color: var(--accent-purple, var(--accent)); font-size: var(--font-size-2xs); margin-left: var(--space-xs); }
+      table.an-table td.an-barc { width: 9rem; min-width: 9rem; text-align: left; }
+      .an-bar { display: inline-block; height: 0.5rem; border-radius: 2px; background: var(--accent); vertical-align: middle; }
+      tr.an-row.deep .an-bar { opacity: 0.6; }
+      .split { display: inline-flex; width: 7rem; height: 0.5rem; border-radius: 2px; overflow: hidden; vertical-align: middle; background: var(--bg-tertiary); }
+      .split span { height: 100%; }
+      tr.an-more td { color: var(--text-muted); font-style: italic; cursor: pointer; }
+
+      details.live-block > summary { list-style: none; cursor: pointer; }
+      details.live-block > summary::-webkit-details-marker { display: none; }
+      details.live-block > summary h2::before { content: '▸ '; color: var(--text-muted); }
+      details.live-block[open] > summary h2::before { content: '▾ '; }
 
       .feed { max-height: 16rem; overflow-y: auto; }
       .feed-row {
@@ -337,6 +302,10 @@
         flex-wrap: wrap; font-size: var(--font-size-2xs); color: var(--text-muted);
       }
       .rate-card-head .grow { flex: 1; }
+      /* Where a card comes from: quiet when shipped, the accent when it is
+         this workspace's override, so an edited price is easy to spot. */
+      .rate-origin { text-transform: uppercase; letter-spacing: 0.06em; }
+      .rate-origin.override { color: var(--accent); }
       .rate-field label {
         display: block; color: var(--text-muted); font-size: var(--font-size-2xs);
         text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: var(--space-xs);
@@ -430,10 +399,13 @@
           <div class="top-meta" id="meta">loading…</div>
         </div>
         <div class="button-group" style="justify-content: flex-end">
-          <div class="segmented-control">
-            <button class="segmented-btn active" id="tab-dashboard">Dashboard</button>
-            <button class="segmented-btn" id="tab-settings">Settings</button>
-          </div>
+          <button class="icon-btn" id="tab-settings" aria-pressed="false" aria-label="Settings" data-tip="Settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
           <button class="icon-btn" id="btn-sound" aria-pressed="false" aria-label="Sound off" data-tip="Sound off">
             <svg id="ico-sound" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -479,8 +451,8 @@
 
       <div class="controls">
         <select class="lucidos-select" id="range">
-          <option value="1">Today</option>
-          <option value="7" selected>Last 7 days</option>
+          <option value="1" selected>Today</option>
+          <option value="7">Last 7 days</option>
           <option value="30">Last 30 days</option>
           <option value="0">All time</option>
         </select>
@@ -493,69 +465,67 @@
         <span class="muted" id="fx-note" style="font-size: var(--font-size-xs)"></span>
       </div>
 
-      <!-- ORDER: the two blocks that MOVE come first.
-           "By model" is what anyone opens this dashboard to see, and along
-           with "Live calls" it is the only part that changes while you watch
-           it. The two static charts (Per day, Context size) are reference,
-           read once, so they sit below the fold where they cost nothing.
-           Reordered 2026-08-19: the spend headline and the model table were
-           775px apart with a static bar chart between them, so no scroll
-           position held both the running total and the rows it is made of. -->
+      <!-- ONE analysis panel, grouped by whatever chips are on. It replaced
+           four fixed blocks (By model, Per day, Context size, and the feed on
+           top) on 2026-10-19: each answered one question, and the questions
+           worth asking ("which threads burned Opus today?") cut across them.
+           The table holds every number; the chart above it is the same rows
+           over time, stacked by the first chip. -->
       <section class="block">
-        <h2 class="sec">By model</h2>
+        <h2 class="sec">Analysis</h2>
+        <div class="an-bar-top">
+          <span class="muted an-lbl">Group by</span>
+          <div class="an-chips" id="an-chips"></div>
+          <div class="segmented-control an-metric" id="an-metric">
+            <button class="segmented-btn" data-metric="cost">Cost</button>
+            <button class="segmented-btn" data-metric="calls">Calls</button>
+            <button class="segmented-btn" data-metric="cache">Cached / cold</button>
+          </div>
+        </div>
         <p class="sec-note dirty-dot" id="model-label-note" hidden>Model names could not be loaded from the registry, so the rows below show raw model ids, not their display labels.</p>
+        <p class="sec-note dirty-dot" id="an-note" hidden></p>
         <div class="card">
-          <table class="model-table">
-            <thead>
-              <tr>
-                <th>Model</th><th>Producer</th><th>Calls</th>
-                <th>Fresh in</th><th>Cache write</th><th>Cache read</th><th>Out</th><th>Cost</th>
-              </tr>
-            </thead>
-            <tbody id="tbody"></tbody>
-            <tfoot id="tfoot"></tfoot>
-          </table>
-        </div>
-      </section>
-
-      <section class="block">
-        <h2 class="sec">Live calls</h2>
-        <p class="sec-note">Every model call in the workspace as it lands, streamed over SSE. Includes calls from other threads and agents running right now.</p>
-        <div class="card feed" id="feed">
-          <div class="empty-state">Waiting for the next model call…</div>
-        </div>
-      </section>
-
-      <!-- Reference below the fold: neither of these changes while you watch,
-           so they read once and then stay out of the way of the two live
-           blocks above. -->
-      <section class="block">
-        <h2 class="sec">Per day</h2>
-        <div class="card">
-          <div class="bars" id="bars"></div>
-          <div class="axis"><span id="ax-from"></span><span id="ax-to"></span></div>
+          <div class="an-chart" id="an-chart"></div>
+          <div class="axis"><span id="ax-from"></span><span id="ax-mid"></span><span id="ax-to"></span></div>
+          <div class="legend" id="an-legend"></div>
+          <div class="an-scroll">
+            <table class="an-table">
+              <thead>
+                <tr>
+                  <th id="an-head">Model</th><th>Cost</th><th></th><th>Calls</th>
+                  <th data-tooltip-title="Cached / cold calls" data-tooltip="Calls that read any of their prompt from the cache, and calls that read none of it (a cold start).">Cached / cold</th>
+                  <th data-tooltip-title="Cache hit" data-tooltip="Share of input tokens served from the cache.">Cache hit</th>
+                  <th data-tooltip-title="Context per call" data-tooltip="Prompt size per call: the average, and the largest one.">Context avg / max</th>
+                  <th>Tokens</th>
+                </tr>
+              </thead>
+              <tbody id="an-total"></tbody>
+              <tbody id="tbody"></tbody>
+            </table>
+          </div>
           <div class="legend">
-            <span><span class="swatch" style="background: var(--accent-yellow)"></span>Fresh input</span>
-            <span><span class="swatch" style="background: var(--accent); opacity: 0.7"></span>Cache write</span>
-            <span><span class="swatch" style="background: var(--accent); opacity: 0.35"></span>Cache read</span>
-            <span><span class="swatch" style="background: var(--accent-green)"></span>Output</span>
-            <span id="legend-voice" hidden><span class="swatch" style="background: var(--accent-purple, var(--accent-red))"></span>Voice</span>
-            <span class="muted" id="bar-hint">hover a bar for its day</span>
+            <span><span class="swatch" style="background: var(--accent-red)"></span>Uncached in</span>
+            <span><span class="swatch" style="background: var(--accent-green)"></span>Cache read</span>
+            <span><span class="swatch" style="background: var(--accent-yellow)"></span>Cache write</span>
+            <span><span class="swatch" style="background: var(--accent-purple, color-mix(in srgb, var(--accent) 55%, var(--accent-red)))"></span>Output</span>
           </div>
         </div>
       </section>
 
-      <section class="block">
-        <h2 class="sec">Context size per call</h2>
-        <p class="sec-note">How big the prompt was on each call. The top rows are where a long-context premium bites.</p>
-        <div class="card" id="hist"></div>
-      </section>
+      <!-- A curiosity, so it sits last and starts folded. -->
+      <details class="block live-block">
+        <summary><h2 class="sec">Live calls</h2></summary>
+        <p class="sec-note">Every model call in the workspace as it lands, streamed over SSE. Includes calls from other threads and agents running right now.</p>
+        <div class="card feed" id="feed">
+          <div class="empty-state">Waiting for the next model call…</div>
+        </div>
+      </details>
       </div><!-- /view-dashboard -->
 
       <div id="view-settings" style="display: none">
         <section class="block">
           <h2 class="sec">Model rates</h2>
-          <p class="sec-note dirty-dot" id="rates-source" style="display: none">There is no <code>artifacts/token-cost/pricing.json</code> yet, so no model has a price and every cost reads as unpriced. Add a model below, or press <strong>Add rate</strong> on the dashboard, and the first edit creates the file.</p>
+          <p class="sec-note" id="price-status"></p>
           <p class="sec-note" id="rates-note">Rates per 1,000,000 tokens.</p>
           <div class="card">
             <div class="rate-list" id="price-body"></div>
@@ -570,14 +540,9 @@
 
         <section class="block">
           <h2 class="sec">Currency</h2>
-          <p class="sec-note">Providers bill in USD, so the rates above are entered in one <strong>base currency</strong> and everything else is converted for display only. Changing the base does not touch the numbers you typed: it only changes what unit they are read as. The dashboard's own currency picker is per device, kept in this browser, so a shared workspace can be read in kroner on one machine and dollars on another.</p>
+          <p class="sec-note">The price table is in one <strong>base currency</strong>, <span id="base-currency-name">USD</span>, as providers bill. Every other currency is converted for display only, and nothing stored is ever converted. The dashboard's own currency picker is per device, kept in this browser, so a shared workspace can be read in kroner on one machine and dollars on another.</p>
           <div class="card">
             <div class="field-grid">
-              <div class="field">
-                <label for="base-currency-slot">Rates are entered in</label>
-                <div id="base-currency-slot"></div>
-                <div class="hint">The unit for every number in the table above</div>
-              </div>
               <div class="field">
                 <label>Exchange rates</label>
                 <button class="action-btn action-btn-secondary" id="btn-fx-refresh">Update rates</button>
@@ -595,32 +560,8 @@
               </button>
             </div>
             <p class="sec-note" style="margin: var(--space-lg) 0 0">
-              Rates are stored in <code>artifacts/token-cost/pricing.json</code> next to the model prices, so the dashboard converts offline and a currency you never refresh keeps working at the last rate it saw. <strong>Update rates</strong> pulls the daily ECB reference rates from <code>frankfurter.dev</code>, which needs no key. Add any three-letter code and it appears in the dashboard picker.
+              Rates are stored in <code>artifacts/token-cost/settings.json</code>, so the dashboard converts offline and a currency you never refresh keeps working at the last rate it saw. <strong>Update rates</strong> pulls the daily ECB reference rates from <code>frankfurter.dev</code>, which needs no key. Add any three-letter code and it appears in the dashboard picker.
             </p>
-          </div>
-        </section>
-
-        <section class="block">
-          <h2 class="sec">Long-context premium</h2>
-          <p class="sec-note">A premium some providers charge once a single prompt crosses the threshold, applied only to models whose id ends in <code>[1m]</code>. <strong>Anthropic removed this surcharge for Opus 4.6 and later</strong>, so both multipliers ship at 1.0 and every call here is priced at the flat rate. Raise them only for a model that still bills a long-context tier. A provider tier with its own rates (OpenAI, xAI, Gemini Pro, Claude Haiku 5.5) is not set here: it lives on that model's card in <code>pricing.json</code> as <code>long</code>, and Settings shows it under the card.</p>
-          <div class="card">
-            <div class="field-grid">
-              <div class="field">
-                <label for="lc-threshold">Threshold, tokens</label>
-                <input type="number" id="lc-threshold" min="0" step="1000" />
-                <div class="hint">Only used when a multiplier is above 1.0</div>
-              </div>
-              <div class="field">
-                <label for="lc-in">Input multiplier</label>
-                <input type="number" id="lc-in" min="0" step="0.1" />
-                <div class="hint">Applied to fresh input and both cache rates</div>
-              </div>
-              <div class="field">
-                <label for="lc-out">Output multiplier</label>
-                <input type="number" id="lc-out" min="0" step="0.1" />
-                <div class="hint">Applied to output tokens</div>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -658,7 +599,7 @@
             <span id="save-state" class="muted" style="font-size: var(--font-size-xs)"></span>
           </div>
           <p class="sec-note" style="margin-top: var(--space-md)">
-            Edits save themselves a moment after you stop typing, so there is nothing to press. Stored as JSON at <code>artifacts/token-cost/pricing.json</code>, so it is version-controlled with the rest of the workspace and you can still edit it by hand.
+            Edits save themselves a moment after you stop typing, so there is nothing to press. A price you change is written to <code>config/model-prices.json</code>, the workspace override of Lucidos's price table, and never to the cards Lucidos ships. Producer labels and exchange rates go to <code>artifacts/token-cost/settings.json</code>. Both are JSON, version-controlled with the rest of the workspace, and you can still edit them by hand.
           </p>
         </section>
       </div><!-- /view-settings -->
@@ -670,30 +611,30 @@
       lucidos.ui.enhanceSelects();
 
       const DAILY = 'artifacts/token-cost/daily.json';
-      const PRICING = 'artifacts/token-cost/pricing.json';
+      // Prices come from Lucidos's price table (lucidos.priceTable.get(), ADR
+      // 0525): the cards Lucidos ships merged with this workspace's override.
+      // A price edited here is written to the override and never to the
+      // shipped cards. The app's own settings live in a file of their own.
+      const OVERRIDE = 'config/model-prices.json';
+      const SETTINGS = 'artifacts/token-cost/settings.json';
       // Small per-app UI state that used to live in localStorage, one key each:
       // the sound toggle, the chosen sound, the uploaded clip, and the display
       // currency. Now one JSON object in the workspace store. See loadUiState.
       const UI_STATE = 'artifacts/token-cost/ui-state.json';
       let uiState = {};
 
-      // What the app needs before pricing.json exists. It holds NO model
-      // prices: pricing.json is the one place a rate lives, so a provider's
-      // price change is one edit, not two that drift apart. A fresh workspace
-      // with no pricing.json therefore shows every model as UNPRICED, which is
-      // the same honest state as any model the file does not list: the calls
-      // are counted, kept out of the money, and Settings offers "Add rate".
-      // What stays here is plumbing, not prices: the base currency, the
-      // producer labels, and the global [1m] multiplier at 1.0 (no premium).
+      // The app's settings before settings.json exists. They hold NO model
+      // prices: the price table is the one place a rate lives, so a provider's
+      // price change is one edit, not two that drift apart. A model the table
+      // does not list is UNPRICED: its calls are counted, kept out of the
+      // money, and Settings offers "Add rate". What stays here is plumbing:
+      // the producer labels and the exchange rates.
       //
-      // There is deliberately no `default` row. It used to carry the Opus card
-      // for every unknown id, and through a gateway that is most ids: an
+      // There is deliberately no `default` price. It used to carry the Opus
+      // card for every unknown id, and through a gateway that is most ids: an
       // undated `claude-haiku-4-5` or an `anthropic/` prefix read 5x high and
       // looked exactly like a real price.
-      const DEFAULT_PRICING = {
-        currency: 'USD',
-        models: {},
-        long_context_multiplier: { threshold_tokens: 200000, in_multiplier: 1.0, out_multiplier: 1.0 },
+      const DEFAULT_SETTINGS = {
         producers: {
           main_llm: 'Lucidos Agent',
           claude_code: 'Claude Code',
@@ -702,7 +643,7 @@
         },
         // No seeded exchange rates either: a seed is a second copy that goes
         // stale. A fresh workspace reads in the base currency until Settings →
-        // Update rates fetches the day's ECB rates into pricing.json.
+        // Update rates fetches the day's ECB rates into settings.json.
         fx: { rates: {} },
       };
       /** Every currency Intl knows how to render, in the order the pickers show
@@ -722,10 +663,25 @@
       };
 
       let daily = { days: {}, bucket_edges: [0, 32000, 64000, 128000, 200000, 400000] };
+      // What every cost is priced from: the price table's currency, `checked`
+      // day and merged `models` (each card carrying its `origin`), plus the
+      // producer labels and exchange rates from settings.json. See
+      // composePricing(). Null until the first load.
       let pricing = null;
-      // True while there is no pricing.json, so no model has a price yet.
-      // Reported quietly in Settings, never as a toast.
-      let usingDefaultRates = false;
+      // The price table as the engine last served it, or null when it could
+      // not be read (then every model is unpriced, and Settings says why).
+      let priceTable = null;
+      let priceTableError = null;
+      // Each file Settings writes, as this tab last read or wrote it: `doc`
+      // parsed (null for no file), `disk` canonical JSON (null for no file,
+      // undefined before the first read or after a failed one). A save first
+      // checks the file still says `disk`, so it never writes a stale draft
+      // over a change made in another tab, on another device, by the price
+      // check, or by hand.
+      const files = {
+        [OVERRIDE]: { doc: null, disk: undefined },
+        [SETTINGS]: { doc: null, disk: undefined },
+      };
       // Calls seen since the rollup's cursor, folded into the daily numbers on
       // top of it. Filled from SSE while the tab is open AND from the periodic
       // catch-up below, so the two together survive a stream that dies.
@@ -873,6 +829,8 @@
         if (soundId === 'custom' && !customSound) soundId = DEFAULT_SOUND;
         // A pick stored before a sound was retired would leave no card selected.
         if (soundId !== 'custom' && !SOUNDS.some((s) => s.id === soundId)) soundId = DEFAULT_SOUND;
+        if (Array.isArray(uiState.groups)) groups = uiState.groups.filter((g) => DIMS.some((d) => d.id === g));
+        if (METRICS.includes(uiState.metric)) metric = uiState.metric;
         renderSoundBtn();
         renderSoundGrid();
       }
@@ -1281,9 +1239,6 @@
       function baseModel(model) {
         return String(model || '').replace(/\[1m\]$/, '').replace(/@[^[\]]*$/, '');
       }
-      function isLongCtxModel(model) {
-        return /\[1m\]$/.test(String(model || ''));
-      }
       // A release stamp: `-20251001`, `-001`, `-2026-04-01`. Three or more
       // digits, so a version such as `claude-opus-5-5` is never taken for one.
       const undated = (id) => id.replace(/-\d{3,}(?:-\d+)*$/, '');
@@ -1350,7 +1305,7 @@
        *  A model holds an ARRAY of cards, each in force from its `from` day
        *  (YYYY-MM-DD, local) until the next card's. A card with no `from` is
        *  in force since the beginning, so it sorts first. A plain object is
-       *  the shape every pricing.json had before history existed, and still
+       *  the shape every price file had before history existed, and still
        *  loads, as one undated card. Ties keep file order. */
       function cardsOf(entry) {
         const list = Array.isArray(entry) ? entry : (entry && typeof entry === 'object' ? [entry] : []);
@@ -1410,9 +1365,9 @@
        *
        *  The day matters because a provider changes its prices: a day is
        *  priced at the card in force ON that day, so a later price change
-       *  never reprices history. pricing.json is the only table. A `default`
-       *  row in an older pricing.json is ignored, because an unknown model
-       *  priced as Opus looks exactly like a known one. */
+       *  never reprices history. The price table is the only table. A
+       *  `default` row is ignored, because an unknown model priced as Opus
+       *  looks exactly like a known one. */
       function rateFor(model, day) {
         const models = pricing?.models || null;
         if (rateCache.models !== models) rateCache = { models, map: new Map() };
@@ -1431,18 +1386,17 @@
        *  priced a 240k GPT-5.5 call at the long rate it is not billed at. The
        *  rollup splits each model's tokens by THIS rule, read from the same
        *  dated card, so the two have to agree. The rollup fingerprints its
-       *  split and rebuilds every day when pricing.json moves a threshold.
+       *  split and rebuilds every day when the price table moves a threshold.
        *
-       *  The tier's own threshold wins. A card without one takes the global
-       *  `long_context_multiplier` threshold, then 200k. A threshold that is
-       *  not a positive number is skipped, never compared against. */
+       *  The tier's own threshold wins. A card without one splits at 200k,
+       *  which only sorts its tokens: they are priced at the flat rate either
+       *  way. A threshold that is not a positive number is skipped, never
+       *  compared against. */
       function longRule(model, day) {
         const tier = rateFor(model, day)?.long;
         const t = tier && typeof tier === 'object' ? thresholdOf(tier.threshold_tokens) : null;
         if (t !== null) return { threshold: t, inclusive: tier.inclusive === true };
-        const g = pricing?.long_context_multiplier || {};
-        const gt = thresholdOf(g.threshold_tokens);
-        return gt !== null ? { threshold: gt, inclusive: g.inclusive === true } : { threshold: 200000, inclusive: false };
+        return { threshold: 200000, inclusive: false };
       }
 
       function longThreshold(model, day) {
@@ -1464,11 +1418,10 @@
       /** Cost of one usage bundle. `long` is the share of those tokens that
        *  came from long calls, as isLongCall() decides them.
        *
-       *  Two ways a provider prices that share, and a card picks one. A `long`
-       *  block on the card is a full second rate card, which REPLACES the base
-       *  rates for every token of a long call: that is how OpenAI, xAI and
-       *  Gemini Pro word it. Otherwise the global multiplier applies, which is
-       *  the Anthropic [1m] form and is currently 1.0 (no premium).
+       *  A `long` block on the card is a full second rate card, which REPLACES
+       *  the base rates for every token of a long call: that is how OpenAI,
+       *  xAI and Gemini Pro word it. A card without one prices that share at
+       *  its base rates, as Anthropic bills a [1m] call since 2026-03-13.
        *
        *  `per_minute` is the third shape: a model billed by wall-clock time
        *  rather than tokens, priced off the session seconds the rollup
@@ -1511,11 +1464,7 @@
           cache_read: Number(c.cache_read) || 0, out: Number(c.out) || 0,
         });
         const r = rates(card);
-        const lc = pricing?.long_context_multiplier || { in_multiplier: 1, out_multiplier: 1 };
-        const tier = card.long;
-        const mulIn = !tier && isLongCtxModel(model) ? (lc.in_multiplier || 1) : 1;
-        const mulOut = !tier && isLongCtxModel(model) ? (lc.out_multiplier || 1) : 1;
-        const lr = tier ? rates(tier) : r;
+        const lr = card.long && typeof card.long === 'object' ? rates(card.long) : r;
         const fr = card.flex && typeof card.flex === 'object' ? rates(card.flex) : r;
 
         const none = { in: 0, out: 0, cache_read: 0, cache_write: 0 };
@@ -1533,12 +1482,12 @@
 
         const per = 1e6;
         return {
-          fresh: (nFresh * r.uncached_in + lFresh * lr.uncached_in * mulIn + fFresh * fr.uncached_in) / per,
-          write: (nWrite * r.cache_write + (L.cache_write || 0) * lr.cache_write * mulIn
+          fresh: (nFresh * r.uncached_in + lFresh * lr.uncached_in + fFresh * fr.uncached_in) / per,
+          write: (nWrite * r.cache_write + (L.cache_write || 0) * lr.cache_write
                   + (F.cache_write || 0) * fr.cache_write) / per,
-          read: (nRead * r.cache_read + (L.cache_read || 0) * lr.cache_read * mulIn
+          read: (nRead * r.cache_read + (L.cache_read || 0) * lr.cache_read
                  + (F.cache_read || 0) * fr.cache_read) / per,
-          out: (nOut * r.out + (L.out || 0) * lr.out * mulOut + (F.out || 0) * fr.out) / per,
+          out: (nOut * r.out + (L.out || 0) * lr.out + (F.out || 0) * fr.out) / per,
           voice: 0,
         };
       }
@@ -1574,7 +1523,12 @@
 
       // `routed_from` counts calls another model answered, by the id Lucidos
       // asked for. Empty for nearly every bucket.
-      const emptyU = () => ({ calls: 0, in: 0, cache_read: 0, cache_write: 0, out: 0,
+      // `cached_calls` counts calls that read any cache. `uncounted` is calls
+      // from a rollup row older than that count, so a cached/cold split over
+      // them is unknown rather than read as all cold. `max_in` is the largest
+      // prompt in the bundle.
+      const emptyU = () => ({ calls: 0, cached_calls: 0, uncounted: 0, max_in: 0,
+                              in: 0, cache_read: 0, cache_write: 0, out: 0,
                               seconds: 0,
                               buckets: [0, 0, 0, 0, 0, 0],
                               long: { in: 0, out: 0, cache_read: 0, cache_write: 0 },
@@ -1583,6 +1537,9 @@
 
       function addU(a, b) {
         a.calls += b.calls; a.in += b.in; a.cache_read += b.cache_read;
+        if (b.cached_calls == null) a.uncounted += b.calls;
+        else { a.cached_calls += b.cached_calls; a.uncounted += b.uncounted || 0; }
+        a.max_in = Math.max(a.max_in, b.max_in || 0);
         a.cache_write += b.cache_write; a.out += b.out;
         a.seconds += b.seconds || 0;
         for (let i = 0; i < 6; i++) a.buckets[i] += (b.buckets?.[i] || 0);
@@ -1647,7 +1604,8 @@
         const none = { in: 0, out: 0, cache_read: 0, cache_write: 0 };
         const long = isLongCall(c.model, c.in, localDay(new Date(c.at)));
         addU(b, {
-          calls: 1, in: c.in, cache_read: c.cache_read, cache_write: c.cache_write, out: c.out,
+          calls: 1, cached_calls: c.cache_read > 0 ? 1 : 0, max_in: c.in,
+          in: c.in, cache_read: c.cache_read, cache_write: c.cache_write, out: c.out,
           buckets: [0, 0, 0, 0, 0, 0].map((_, i) => (i === bi ? 1 : 0)),
           routed_from: c.asked ? { [c.asked]: 1 } : {},
           long: long ? tokens : none,
@@ -1668,30 +1626,15 @@
         const byKey = {};
         const keyCost = {};       // key -> priced cost over the range
         const keyUnpriced = {};   // key -> usage on days its model had no card
-        const perDay = [];
         for (const day of days) {
-          const s = seriesForDay(day);
-          const dayTotal = emptyU();
-          const dayParts = emptyParts();
-          let dayCost = 0;
-          let dayUnpriced = 0;
-          for (const [key, v] of Object.entries(s)) {
-            const [producer] = key.split('|');
+          for (const [key, v] of Object.entries(seriesForDay(day))) {
+            const [producer, model] = key.split('|');
             if (pf !== 'all' && producer !== pf) continue;
             addU(byKey[key] || (byKey[key] = emptyU()), v);
-            addU(dayTotal, v);
-            const p = costParts(key.split('|')[1], v, v.long, day);
-            if (p === null) {
-              dayUnpriced += v.calls;
-              addU(keyUnpriced[key] || (keyUnpriced[key] = emptyU()), v);
-            } else {
-              const c = sumParts(p);
-              addParts(dayParts, p);
-              dayCost += c;
-              keyCost[key] = (keyCost[key] || 0) + c;
-            }
+            const c = costOf(model, v, v.long, day);
+            if (c === null) addU(keyUnpriced[key] || (keyUnpriced[key] = emptyU()), v);
+            else keyCost[key] = (keyCost[key] || 0) + c;
           }
-          perDay.push({ day, u: dayTotal, cost: dayCost, parts: dayParts, unpriced: dayUnpriced });
         }
 
         // Spend on an unpriced model is kept OUT of every money figure and
@@ -1754,180 +1697,7 @@
         const cachePct = total.in ? (total.cache_read / total.in) * 100 : 0;
         document.getElementById('s-cache').textContent = cachePct.toFixed(1) + '%';
 
-        // Bars. One selected day is drawn as 24 hourly columns, since a single
-        // daily bar says nothing a headline number does not. Any wider range
-        // stays one column per day.
-        const hourly = days.length === 1 && daily.hours?.[days[0]] !== undefined;
-        const cols = [];
-        if (hourly) {
-          const day = days[0];
-          for (let h = 0; h < 24; h++) {
-            const s = seriesForHour(day, h) || {};
-            const u = emptyU();
-            const parts = emptyParts();
-            let cost = 0;
-            let unpriced = 0;
-            for (const [key, v] of Object.entries(s)) {
-              if (pf !== 'all' && key.split('|')[0] !== pf) continue;
-              addU(u, v);
-              const p = costParts(key.split('|')[1], v, v.long, day);
-              if (p === null) unpriced += v.calls;
-              else { addParts(parts, p); cost += sumParts(p); }
-            }
-            cols.push({ label: `${String(h).padStart(2, '0')}:00`, u, cost, parts, unpriced });
-          }
-        } else {
-          for (const { day, u, cost, parts, unpriced } of perDay) cols.push({ label: day, u, cost, parts, unpriced });
-        }
-
-        // Bar height is SPEND, to match the headline above it. Token volume is
-        // the wrong scale: about 93% of input is cache read, the cheapest kind,
-        // so a token chart hides the days that cost the most (heavy cache
-        // writes or output). Tokens stay in the tooltip. With nothing priced
-        // at all there is no spend to draw, so the bars fall back to tokens.
-        const byCost = cols.some((c) => c.cost > 0);
-        const maxCol = byCost
-          ? Math.max(...cols.map((c) => c.cost))
-          : Math.max(1, ...cols.map((c) => c.u.in + c.u.out));
-        const bars = document.getElementById('bars');
-        bars.innerHTML = '';
-        let anyVoice = false;
-        for (const { label, u, cost, parts, unpriced } of cols) {
-          const fresh = Math.max(0, u.in - u.cache_read - u.cache_write);
-          const col = document.createElement('div');
-          col.className = 'bar-col';
-          // Host tooltip, not the browser's `title`: it is themed, appears
-          // immediately, and renders a bold title over the body. The host walks
-          // up from the hovered node to the nearest data-tooltip, so putting it
-          // on the column covers the segments inside it.
-          col.setAttribute('data-tooltip-title', label);
-          col.setAttribute(
-            'data-tooltip',
-            u.calls
-              ? `${fmtMoney(cost)}\n${fmtInt(u.calls)} calls\n` +
-                (unpriced ? `${fmtInt(unpriced)} unpriced, not in the cost\n` : '') +
-                `fresh in ${fmtTok(fresh)} · ${fmtMoney(parts.fresh)}\n` +
-                `cache write ${fmtTok(u.cache_write)} · ${fmtMoney(parts.write)}\n` +
-                `cache read ${fmtTok(u.cache_read)} · ${fmtMoney(parts.read)}\n` +
-                `out ${fmtTok(u.out)} · ${fmtMoney(parts.out)}` +
-                (parts.voice ? `\nvoice ${fmtMoney(parts.voice)}` : '')
-              : 'No calls',
-          );
-          if (parts.voice > 0) anyVoice = true;
-          const segs = byCost
-            ? [['voice', parts.voice], ['out', parts.out], ['fresh', parts.fresh],
-               ['write', parts.write], ['read', parts.read]]
-            : [['out', u.out], ['fresh', fresh], ['write', u.cache_write], ['read', u.cache_read]];
-          for (const [cls, v] of segs) {
-            if (v <= 0) continue;
-            const s = document.createElement('div');
-            s.className = 'bar-seg ' + cls;
-            s.style.height = ((v / maxCol) * 100).toFixed(3) + '%';
-            col.appendChild(s);
-          }
-          bars.appendChild(col);
-        }
-        document.getElementById('ax-from').textContent = cols[0]?.label || '';
-        document.getElementById('ax-to').textContent = cols[cols.length - 1]?.label || '';
-        document.getElementById('legend-voice').hidden = !(byCost && anyVoice);
-        document.getElementById('bar-hint').textContent =
-          `${byCost ? `height is spend, top ${fmtMoney(maxCol)}` : 'height is tokens, nothing priced'} · ` +
-          (hourly ? 'hover a bar for its hour' : 'hover a bar for its day');
-
-        // Model table
-        const rows = Object.entries(byKey)
-          .map(([key, u]) => {
-            const [producer, model] = key.split('|');
-            // A row with no priced day at all is unpriced. One priced on only
-            // some days shows the priced part; the rest is in the hero note.
-            return { producer, model, u, cost: key in keyCost ? keyCost[key] : null };
-          })
-          // Unpriced rows lead: they are the ones asking for something.
-          .sort((a, b) => (b.cost ?? Infinity) - (a.cost ?? Infinity));
-
-        const tbody = document.getElementById('tbody');
-        tbody.innerHTML = '';
-        const producerLabel = pricing?.producers || DEFAULT_PRICING.producers;
-        for (const r of rows) {
-          const fresh = Math.max(0, r.u.in - r.u.cache_read - r.u.cache_write);
-          const tr = document.createElement('tr');
-          // A voice model billed by the minute reports every token count as
-          // zero, so its row would read as four dashes and a cost with nothing
-          // behind it. Spanning the token columns with the minutes it WAS
-          // charged for says where the money went.
-          const minuteRow = !!rateFor(r.model, days[days.length - 1])?.per_minute;
-          // An attribute value, so the attribute escape: the id is whatever a
-          // request body or a provider reply named, and a quote in it must not
-          // close the attribute.
-          const costCell = r.cost === null
-            ? `<td class="money" data-label="Cost"><button type="button" class="unpriced-btn" ` +
-              `data-add-rate="${escAttr(baseModel(r.model))}" data-tooltip-title="Unpriced" ` +
-              `data-tooltip="Not in the total. Click to add a rate in Settings.">Unpriced</button></td>`
-            : `<td class="money" data-label="Cost">${fmtMoney(r.cost)}</td>`;
-          const tokenCells = minuteRow
-            ? `<td class="num" colspan="4" data-label="Voice">${fmtMinutes(r.u.seconds)} of call</td>`
-            : `<td class="num" data-label="Fresh in">${fmtTok(fresh)}</td>` +
-              `<td class="num" data-label="Cache write">${fmtTok(r.u.cache_write)}</td>` +
-              `<td class="num muted" data-label="Cache read">${fmtTok(r.u.cache_read)}</td>` +
-              `<td class="num" data-label="Out">${fmtTok(r.u.out)}</td>`;
-          tr.innerHTML =
-            // data-label is what the narrow-viewport CSS prints above each
-            // number, so the layout is driven entirely by the media query and
-            // nothing here reads the viewport width.
-            `<td class="row-head">${lucidos.utils.escapeHtml(modelName(r.model))}</td>` +
-            `<td class="row-sub muted">${lucidos.utils.escapeHtml(producerLabel[r.producer] || r.producer)}${routedNote(r.u.routed_from, r.model)}</td>` +
-            `<td class="num" data-label="Calls">${fmtInt(r.u.calls)}</td>` +
-            tokenCells +
-            costCell;
-          tbody.appendChild(tr);
-        }
-        if (!rows.length) {
-          tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No calls in this range.</div></td></tr>';
-        }
-        // With unpriced rows present the footer splits in two, so the money
-        // figure sits on a row whose token counts it actually covers.
-        const footRow = (head, sub, u, money) => {
-          const fresh = Math.max(0, u.in - u.cache_read - u.cache_write);
-          return `<tr><td class="row-head">${head}</td><td class="row-sub muted">${sub}</td>` +
-            `<td class="num" data-label="Calls">${fmtInt(u.calls)}</td>` +
-            `<td class="num" data-label="Fresh in">${fmtTok(fresh)}</td>` +
-            `<td class="num" data-label="Cache write">${fmtTok(u.cache_write)}</td>` +
-            `<td class="num" data-label="Cache read">${fmtTok(u.cache_read)}</td>` +
-            `<td class="num" data-label="Out">${fmtTok(u.out)}</td>` +
-            `<td class="money" data-label="Cost">${money}</td></tr>`;
-        };
-        if (unpricedU.calls) {
-          const priced = emptyU();
-          addU(priced, total);
-          for (const k of ['calls', 'in', 'cache_read', 'cache_write', 'out']) priced[k] -= unpricedU[k];
-          document.getElementById('tfoot').innerHTML =
-            footRow('Total', 'priced', priced, fmtMoney(totalCost)) +
-            footRow('Unpriced', 'not in total', unpricedU, '–');
-        } else {
-          document.getElementById('tfoot').innerHTML = footRow('Total', '', total, fmtMoney(totalCost));
-        }
-
-        // Say so when the rows above show raw ids, not registry labels.
-        const labelNote = document.getElementById('model-label-note');
-        if (labelNote) labelNote.hidden = !modelLabelsUnavailable;
-
-        // Histogram
-        const edges = daily.bucket_edges;
-        const labels = ['< 32k', '32k – 64k', '64k – 128k', '128k – 200k', '200k – 400k', '400k +'];
-        const maxB = Math.max(1, ...total.buckets);
-        const hist = document.getElementById('hist');
-        hist.innerHTML = '';
-        for (let i = 0; i < labels.length; i++) {
-          const n = total.buckets[i];
-          const pct = total.calls ? (n / total.calls) * 100 : 0;
-          const row = document.createElement('div');
-          row.className = 'hist-row';
-          row.innerHTML =
-            `<div class="hist-label">${labels[i]}</div>` +
-            `<div class="hist-track"><div class="hist-fill${i >= 4 ? ' hot' : ''}" style="width:${((n / maxB) * 100).toFixed(2)}%"></div></div>` +
-            `<div class="hist-n">${fmtInt(n)} · ${pct.toFixed(1)}%</div>`;
-          hist.appendChild(row);
-        }
+        renderAnalysis(days, pf);
 
         // ONE fact, not a chain. This line used to join four dot-separated
         // bits (days on record, rollup age, calls since the rollup, rates
@@ -1947,6 +1717,548 @@
         renderFeed();
         renderFxNote();
       }
+
+      // ---- Analysis ---------------------------------------------------------
+      // One table, grouped by the chips that are on, nested in the order they
+      // were clicked, with a chart above it that stacks the same rows over
+      // time by the first chip. Every number is a sum of per-day bundles, each
+      // priced at the card in force that day, exactly as the hero is.
+
+      const THREADS_DAILY = 'artifacts/token-cost/threads-daily.json';
+      const DIMS = [
+        { id: 'model', label: 'Model' },
+        { id: 'type', label: 'Type' },
+        { id: 'thread', label: 'Thread' },
+      ];
+      // What the panel opens with the first time. After that the last pick is
+      // remembered in ui-state.json.
+      const DEFAULT_GROUPS = ['type', 'model'];
+      const METRICS = ['cost', 'calls', 'cache'];
+      // The top five groups of the first chip get a colour each; the rest
+      // stack as one grey "Other".
+      const SERIES = ['var(--accent)', 'var(--accent-purple, color-mix(in srgb, var(--accent) 55%, var(--accent-red)))', 'var(--accent-green)',
+                      'var(--accent-yellow)', 'var(--accent-red)'];
+      const OTHER = 'var(--text-muted)';
+      const OTHER_ID = '\u0000other';
+      // Rows one level shows before a "+ N more" row. A thread grouping over
+      // all time has thousands, and nobody reads past the first screen.
+      const LEVEL_ROWS = 20;
+
+      let groups = DEFAULT_GROUPS.slice();
+      let metric = 'cost';
+      const expanded = new Set();   // row paths opened by a click
+      const showAll = new Set();    // level paths whose "+ N more" was clicked
+
+      // The per-thread rollup is read only once Thread is picked: it is ten
+      // times the size of daily.json, and most visits never need it.
+      let threadsDaily = null;
+      let threadsState = 'idle';    // idle | loading | ready | missing
+      // Thread id -> { title, parent }: from the file, then from the thread
+      // list for threads newer than the last rollup.
+      const threadMeta = new Map();
+      let threadLookupAt = 0;
+
+      async function loadThreadsDaily() {
+        if (threadsState === 'loading') return;
+        threadsState = 'loading';
+        try {
+          threadsDaily = JSON.parse(await lucidos.data.read(THREADS_DAILY));
+          for (const [tid, m] of Object.entries(threadsDaily.threads || {})) {
+            threadMeta.set(tid, { title: m[0] || '', parent: m[1] || null });
+          }
+          threadsState = 'ready';
+        } catch (e) {
+          // The ordinary state until the first rollup that writes it has run,
+          // so a console line, not a toast. The panel says it in words.
+          console.info('token-cost: no per-thread rollup yet', e && e.message);
+          threadsDaily = null;
+          threadsState = 'missing';
+        }
+        render();
+      }
+
+      /** Titles and parents for threads the rollup has not seen yet. A live
+       *  call from a thread started this hour would otherwise read "Untitled"
+       *  and sit apart from the parent it belongs under. At most once a
+       *  minute: the list is the same for every render in between. */
+      async function lookupThreads() {
+        if (Date.now() - threadLookupAt < 60000) return;
+        threadLookupAt = Date.now();
+        try {
+          let found = false;
+          for (const t of (await lucidos.threads.list({ limit: 200 })) || []) {
+            if (!t?.thread_id || threadMeta.has(t.thread_id)) continue;
+            threadMeta.set(t.thread_id, { title: t.title || '', parent: t.parent_thread_id || null });
+            found = true;
+          }
+          if (found) render();
+        } catch (e) {
+          console.warn('token-cost: could not list threads', e);
+        }
+      }
+
+      const parentOf = (tid) => threadMeta.get(tid)?.parent || null;
+
+      /** The top of a thread's tree, so a parent's row carries every sub-thread
+       *  under it. Guarded against a cycle, which the data should never hold. */
+      function rootOf(tid) {
+        let t = tid;
+        const seen = new Set();
+        while (t && parentOf(t) && !seen.has(t)) { seen.add(t); t = parentOf(t); }
+        return t;
+      }
+
+      /** The direct child of `anc` on the way up from `tid`: `anc` itself for
+       *  its own calls, null when `tid` is not under it at all. */
+      function childUnder(anc, tid) {
+        let t = tid;
+        let below = null;
+        const seen = new Set();
+        while (t && !seen.has(t)) {
+          if (t === anc) return below || anc;
+          seen.add(t);
+          below = t;
+          t = parentOf(t);
+        }
+        return null;
+      }
+
+      function threadTitle(tid) {
+        if (!tid) return 'No thread';
+        return threadMeta.get(tid)?.title || 'Untitled thread';
+      }
+
+      /** One compact thread row back to a bundle. See THREAD_FIELDS in the
+       *  rollup: a flat list in `fields` order, trailing zeros dropped. */
+      function rowToU(r, fields) {
+        const u = emptyU();
+        fields.forEach((f, i) => {
+          const v = Number(r[i]) || 0;
+          if (!v) return;
+          const [head, sub] = f.split('.');
+          if (sub) u[head][sub] += v;
+          else u[head] = (u[head] || 0) + v;
+        });
+        return u;
+      }
+
+      /** Every bundle of one day, or one hour of it: the stored rows merged
+       *  with the live tail, one per (thread, producer|model). Without Thread
+       *  picked, `thread` is null and daily.json alone is read.
+       *
+       *  The two files share a cursor, but they are written one after the
+       *  other, so for a moment the thread file can be ahead of the
+       *  daily.json this page holds. A live call at or below ITS cursor is
+       *  already in its rows and is skipped, so nothing counts twice. */
+      function factsFor(day, hour, withThreads) {
+        const map = new Map();
+        const put = (tid, key, u) => {
+          const id = tid + '\n' + key;
+          let f = map.get(id);
+          if (!f) {
+            const [producer, model] = key.split('|');
+            f = { day, thread: tid, key, producer, model, u: emptyU(), cost: null };
+            map.set(id, f);
+          }
+          addU(f.u, u);
+        };
+        if (withThreads) {
+          const src = hour == null ? threadsDaily?.days?.[day] : threadsDaily?.hours?.[day]?.[String(hour)];
+          const fields = threadsDaily?.fields || [];
+          for (const [tid, keys] of Object.entries(src || {})) {
+            for (const [key, r] of Object.entries(keys)) put(tid, key, rowToU(r, fields));
+          }
+        } else {
+          const src = hour == null ? daily.days[day] : daily.hours?.[day]?.[String(hour)];
+          for (const [key, v] of Object.entries(src || {})) put(null, key, v);
+        }
+        const cursor = withThreads ? (threadsDaily?.last_sequence || 0) : 0;
+        for (const c of countedLive()) {
+          if (c.seq != null && c.seq <= cursor) continue;
+          const t = new Date(c.at);
+          if (localDay(t) !== day || (hour != null && t.getHours() !== hour)) continue;
+          const one = {};
+          foldCall(one, c);
+          const [key, u] = Object.entries(one)[0];
+          put(withThreads ? (c.thread || '') : null, key, u);
+        }
+        const out = [...map.values()];
+        for (const f of out) f.cost = costOf(f.model, f.u, f.u.long, day);
+        return out;
+      }
+
+      function dimOf(dim, f) {
+        if (dim === 'type') return f.producer;
+        if (dim === 'model') return f.model;
+        return rootOf(f.thread || '') || '';
+      }
+
+      function dimLabel(dim, id) {
+        if (dim === 'type') return (pricing?.producers || DEFAULT_SETTINGS.producers)[id] || id;
+        if (dim === 'model') return modelName(id);
+        return threadTitle(id);
+      }
+
+      /** A row of the tree: the facts under it summed, and what it can open
+       *  into. `cost` is null only when NONE of it is priced; a partly priced
+       *  row shows the priced part, and the hero says what was left out. */
+      function makeNode(dim, id, facts, rest, path, sub) {
+        const u = emptyU();
+        const uUnpriced = emptyU();
+        const unpriced = new Set();
+        let cost = 0;
+        let priced = false;
+        for (const f of facts) {
+          addU(u, f.u);
+          if (f.cost === null) { unpriced.add(baseModel(f.model)); addU(uUnpriced, f.u); }
+          else { cost += f.cost; priced = true; }
+        }
+        // Distinct threads below this one, so its row can say "+3 sub".
+        const subThreads = dim === 'thread' && id
+          ? new Set(facts.filter((f) => f.thread !== id).map((f) => f.thread)).size : 0;
+        return { dim, id, facts, rest, path, sub, u, uUnpriced, unpriced, subThreads,
+                 cost: priced ? cost : null, kids: rest.length > 0 || subThreads > 0 };
+      }
+
+      // Unpriced rows lead, as they are the ones asking for something; then
+      // the most expensive.
+      const sortNodes = (nodes) => nodes.sort((a, b) =>
+        (b.cost ?? Infinity) - (a.cost ?? Infinity) || b.u.calls - a.u.calls);
+
+      function groupLevel(facts, dims, path) {
+        if (!dims.length) return [];
+        const [dim, ...rest] = dims;
+        const by = new Map();
+        for (const f of facts) {
+          const id = dimOf(dim, f);
+          if (!by.has(id)) by.set(id, []);
+          by.get(id).push(f);
+        }
+        return sortNodes([...by].map(([id, fs]) => makeNode(dim, id, fs, rest, `${path}/${dim}:${id}`, false)));
+      }
+
+      /** What a row opens into: the next chip's groups, and for a thread its
+       *  direct sub-threads, each carrying its own subtree. The next chip's
+       *  groups cover the thread's own calls AND its subs', so they sum to the
+       *  row; the sub-thread rows are a second cut of the same total. */
+      function childrenOf(node) {
+        const kids = groupLevel(node.facts, node.rest, node.path);
+        if (node.dim === 'thread' && node.subThreads) {
+          const by = new Map();
+          for (const f of node.facts) {
+            const c = childUnder(node.id, f.thread);
+            if (!c || c === node.id) continue;
+            if (!by.has(c)) by.set(c, []);
+            by.get(c).push(f);
+          }
+          kids.push(...sortNodes([...by].map(([id, fs]) =>
+            makeNode('thread', id, fs, node.rest, `${node.path}/sub:${id}`, true))));
+        }
+        return kids;
+      }
+
+      function renderAnalysis(days, pf) {
+        renderChips();
+        const note = document.getElementById('an-note');
+        note.hidden = true;
+        let dims = groups.slice();
+        let threadsOn = dims.includes('thread');
+        if (threadsOn && threadsState === 'idle') loadThreadsDaily();
+        if (threadsOn && threadsState !== 'ready') {
+          // Never a thread grouping over a file that is not there: the rows
+          // would hold only the live tail and read as the whole day.
+          dims = dims.filter((d) => d !== 'thread');
+          threadsOn = false;
+          note.hidden = false;
+          note.textContent = threadsState === 'missing'
+            ? 'There is no per-thread rollup yet, so Thread is left out for now. The next hourly rollup writes it.'
+            : 'Loading the per-thread rollup…';
+        } else if (threadsOn && (threadsDaily.last_sequence || 0) < (daily.last_sequence || 0)) {
+          note.hidden = false;
+          note.textContent = 'The per-thread split is from an older rollup than the totals, so its newest calls may be missing until the next run.';
+        }
+
+        const dayFacts = new Map();
+        for (const day of days) {
+          dayFacts.set(day, factsFor(day, null, threadsOn).filter((f) => pf === 'all' || f.producer === pf));
+        }
+        const all = [...dayFacts.values()].flat();
+        if (threadsOn && all.some((f) => f.thread && !threadMeta.has(f.thread))) lookupThreads();
+
+        const top = groupLevel(all, dims, '');
+        const colour = new Map(top.slice(0, SERIES.length).map((n, i) => [n.id, SERIES[i]]));
+        renderChart(days, pf, dims, top, colour, dayFacts, threadsOn);
+        renderTable(top, makeNode(null, 'all', all, dims, '', false), dims, colour);
+
+        // Say so when the rows show raw ids, not registry labels.
+        const labelNote = document.getElementById('model-label-note');
+        if (labelNote) labelNote.hidden = !modelLabelsUnavailable;
+      }
+
+      function renderChips() {
+        document.getElementById('an-chips').innerHTML = DIMS.map((d) => {
+          const i = groups.indexOf(d.id);
+          return `<button type="button" class="chip${i >= 0 ? ' on' : ''}" data-dim="${d.id}" aria-pressed="${i >= 0}">` +
+            (i >= 0 ? `<span class="n">${i + 1}</span>` : '') + d.label + '</button>';
+        }).join('');
+        for (const b of document.querySelectorAll('#an-metric [data-metric]')) {
+          b.classList.toggle('active', b.dataset.metric === metric);
+        }
+      }
+
+      /** The chart: one column per hour on a single day, cropped from the
+       *  first call to now, or one per day on a wider range. Bars stack the
+       *  first chip's top five, or cached against cold calls. */
+      function renderChart(days, pf, dims, top, colour, dayFacts, threadsOn) {
+        const today = localDay(new Date());
+        const nowHour = new Date().getHours();
+        const pad = (h) => String(h).padStart(2, '0');
+        let cols = [];
+        const hourly = days.length === 1 && (daily.hours?.[days[0]] !== undefined || days[0] === today);
+        if (hourly) {
+          const day = days[0];
+          for (let h = 0; h < 24; h++) {
+            cols.push({
+              label: `${pad(h)}:00`,
+              facts: factsFor(day, h, threadsOn).filter((f) => pf === 'all' || f.producer === pf),
+              now: day === today && h === nowHour,
+            });
+          }
+          const used = cols.map((c, i) => (c.facts.some((f) => f.u.calls) ? i : -1)).filter((i) => i >= 0);
+          const last = day === today ? nowHour : (used.length ? used[used.length - 1] : 23);
+          const first = Math.min(used.length ? used[0] : last, last);
+          cols = cols.slice(first, last + 1);
+        } else {
+          for (const day of days) cols.push({ label: day, facts: dayFacts.get(day) || [], now: false });
+          while (cols.length > 1 && !cols[0].facts.some((f) => f.u.calls)) cols.shift();
+        }
+
+        const dim = dims[0] || null;
+        const series = metric === 'cache'
+          ? [['cached', 'Cached', 'var(--accent-green)'], ['cold', 'Cold', 'var(--accent-red)'],
+             ['unknown', 'Not counted yet', OTHER]]
+          : dim
+            ? top.slice(0, SERIES.length).map((n) => [n.id, dimLabel(dim, n.id), colour.get(n.id)])
+                .concat([[OTHER_ID, 'Other', OTHER]])
+            : [['all', 'All calls', SERIES[0]]];
+        const fmt = metric === 'cost' ? fmtMoney : fmtInt;
+        for (const c of cols) {
+          const v = new Map();
+          const add = (id, n) => { if (n) v.set(id, (v.get(id) || 0) + n); };
+          for (const f of c.facts) {
+            if (metric === 'cache') {
+              add('cached', f.u.cached_calls);
+              add('cold', f.u.calls - f.u.cached_calls - f.u.uncounted);
+              add('unknown', f.u.uncounted);
+            } else {
+              const id = dim ? dimOf(dim, f) : 'all';
+              add(dim && !colour.has(id) ? OTHER_ID : id, metric === 'cost' ? (f.cost || 0) : f.u.calls);
+            }
+          }
+          c.values = v;
+          c.total = [...v.values()].reduce((a, b) => a + b, 0);
+        }
+
+        const chart = document.getElementById('an-chart');
+        chart.innerHTML = '';
+        const max = Math.max(0, ...cols.map((c) => c.total));
+        if (!max) {
+          chart.innerHTML = '<div class="empty-state">No calls in this range.</div>';
+        }
+        for (const c of max ? cols : []) {
+          const col = document.createElement('div');
+          col.className = 'an-col' + (c.now ? ' now' : '');
+          col.setAttribute('data-tooltip-title', c.label);
+          const lines = series.filter(([id]) => c.values.get(id)).map(([id, label]) => `${label}: ${fmt(c.values.get(id))}`);
+          col.setAttribute('data-tooltip', c.total ? lines.concat(`Total: ${fmt(c.total)}`).join('\n') : 'No calls');
+          // Top of the stack first in the DOM, so the first series sits at the bottom.
+          for (const [id, , paint] of series.slice().reverse()) {
+            const n = c.values.get(id);
+            if (!n) continue;
+            const seg = document.createElement('div');
+            seg.className = 'an-seg';
+            seg.style.height = ((n / max) * 100).toFixed(3) + '%';
+            seg.style.background = paint;
+            col.appendChild(seg);
+          }
+          chart.appendChild(col);
+        }
+        const shown = max ? cols : [];
+        document.getElementById('ax-from').textContent = shown[0]?.label || '';
+        document.getElementById('ax-mid').textContent = shown.length > 2 ? shown[Math.floor(shown.length / 2)].label : '';
+        document.getElementById('ax-to').textContent = shown.length > 1 ? shown[shown.length - 1].label : '';
+
+        const esc = lucidos.utils.escapeHtml;
+        const used = new Set(cols.flatMap((c) => [...c.values.keys()]));
+        const what = metric === 'cost' ? 'cost' : metric === 'calls' ? 'calls' : 'cached and cold calls';
+        const per = hourly ? 'per hour' : 'per day';
+        document.getElementById('an-legend').innerHTML =
+          series.filter(([id]) => used.has(id))
+            .map(([, label, paint]) => `<span class="lg-item" data-tooltip="${escAttr(label)}"><span class="swatch" style="background:${paint}"></span>${esc(label)}</span>`)
+            .join('') +
+          (max ? `<span class="muted">${what} ${per}, top ${fmt(max)}</span>` : '');
+      }
+
+      function renderTable(top, total, dims, colour) {
+        document.getElementById('an-head').textContent =
+          dims.length ? dims.map((d) => DIMS.find((x) => x.id === d).label).join(' → ') : 'All calls';
+
+        // The total row(s) on top. With unpriced spend it splits in two, so
+        // the money sits on a row whose counts it actually covers.
+        const totalEl = document.getElementById('an-total');
+        if (total.unpriced.size) {
+          const priced = emptyU();
+          addU(priced, total.u);
+          for (const k of ['calls', 'cached_calls', 'uncounted', 'in', 'cache_read', 'cache_write', 'out', 'seconds']) {
+            priced[k] -= total.uUnpriced[k];
+          }
+          totalEl.innerHTML =
+            totalRow('Total', 'priced', { ...total, u: priced }, fmtMoney(total.cost || 0)) +
+            totalRow('Unpriced', 'not in total', { ...total, u: total.uUnpriced }, '–');
+        } else {
+          totalEl.innerHTML = totalRow('Total', '', total, fmtMoney(total.cost || 0));
+        }
+
+        // Bars are cost against the top row. With nothing priced there is no
+        // cost to compare, so they fall back to calls.
+        const maxCost = Math.max(0, ...top.map((n) => n.cost || 0));
+        const scale = maxCost > 0
+          ? { byCost: true, max: maxCost }
+          : { byCost: false, max: Math.max(0, ...top.map((n) => n.u.calls)) };
+
+        const tbody = document.getElementById('tbody');
+        tbody.innerHTML = '';
+        const walk = (nodes, level, levelPath) => {
+          const limit = showAll.has(levelPath) ? nodes.length : LEVEL_ROWS;
+          for (const n of nodes.slice(0, limit)) {
+            const tr = document.createElement('tr');
+            tr.className = 'an-row' + (n.kids ? ' kids' : '') + (level ? ' deep' : '');
+            tr.dataset.path = n.path;
+            // A transparent swatch on uncoloured top rows keeps their names in line.
+            tr.innerHTML = rowCells(n, level, level === 0 ? (colour.get(n.id) || 'transparent') : null, scale);
+            tbody.appendChild(tr);
+            if (n.kids && expanded.has(n.path)) walk(childrenOf(n), level + 1, n.path);
+          }
+          const rest = nodes.slice(limit);
+          if (rest.length) {
+            const cost = rest.reduce((a, n) => a + (n.cost || 0), 0);
+            const tr = document.createElement('tr');
+            tr.className = 'an-more';
+            tr.dataset.more = levelPath;
+            tr.innerHTML = `<td colspan="8" style="padding-left: calc(${level} * 1.25rem + var(--space-sm))">` +
+              `+ ${fmtInt(rest.length)} more (${fmtMoney(cost)}) · show all</td>`;
+            tbody.appendChild(tr);
+          }
+        };
+        walk(top, 0, '');
+        if (!top.length && dims.length) {
+          tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No calls in this range.</div></td></tr>';
+        }
+      }
+
+      function totalRow(head, sub, n, money) {
+        const c = numberCells(n.u);
+        return `<tr><td>${head}${sub ? ` <span class="sub">${sub}</span>` : ''}</td>` +
+          `<td class="money">${money}</td><td></td>${c}</tr>`;
+      }
+
+      /** The cells after the name, cost and bar: calls, cached / cold, cache
+       *  hit, context per call, and the token split. Shared by the total. */
+      function numberCells(u) {
+        const cold = u.calls - u.cached_calls - u.uncounted;
+        const cached = u.uncounted
+          ? `<td class="num muted" data-tooltip-title="Not counted yet" data-tooltip="These calls come from a rollup that predates the count. The next rollup run adds it.">–</td>`
+          : `<td class="num">${fmtInt(u.cached_calls)} <span class="muted">/ ${fmtInt(cold)}</span></td>`;
+        const hit = u.in ? `${((u.cache_read / u.in) * 100).toFixed(0)}%` : '–';
+        const ctx = u.calls && u.in
+          ? `${fmtTok(u.in / u.calls)} <span class="muted">/ ${u.max_in ? fmtTok(u.max_in) : '–'}</span>` : '–';
+        const fresh = Math.max(0, u.in - u.cache_read - u.cache_write);
+        const toks = fresh + u.cache_read + u.cache_write + u.out;
+        const parts = [[fresh, 'var(--accent-red)'], [u.cache_read, 'var(--accent-green)'],
+                       [u.cache_write, 'var(--accent-yellow)'], [u.out, 'var(--accent-purple, color-mix(in srgb, var(--accent) 55%, var(--accent-red)))']];
+        const tip = `uncached in ${fmtTok(fresh)}\ncache read ${fmtTok(u.cache_read)}\n` +
+          `cache write ${fmtTok(u.cache_write)}\nout ${fmtTok(u.out)}` +
+          (u.seconds ? `\nvoice ${fmtMinutes(u.seconds)}` : '');
+        // A voice model billed by the minute reports zero tokens, so its split
+        // says the minutes it was charged for instead of an empty bar.
+        const split = toks
+          ? `<span class="split" data-tooltip-title="Tokens" data-tooltip="${escAttr(tip)}">` +
+            parts.map(([n, paint]) => (n ? `<span style="width:${((n / toks) * 100).toFixed(2)}%;background:${paint}"></span>` : '')).join('') +
+            '</span>'
+          : (u.seconds ? `${fmtMinutes(u.seconds)} of call` : '–');
+        return `<td class="num">${fmtInt(u.calls)}</td>${cached}<td class="num">${hit}</td>` +
+          `<td class="num">${ctx}</td><td>${split}</td>`;
+      }
+
+      function rowCells(n, level, paint, scale) {
+        const esc = lucidos.utils.escapeHtml;
+        const label = dimLabel(n.dim, n.id);
+        const twisty = n.kids ? (expanded.has(n.path) ? '▾' : '▸') : '';
+        const swatch = paint ? `<span class="swatch" style="background:${paint}"></span>` : '';
+        const subTag = n.sub ? '<span class="an-sub">sub</span> ' : '';
+        const subCount = n.subThreads ? `<span class="an-sub">+${n.subThreads} sub</span>` : '';
+        const routed = n.dim === 'model' ? routedNote(n.u.routed_from, n.id) : '';
+        // A thread's name opens the thread; the rest of the row still folds.
+        const name = n.dim === 'thread' && n.id
+          ? `<a class="an-link" href="#" data-thread="${escAttr(n.id)}">${esc(label)}</a>` : esc(label);
+        // Thread titles run long and the cell truncates, so the full title is
+        // a hover away.
+        const tip = n.dim === 'thread' ? ` data-tooltip="${escAttr(label)}"` : '';
+        // An attribute value, so the attribute escape: a model id is whatever a
+        // request body or a provider reply named, and a quote in it must not
+        // close the attribute.
+        const costCell = n.cost === null
+          ? `<td class="money"><button type="button" class="unpriced-btn" ` +
+            `data-add-rate="${escAttr([...n.unpriced].join('\n'))}" data-tooltip-title="Unpriced" ` +
+            `data-tooltip="Not in the total. Click to add a rate in Settings.">Unpriced</button></td>`
+          : `<td class="money">${fmtMoney(n.cost)}</td>`;
+        const w = scale.max > 0 ? ((scale.byCost ? (n.cost || 0) : n.u.calls) / scale.max) * 100 : 0;
+        return `<td style="padding-left: calc(${level} * 1.25rem + var(--space-sm))"${tip}>` +
+            `<span class="tw">${twisty}</span>${swatch}${subTag}${name}${subCount}${routed}</td>` +
+          costCell +
+          `<td class="an-barc">${w > 0 ? `<span class="an-bar" style="width:${Math.max(w, 0.5).toFixed(2)}%"></span>` : ''}</td>` +
+          numberCells(n.u);
+      }
+
+      document.getElementById('an-chips').addEventListener('click', (e) => {
+        const b = e.target.closest?.('[data-dim]');
+        if (!b) return;
+        const d = b.dataset.dim;
+        groups = groups.includes(d) ? groups.filter((g) => g !== d) : groups.concat(d);
+        expanded.clear();
+        showAll.clear();
+        uiState.groups = groups;
+        saveUiState();
+        render();
+      });
+
+      document.getElementById('an-metric').addEventListener('click', (e) => {
+        const b = e.target.closest?.('[data-metric]');
+        if (!b || b.dataset.metric === metric) return;
+        metric = b.dataset.metric;
+        uiState.metric = metric;
+        saveUiState();
+        render();
+      });
+
+      // A row with something under it opens on click; "+ N more" shows the
+      // rest of its level. The Add rate button is the dashboard's own handler.
+      document.getElementById('tbody').addEventListener('click', (e) => {
+        if (e.target.closest?.('[data-add-rate]')) return;
+        const link = e.target.closest?.('[data-thread]');
+        if (link) {
+          e.preventDefault();
+          lucidos.ui.navigate('thread', { id: link.dataset.thread });
+          return;
+        }
+        const tr = e.target.closest?.('tr');
+        if (!tr) return;
+        if (tr.dataset.more != null) { showAll.add(tr.dataset.more); render(); return; }
+        if (!tr.classList.contains('kids')) return;
+        const p = tr.dataset.path;
+        if (expanded.has(p)) expanded.delete(p); else expanded.add(p);
+        render();
+      });
 
       /** "asked for X" under a model another model answered for. A provider
        *  that reroutes a retired id does it silently, so the row says so: the
@@ -2336,25 +2648,7 @@
         // paints ids and then swaps to names a moment later is a flicker on
         // camera.
         const labelsReady = loadModelLabels();
-        const seqAtRead = writeSeq;
-        let text = null;
-        let readOk = true;
-        try { text = await readPricingText(); } catch (e) { readOk = false; console.warn('token-cost: could not read pricing.json', e); }
-        if (!readOk) {
-          // A table already on screen is kept. With none yet, every model is
-          // unpriced for now, and the file stays UNKNOWN rather than missing,
-          // so a save first reads it and asks before writing over it.
-          if (!pricing) {
-            adoptPricing(null);
-            usingDefaultRates = false;
-            pricingDiskText = undefined;
-            lucidos.ui.toast('Could not read pricing.json, so costs show as unpriced until it loads.', 'warning', { key: 'tc-pricing-read' });
-          }
-        } else if (writeSeq === seqAtRead || !pricing) {
-          // A save that landed while this read was in flight wins: the read
-          // may have returned the file from before it.
-          adoptPricing(text);
-        }
+        await loadPrices();
 
         try {
           daily = JSON.parse(await lucidos.data.read(DAILY));
@@ -2393,11 +2687,11 @@
         await catchUp({ initial: true });
       }
 
-      /** pricing.json as text, or null when there is none. Any other failure
+      /** A data file as text, or null when there is none. Any other failure
        *  throws, so a save never mistakes "could not read" for "no file". */
-      async function readPricingText() {
+      async function readText(path) {
         try {
-          return await lucidos.data.read(PRICING);
+          return await lucidos.data.read(path);
         } catch (e) {
           if (e && (e.httpCode === 404 || e.status === 404 || /\b404\b|not found/i.test(String(e.message || e)))) return null;
           throw e;
@@ -2405,62 +2699,147 @@
       }
 
       /** The same file twice, whatever whitespace a writer used. */
-      function canonPricing(text) {
+      function canonText(text) {
         if (text == null) return null;
         try { return JSON.stringify(JSON.parse(text)); } catch (e) { return String(text); }
       }
 
-      /** Take `text` (pricing.json, or null for none) as the table every cost
-       *  is priced from. A draft with no pending edit follows it, so Settings
-       *  never shows, and never saves back, a table older than the file. */
-      function adoptPricing(text) {
+      /** JSON with every object's keys sorted, so two documents that differ
+       *  only in key order compare equal. */
+      function stableJson(v) {
+        if (Array.isArray(v)) return '[' + v.map(stableJson).join(',') + ']';
+        if (v && typeof v === 'object') {
+          return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + stableJson(v[k])).join(',') + '}';
+        }
+        return JSON.stringify(v ?? null);
+      }
+
+      /** The merged price table from the engine. An older Lucidos has no
+       *  `lucidos.priceTable`, and its engine no `/model-prices`. */
+      async function fetchPriceTable() {
+        if (!lucidos.priceTable || typeof lucidos.priceTable.get !== 'function') {
+          throw new Error('this Lucidos has no price table yet, so update Lucidos');
+        }
+        const t = await lucidos.priceTable.get();
+        if (!t || typeof t !== 'object' || !t.models || typeof t.models !== 'object') {
+          throw new Error('the price table came back without models');
+        }
+        return t;
+      }
+
+      /** Read the price table, the override and settings.json, and price from
+       *  them. A save that landed while these reads were in flight wins: the
+       *  reads may have returned the files from before it. */
+      async function loadPrices() {
+        const seqAtRead = writeSeq;
+        const [t, o, st] = await Promise.allSettled([
+          fetchPriceTable(), readText(OVERRIDE), readText(SETTINGS)]);
+        if (writeSeq !== seqAtRead && pricing) return;
+        if (t.status === 'fulfilled') {
+          priceTable = t.value;
+          priceTableError = null;
+        } else {
+          // A table already on screen is kept. With none yet, every model is
+          // unpriced for now, and Settings says why.
+          priceTableError = String(t.reason?.message || t.reason || 'unknown error');
+          console.warn('token-cost: could not read the price table', t.reason);
+          if (!priceTable) {
+            lucidos.ui.toast(`Could not read Lucidos's price table (${priceTableError}), so costs show as unpriced until it loads.`,
+              'warning', { key: 'tc-pricing-read' });
+          }
+        }
+        adoptFile(OVERRIDE, o);
+        adoptFile(SETTINGS, st);
+        composePricing();
+        warnOverrideError();
+      }
+
+      /** Take one settled file read as what this tab last saw of it. A file
+       *  that could not be read, or is not a JSON object, is UNKNOWN rather
+       *  than missing, so a save first reads it and asks before writing over
+       *  whatever it holds. */
+      function adoptFile(path, settled) {
+        const f = files[path];
+        if (settled.status !== 'fulfilled') {
+          console.warn(`token-cost: could not read ${path}`, settled.reason);
+          if (f.disk === undefined) f.doc = null;
+          return;
+        }
+        const text = settled.value;
         let parsed = null;
         if (text != null) {
-          try { parsed = JSON.parse(text); } catch (e) { console.warn('token-cost: pricing.json is not valid JSON', e && e.message); }
+          try { parsed = JSON.parse(text); } catch (e) { console.warn(`token-cost: ${path} is not valid JSON`, e && e.message); }
         }
-        const broken = text != null && !(parsed && typeof parsed === 'object' && !Array.isArray(parsed));
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          pricing = parsed;
-          usingDefaultRates = false;
-        } else {
-          // No pricing.json is the first-run state of a fresh workspace, not a
-          // fault, so no toast. Every model reads as unpriced until a rate is
-          // added, and the first edit in Settings creates the file. It is
-          // reported quietly, in the Settings tab.
-          pricing = JSON.parse(JSON.stringify(DEFAULT_PRICING));
-          usingDefaultRates = text == null;
+        const isObj = parsed && typeof parsed === 'object' && !Array.isArray(parsed);
+        if (text != null && !isObj) {
+          f.doc = null;
+          f.disk = undefined;
+          lucidos.ui.toast(`${path} is not a valid JSON object, so it is left alone until it is fixed.`,
+            'warning', { key: 'tc-file-' + path });
+          return;
         }
-        // A broken file is treated as unseen: a save then asks before writing
-        // the empty table it fell back to over whatever the file holds.
-        pricingDiskText = broken ? undefined : canonPricing(text);
-        if (broken) {
-          lucidos.ui.toast('pricing.json is not valid JSON, so costs show as unpriced until it is fixed.',
-            'warning', { key: 'tc-pricing-read' });
-        }
-        if (!dirty && !saving) draft = null;
+        f.doc = isObj ? parsed : null;
+        f.disk = canonText(text);
+      }
 
-        if (!pricing.models || typeof pricing.models !== 'object') pricing.models = {};
-        if (!pricing.producers) pricing.producers = JSON.parse(JSON.stringify(DEFAULT_PRICING.producers));
-        if (!pricing.long_context_multiplier) {
-          pricing.long_context_multiplier = { ...DEFAULT_PRICING.long_context_multiplier };
-        }
-        if (!pricing.currency) pricing.currency = 'USD';
-        pricing.currency = String(pricing.currency).toUpperCase();
-        // A pricing.json written before multi-currency has no fx block at all,
-        // and one written by hand may name a base with no self-rate. Both must
-        // land on a table that at least converts the base to itself.
-        if (!pricing.fx || typeof pricing.fx !== 'object') {
-          pricing.fx = JSON.parse(JSON.stringify(DEFAULT_PRICING.fx));
-        }
-        if (!pricing.fx.rates || typeof pricing.fx.rates !== 'object') pricing.fx.rates = {};
-        pricing.fx.rates[pricing.currency] = 1;
+      /** Build `pricing` from the price table and settings.json. A draft with
+       *  no pending edit follows it, so Settings never shows, and never saves
+       *  back, a table older than the files. */
+      function composePricing() {
+        const currency = String(priceTable?.currency || 'USD').toUpperCase();
+        pricing = {
+          currency,
+          checked: priceTable?.checked || null,
+          models: JSON.parse(JSON.stringify(priceTable?.models || {})),
+          ...settingsOf(files[SETTINGS].doc, currency),
+        };
+        if (!dirty && !saving) { draft = null; touchedModels.clear(); }
 
         // Display currency is remembered in the workspace ui-state file, which
         // loadUiState() read before this ran. A stored code the table no longer
         // carries falls back to the base rather than showing every figure
         // unconverted.
-        const stored = uiState.currency;
+        const stored = displayCcy || uiState.currency;
         displayCcy = stored && fxRate(stored) !== null ? String(stored).toUpperCase() : pricing.currency;
+      }
+
+      /** Producer labels and exchange rates from settings.json, or the
+       *  defaults. The base converts to itself at 1, whatever the file says,
+       *  so an edited or missing self-rate cannot scale every figure. */
+      function settingsOf(doc, currency) {
+        const st = doc || {};
+        const fx = st.fx && typeof st.fx === 'object' ? JSON.parse(JSON.stringify(st.fx)) : { rates: {} };
+        if (!fx.rates || typeof fx.rates !== 'object') fx.rates = {};
+        fx.rates[currency] = 1;
+        const producers = st.producers && typeof st.producers === 'object'
+          ? { ...st.producers } : JSON.parse(JSON.stringify(DEFAULT_SETTINGS.producers));
+        return { producers, fx };
+      }
+
+      /** Say so once when the engine ignores the override: none of its cards
+       *  count then, and the dashboard prices from the shipped cards alone. */
+      let warnedOverrideError = null;
+      function warnOverrideError() {
+        const err = priceTable?.override?.error || null;
+        if (err && err !== warnedOverrideError) {
+          lucidos.ui.toast(`Lucidos is ignoring ${OVERRIDE}: ${err}. Only the shipped prices count until it is fixed.`,
+            'error', { key: 'tc-override', durationMs: 8000 });
+        }
+        warnedOverrideError = err;
+      }
+
+      /** Fetch the merged table again, after the override changed. */
+      async function refreshPriceTable() {
+        try {
+          priceTable = await fetchPriceTable();
+          priceTableError = null;
+        } catch (e) {
+          return;
+        }
+        composePricing();
+        warnOverrideError();
+        if (!dirty && !saving) renderSettings(); else renderPriceStatus();
+        render();
       }
 
       /** Keep the producer dropdown in step with the configured labels, plus any
@@ -2547,11 +2926,6 @@
       // edit typed while that write was in flight is saved after it rather
       // than marked saved with it.
       let draftRev = 0;
-      // pricing.json as this tab last read or wrote it (canonical JSON, null
-      // for no file, undefined before the first read). A save first checks
-      // the file still says this, so it never writes a stale draft over a
-      // change made in another tab, on another device, or by hand.
-      let pricingDiskText;
       // Bumped by every write this tab lands, so a read that started before
       // one is not taken as newer than it.
       let writeSeq = 0;
@@ -2560,9 +2934,6 @@
 
       const RATE_KEYS = ['uncached_in', 'cache_write', 'cache_read', 'out'];
       const SAVE_DEBOUNCE_MS = 700;
-      // Managed Select for the base currency, held so each renderSettings pass
-      // can replace it rather than stacking a second one in the same slot.
-      let baseSelect = null;
 
       function setSaveState(text, cls) {
         const el = document.getElementById('save-state');
@@ -2580,35 +2951,110 @@
         saveTimer = setTimeout(saveNow, SAVE_DEBOUNCE_MS);
       }
 
-      // Written at the top of pricing.json on every save, so a hand editor
-      // finds the schema in the file itself.
-      const PRICING_COMMENT =
-        'Model rates are per 1,000,000 tokens, in the currency named by \u2018currency\u2019. ' +
-        'Edited from the Token Cost app\u2019s Settings tab, or by hand. This file is the only price table: ' +
-        'the app carries no prices of its own. Each model holds a LIST of cards, its price history. A card is ' +
-        'in force from its \u2018from\u2019 day (YYYY-MM-DD, local time) until the next card\u2019s, and a usage ' +
-        'day is priced at the newest card whose \u2018from\u2019 is on or before it. The first card may omit ' +
-        '\u2018from\u2019: it is in force since the beginning. A card dated in the future waits for its day. ' +
-        'A plain object instead of a list still loads, as one undated card. \u2018source\u2019 says where a ' +
-        'card\u2019s numbers come from. A model id not listed here is shown as unpriced and kept out of the ' +
-        'total; so is a card with no rates in it. A card may carry two optional extras. \u2018long\u2019 is ' +
-        'the provider\u2019s long-context tier: its four rates replace the base ones for every token of a call ' +
-        'whose PROMPT went over \u2018threshold_tokens\u2019, or reached it when the tier sets ' +
-        '\u2018inclusive\u2019: true (xAI bills from the threshold itself). \u2018per_minute\u2019 prices a model billed by ' +
-        'wall-clock time rather than tokens, and a card with it set ignores its token rates. \u2018fx.rates\u2019 ' +
-        'is units of each currency per 1 unit of the base, used for display conversion only, at one rate for ' +
-        'every day.';
+      // Written at the top of each file when the app first creates it, so a
+      // hand editor finds what it is for in the file itself.
+      const OVERRIDE_COMMENT =
+        'This workspace\u2019s cards for Lucidos\u2019s price table (ADR 0525). Each card corrects or adds to ' +
+        'the cards Lucidos ships, and replaces the shipped card that has the same \u2018from\u2019 day. Rates ' +
+        'are per 1,000,000 tokens in \u2018currency\u2019. Written by the Token Cost app\u2019s Settings tab ' +
+        'and the model-price-check recipe, or by hand. Lucidos ignores the whole file when it has another ' +
+        'currency, two cards for one model on one day, a negative rate, or a card without \u2018source\u2019.';
+      const SETTINGS_COMMENT =
+        'Token Cost\u2019s own settings. \u2018producers\u2019 names each producer id in the table and the ' +
+        'filter. \u2018fx.rates\u2019 is units of each currency per 1 unit of the price table\u2019s currency, ' +
+        'used for display conversion only, at one rate for every day. Prices live in Lucidos\u2019s price ' +
+        'table, not here.';
 
-      /** The models block as it is written: every model a list of cards,
-       *  oldest first, `from` leading each dated card so the file reads as a
-       *  timeline. */
-      function savedModels(models) {
+      /** The override's models block: every card this workspace set, which is
+       *  every card not shipped. A card gets there by being edited or added
+       *  here, or by being read from the override. An unpriced card (an "Add
+       *  rate" left blank) stays out until it has a number in it. Each card is
+       *  written whole, as the engine reads it: all four rates, a blank one as
+       *  0 (as a blank is priced here), and a `source`. Oldest first, `from`
+       *  leading each dated card, so the file reads as a timeline. */
+      function overrideModels(models) {
         const out = {};
+        const today = localDay(new Date());
         for (const [id, entry] of Object.entries(models || {})) {
           if (id === 'default') continue;
-          out[id] = cardsOf(entry).map(({ from, ...rest }) => (from ? { from, ...rest } : rest));
+          const cards = cardsOf(entry)
+            .filter((c) => c.origin !== 'shipped' && isPricedCard(c))
+            .map(({ from, origin, ...rest }) => {
+              const c = from ? { from, ...rest } : { ...rest };
+              for (const k of RATE_KEYS) if (!Number.isFinite(c[k])) c[k] = 0;
+              if (!String(c.source || '').trim()) c.source = `Set by hand in Token Cost on ${today}.`;
+              return c;
+            });
+          if (cards.length) out[id] = cards;
         }
         return out;
+      }
+
+      /** The first model with a negative rate on a card or a tier, or null.
+       *  Lucidos ignores the whole override for one, so it is never written. */
+      function negativeRateIn(models) {
+        const keys = [...RATE_KEYS, 'cache_write_1h', 'per_minute'];
+        for (const [id, cards] of Object.entries(models)) {
+          for (const c of cards) {
+            for (const t of [c, c.long, c.flex]) {
+              if (t && typeof t === 'object' && keys.some((k) => Number(t[k]) < 0)) return id;
+            }
+          }
+        }
+        return null;
+      }
+
+      /** Model ids whose cards were edited here since the last save, each
+       *  with the draft revision of its last edit. Only these are written to
+       *  the override: every other model keeps exactly what the file holds,
+       *  fields the app does not know included. */
+      const touchedModels = new Map();
+
+      /** Mark a card as this workspace's own: an edited shipped card becomes
+       *  an override card for the same day. */
+      function touchCard(cards, card) {
+        if (card) card.origin = 'override';
+        const id = idOf(cards);
+        if (id) touchedModels.set(id, draftRev + 1);
+      }
+
+      /** Why price edits cannot be written now, or null. While Lucidos
+       *  ignores the override, its cards are not in the table this tab
+       *  edits, so writing would drop them. */
+      function overrideBlocked() {
+        if (!priceTable) return `Lucidos's price table could not be read${priceTableError ? ` (${priceTableError})` : ''}`;
+        const err = priceTable.override?.error;
+        return err ? `Lucidos is ignoring ${OVERRIDE} (${err}). Fix the file by hand first` : null;
+      }
+
+      /** The files this draft would change, each with the text to write, and
+       *  `models`, the override's models block as it would be written. A file
+       *  is left alone unless its content moved, so a producer label never
+       *  rewrites the override, and key order alone is no change. */
+      function pendingWrites() {
+        const writes = [];
+        const ov = files[OVERRIDE].doc;
+        const before = ov?.models && typeof ov.models === 'object' ? ov.models : {};
+        const models = { ...before };
+        for (const id of touchedModels.keys()) {
+          const mine = draft.models[id] ? overrideModels({ [id]: draft.models[id] })[id] : null;
+          if (mine) models[id] = mine; else delete models[id];
+        }
+        if (stableJson(models) !== stableJson(before)) {
+          // Every other field (checked, sources, failures) is the price
+          // check's, carried through untouched. `checked` stays: a hand edit
+          // is not a check against the providers' pages.
+          const doc = { _comment: OVERRIDE_COMMENT, ...(ov || {}), currency: pricing.currency, models };
+          writes.push({ path: OVERRIDE, text: JSON.stringify(doc, null, 2) + '\n' });
+        }
+        const st = files[SETTINGS].doc;
+        const fx = (draft.fx && draft.fx.rates) ? draft.fx : { rates: {} };
+        const mine = { producers: draft.producers || {}, fx };
+        if (stableJson(settingsOf(mine, pricing.currency)) !== stableJson(settingsOf(st, pricing.currency))) {
+          const doc = { _comment: SETTINGS_COMMENT, ...(st || {}), ...mine };
+          writes.push({ path: SETTINGS, text: JSON.stringify(doc, null, 2) + '\n' });
+        }
+        return { writes, models };
       }
 
       async function saveNow() {
@@ -2617,51 +3063,71 @@
         // edit that got here bumped draftRev.
         if (saving) return;
         clearTimeout(saveTimer);
-        saving = true;
         const rev = draftRev;
-        const payload = {
-          _comment: PRICING_COMMENT,
-          _updated: localDay(new Date()),
-          // Where the numbers came from, carried through untouched. An edit
-          // here is the user's own, so the block stops being the whole truth,
-          // but dropping it would lose the provenance of every row they did
-          // not touch.
-          ...(pricing?._sources ? { _sources: pricing._sources } : {}),
-          currency: (draft.currency || 'USD').toUpperCase(),
-          models: savedModels(draft.models),
-          long_context_multiplier: draft.long_context_multiplier,
-          producers: draft.producers,
-          fx: (draft.fx && draft.fx.rates) ? draft.fx : { rates: {} },
-        };
-        const text = JSON.stringify(payload, null, 2);
-        let onDisk;
-        try {
-          onDisk = await readPricingText();
-          // Never read (undefined) is safe to write only while there is no file.
-          if (canonPricing(onDisk) !== (pricingDiskText === undefined ? null : pricingDiskText)) {
-            saving = false;
-            await resolveConflict(onDisk);
-            return;
-          }
-          await lucidos.data.write(PRICING, text);
-        } catch (e) {
-          saving = false;
+        let { writes, models } = pendingWrites();
+        // A price edit that cannot be written stays in the draft, unsaved.
+        // Everything else in the same save still lands.
+        const blocked = writes.some((w) => w.path === OVERRIDE) ? overrideBlocked() : null;
+        if (blocked) {
+          writes = writes.filter((w) => w.path !== OVERRIDE);
+          lucidos.ui.toast(`${blocked}. A price edit here would write over the cards it holds, so prices are not saved.`,
+            'error', { key: 'tc-save' });
+        }
+        const bad = !blocked && writes.some((w) => w.path === OVERRIDE) ? negativeRateIn(models) : null;
+        if (bad) {
           setSaveState('Not saved', 'dirty-dot');
-          lucidos.ui.toast(`Could not save: ${e.message || e}`, 'error', { key: 'tc-save' });
+          lucidos.ui.toast(`${bad} has a negative rate. Lucidos would ignore the whole override for it, so nothing is saved until it is fixed.`,
+            'error', { key: 'tc-save' });
           return;
         }
+        saving = true;
+        let wroteOverride = false;
+        for (const w of writes) {
+          const f = files[w.path];
+          try {
+            const onDisk = await readText(w.path);
+            // Never read (undefined) is safe to write only while there is no file.
+            if (canonText(onDisk) !== (f.disk === undefined ? null : f.disk)) {
+              saving = false;
+              await resolveConflict(w.path, onDisk);
+              return;
+            }
+            await lucidos.data.write(w.path, w.text);
+          } catch (e) {
+            saving = false;
+            setSaveState('Not saved', 'dirty-dot');
+            lucidos.ui.toast(`Could not save ${w.path}: ${e.message || e}`, 'error', { key: 'tc-save' });
+            return;
+          }
+          writeSeq++;
+          f.doc = JSON.parse(w.text);
+          f.disk = canonText(w.text);
+          if (w.path === OVERRIDE) wroteOverride = true;
+        }
         saving = false;
-        writeSeq++;
-        pricingDiskText = canonPricing(text);
-        pricing = JSON.parse(text);
-        usingDefaultRates = false;
-        document.getElementById('rates-source').style.display = 'none';
+        // Written, unless edited again while the write was in flight.
+        if (!blocked) for (const [id, r] of [...touchedModels]) if (r <= rev) touchedModels.delete(id);
+        if (wroteOverride) {
+          // A card written to the override is the workspace's own from now on.
+          for (const cards of Object.values(draft.models)) {
+            for (const c of cardsOf(cards)) if (c.origin !== 'shipped') c.origin = 'override';
+          }
+          // The dashboard prices from the draft at once. The engine's merge of
+          // the file just written follows, and wins, in refreshPriceTable().
+          pricing.models = JSON.parse(JSON.stringify(draft.models));
+        }
+        pricing.producers = { ...(draft.producers || {}) };
+        pricing.fx = JSON.parse(JSON.stringify(draft.fx || { rates: {} }));
+        pricing.fx.rates = pricing.fx.rates || {};
         pricing.fx.rates[pricing.currency] = 1;
-        // Renaming the base, or removing the currency being displayed, must not
-        // leave the dashboard converting at a rate that no longer exists.
+        // Removing the currency being displayed must not leave the dashboard
+        // converting at a rate that no longer exists.
         if (fxRate(displayCcy) === null) displayCcy = pricing.currency;
+        syncProducerFilter();
         syncCurrencyFilter();
-        if (draftRev === rev) {
+        if (blocked) {
+          setSaveState('Prices not saved', 'dirty-dot');
+        } else if (draftRev === rev) {
           dirty = false;
           setSaveState('Saved', 'muted');
         } else {
@@ -2669,18 +3135,19 @@
           saveTimer = setTimeout(saveNow, SAVE_DEBOUNCE_MS);
         }
         render();
+        if (wroteOverride) await refreshPriceTable();
       }
 
-      /** pricing.json changed since this tab read it. Ask before writing over
-       *  it. Either answer is safe to undo: every write is a commit in the
+      /** `path` changed since this tab read it. Ask before writing over it.
+       *  Either answer is safe to undo: every write is a commit in the
        *  workspace history. */
-      async function resolveConflict(onDisk) {
+      async function resolveConflict(path, onDisk) {
         conflictOpen = true;
         let overwrite = false;
         try {
           overwrite = await lucidos.ui.confirm({
-            title: 'pricing.json changed elsewhere',
-            message: 'Another tab, another device or a hand edit saved pricing.json after this tab ' +
+            title: `${path} changed elsewhere`,
+            message: `Another tab, another device, the price check or a hand edit saved ${path} after this tab ` +
               'loaded it. Saving here would replace that change with this tab\u2019s older copy plus your edit.' +
               '\n\nReload shows the file as it is now and drops your unsaved edit. Overwrite keeps your ' +
               'version and replaces theirs. Both versions stay in the workspace history.',
@@ -2694,12 +3161,13 @@
           conflictOpen = false;
         }
         if (overwrite) {
-          pricingDiskText = canonPricing(onDisk);
+          files[path].disk = canonText(onDisk);
           return saveNow();
         }
         dirty = false;
         draft = null;
-        adoptPricing(onDisk);
+        touchedModels.clear();
+        await loadPrices();
         setSaveState('Reloaded the newer file', 'muted');
         syncProducerFilter();
         syncCurrencyFilter();
@@ -2707,14 +3175,24 @@
         render();
       }
 
-      /** Another writer saved pricing.json. A tab with no pending edit takes
-       *  the new file at once; one mid-edit keeps its draft, and its next save
-       *  asks before overwriting. */
-      async function onPricingWritten() {
+      /** Another writer saved the override or settings.json. A tab with no
+       *  pending edit takes the new file at once; one mid-edit keeps its
+       *  draft, and its next save asks before overwriting. The override is
+       *  merged by the engine, so the table is fetched again either way: its
+       *  `override.error` says whether Lucidos took the file. */
+      async function onFileWritten(path) {
         let text;
-        try { text = await readPricingText(); } catch (e) { return; }
-        if (canonPricing(text) === pricingDiskText || dirty || saving || conflictOpen) return;
-        adoptPricing(text);
+        try { text = await readText(path); } catch (e) { return; }
+        const changed = canonText(text) !== files[path].disk;
+        if (!changed) {
+          if (path === OVERRIDE) await refreshPriceTable();
+          return;
+        }
+        if (dirty || saving || conflictOpen) {
+          if (path === OVERRIDE) await refreshPriceTable();
+          return;
+        }
+        await loadPrices();
         syncProducerFilter();
         syncCurrencyFilter();
         renderSettings();
@@ -2812,9 +3290,10 @@
         const copy = JSON.parse(JSON.stringify(base));
         delete copy.source;
         delete copy.from;
-        const card = { from, ...copy };
+        const card = { from, ...copy, origin: 'override' };
         cards.push(card);
         resortCards(cards);
+        touchCard(cards, card);
         openHistory.add(cards);
         focusAfterRender = card;
         markDirty();
@@ -2843,10 +3322,19 @@
       }
 
       /** One dated card: its From day, four token rates, the per-minute rate,
-       *  and (with the history open) where the price came from. */
+       *  and (with the history open) where the price came from.
+       *
+       *  A card shows its origin: shipped with Lucidos, or this workspace's
+       *  override. Editing a shipped card writes an override card for the
+       *  same day, so the shipped one is never changed. A shipped card keeps
+       *  its day and cannot be deleted, because the override can only
+       *  replace or add a card. Deleting an override card brings back the
+       *  shipped card it replaced, if there is one. */
       function rateCardRow(cards, card, ctx) {
         const row = document.createElement('div');
         row.className = 'rate-card';
+        const shipped = card.origin === 'shipped';
+        const edited = () => touchCard(cards, card);
 
         const head = document.createElement('div');
         head.className = 'rate-card-head';
@@ -2862,6 +3350,13 @@
           badge.textContent = isPricedCard(card) ? 'earlier' : 'no rate yet';
         }
         head.appendChild(badge);
+        const origin = document.createElement('span');
+        origin.className = 'rate-origin' + (shipped ? '' : ' override');
+        origin.textContent = shipped ? 'shipped' : 'override';
+        origin.title = shipped
+          ? 'Ships with Lucidos. An edit here writes an override card for the same day.'
+          : `This workspace's own card, from ${OVERRIDE}.`;
+        head.appendChild(origin);
         // The long tier is edited in the JSON, but it is shown, so a card
         // copied for a price change visibly carries it along.
         const L = card.long;
@@ -2874,9 +3369,10 @@
         const grow = document.createElement('span');
         grow.className = 'grow';
         head.appendChild(grow);
-        if (cards.length > 1) {
-          head.appendChild(removeBtn(() => { cards.splice(cards.indexOf(card), 1); },
-            card.from ? `Delete the card from ${card.from}` : 'Delete the undated card'));
+        if (cards.length > 1 && !shipped) {
+          head.appendChild(removeBtn(() => { cards.splice(cards.indexOf(card), 1); edited(); },
+            (card.from ? `Delete the override card from ${card.from}` : 'Delete the undated override card') +
+            '. A shipped card for the same day comes back.'));
         }
         row.appendChild(head);
 
@@ -2885,7 +3381,10 @@
         const date = document.createElement('input');
         date.type = 'date';
         date.value = card.from || '';
-        date.title = 'The first day this price is in force. Empty: in force since the beginning.';
+        date.title = shipped
+          ? 'A shipped card keeps its day. Add a price change for a new one.'
+          : 'The first day this price is in force. Empty: in force since the beginning.';
+        date.disabled = shipped;
         date.addEventListener('change', () => {
           const v = date.value.trim();
           const why = checkFrom(cards, card, v);
@@ -2896,6 +3395,7 @@
           }
           if (v) card.from = v; else delete card.from;
           resortCards(cards);
+          edited();
           markDirty();
           renderSettings();
         });
@@ -2908,6 +3408,7 @@
         for (const key of RATE_KEYS) {
           const input = numInput(card[key] ?? '', (v) => {
             if (isNaN(v)) delete card[key]; else card[key] = v;
+            edited();
           });
           input.placeholder = '–';
           row.appendChild(rateField(labels[key], input));
@@ -2919,6 +3420,7 @@
         // bill for the tokens.
         const pm = numInput(card.per_minute ?? '', (v) => {
           if (isNaN(v) || v <= 0) delete card.per_minute; else card.per_minute = v;
+          edited();
         });
         pm.step = '0.001';
         pm.placeholder = '–';
@@ -2929,6 +3431,7 @@
         if (ctx.open) {
           const src = textInput(card.source || '', (v) => {
             if (v.trim()) card.source = v; else delete card.source;
+            edited();
           }, '', 'Where this price comes from: the URL and the date you checked it');
           row.appendChild(rateField('Source', src, true));
         }
@@ -2950,8 +3453,11 @@
           let cards = draft.models[id];
           if (Array.isArray(cards)) resortCards(cards);
           else cards = draft.models[id] = cardsOf(cards);
-          if (!cards.length) cards.push({});
+          if (!cards.length) cards.push({ origin: 'override' });
           const inForce = cardOn(cards, today);
+          // A model with a shipped card is Lucidos's id: the override cannot
+          // rename or remove it, only add cards beside it.
+          const ownModel = cards.every((c) => c.origin !== 'shipped');
           const open = openHistory.has(cards);
           // With nothing priced in force yet (a fresh "Add rate" card, or a
           // history that only starts in the future), show the first card.
@@ -2963,14 +3469,19 @@
 
           const head = document.createElement('div');
           head.className = 'rate-head';
-          head.appendChild(textInput(id, (v) => {
+          const idInput = textInput(id, (v) => {
             const next = v.trim();
             const cur = idOf(cards);
             if (!next || next === cur || draft.models[next]) return;
+            touchCard(cards, null);
             const rebuilt = {};
             for (const [k, val] of Object.entries(draft.models)) rebuilt[k === cur ? next : k] = val;
             draft.models = rebuilt;
-          }, 'model-id', 'model-id'));
+            touchCard(cards, null);
+          }, 'model-id', 'model-id');
+          idInput.readOnly = !ownModel;
+          if (!ownModel) idInput.title = 'A model Lucidos ships keeps its id.';
+          head.appendChild(idInput);
           head.appendChild(textBtn('+ Price change', 'Add a new price for this model, in force from a date you pick',
             () => addPriceChange(cards)));
           const upcoming = cards.filter((c) => c.from && c.from > today).length;
@@ -2980,7 +3491,9 @@
             () => { if (open) openHistory.delete(cards); else openHistory.add(cards); renderSettings(); });
           toggle.setAttribute('aria-expanded', String(open));
           head.appendChild(toggle);
-          head.appendChild(removeBtn(() => { delete draft.models[idOf(cards)]; }, `Remove ${id}`));
+          if (ownModel) {
+            head.appendChild(removeBtn(() => { touchCard(cards, null); delete draft.models[idOf(cards)]; }, `Remove ${id}`));
+          }
           item.appendChild(head);
 
           const show = open ? cards.slice().reverse() : [shown];
@@ -2991,10 +3504,35 @@
         focusAfterRender = null;
       }
 
+      /** Where the prices come from, and anything wrong with that. */
+      function renderPriceStatus() {
+        const el = document.getElementById('price-status');
+        const esc = lucidos.utils.escapeHtml;
+        const parts = [];
+        let warn = false;
+        if (!priceTable) {
+          warn = true;
+          parts.push(`Could not read Lucidos's price table${priceTableError ? ` (${esc(priceTableError)})` : ''}, ` +
+            'so every cost reads as unpriced until it loads, and prices cannot be edited.');
+        } else {
+          parts.push(`Prices come from Lucidos's price table, last checked <strong>${esc(priceTable.checked || 'never')}</strong>. ` +
+            'A card marked <strong>shipped</strong> comes with Lucidos, which refreshes those with each release. ' +
+            `A card marked <strong>override</strong> is this workspace's own, from <code>${OVERRIDE}</code>, and an edit ` +
+            'here always lands there.');
+          const err = priceTable.override?.error;
+          if (err) {
+            warn = true;
+            parts.push(`<strong>Lucidos is ignoring <code>${OVERRIDE}</code>:</strong> ${esc(err)}. None of its cards ` +
+              'count until the file is fixed by hand, and prices cannot be edited here until then.');
+          }
+        }
+        el.innerHTML = parts.join(' ');
+        el.className = 'sec-note' + (warn ? ' dirty-dot' : '');
+      }
+
       function renderSettings() {
-        if (!draft) draft = JSON.parse(JSON.stringify(pricing || DEFAULT_PRICING));
-        document.getElementById('rates-source').style.display =
-          usingDefaultRates ? '' : 'none';
+        if (!draft) draft = JSON.parse(JSON.stringify(pricing || { currency: 'USD', models: {}, ...DEFAULT_SETTINGS }));
+        renderPriceStatus();
         if (!draft.currency) draft.currency = 'USD';
         if (!draft.fx || typeof draft.fx !== 'object') draft.fx = { rates: {} };
         if (!draft.fx.rates) draft.fx.rates = {};
@@ -3018,20 +3556,9 @@
           'in the JSON as <code>long</code>. The split between short and long tokens happens in the hourly ' +
           'rollup, which rebuilds every day on its next run when a threshold changes.';
         document.getElementById('fx-base-label').textContent = draft.currency;
+        document.getElementById('base-currency-name').textContent = draft.currency;
 
         renderRateList();
-
-        // Long-context premium
-        const lc = draft.long_context_multiplier || (draft.long_context_multiplier = {});
-        const bindLc = (elId, key, step) => {
-          const el = document.getElementById(elId);
-          el.value = String(lc[key] ?? 0);
-          el.step = step;
-          el.oninput = () => { lc[key] = parseFloat(el.value) || 0; markDirty(); };
-        };
-        bindLc('lc-threshold', 'threshold_tokens', '1000');
-        bindLc('lc-in', 'in_multiplier', '0.1');
-        bindLc('lc-out', 'out_multiplier', '0.1');
 
         // Producer labels
         const pbody = document.getElementById('producer-body');
@@ -3057,27 +3584,6 @@
           tr.appendChild(actions);
           pbody.appendChild(tr);
         }
-
-        // Base currency. Rebuilt as a managed Select each pass, because the
-        // option list grows as currencies are added to the table below.
-        const baseSlot = document.getElementById('base-currency-slot');
-        const baseCodes = [...new Set([draft.currency].concat(
-          Object.keys(draft.fx.rates), Object.keys(CURRENCY_NAMES)))].sort();
-        if (baseSelect) baseSelect.destroy();
-        baseSelect = lucidos.ui.Select.create({
-          options: baseCodes.map((c) => ({ value: c, label: ccyLabel(c) })),
-          value: draft.currency,
-          onChange: (v) => {
-            // Only the unit the typed rates are read as changes. The rates
-            // themselves are left exactly as entered, deliberately: silently
-            // multiplying them here would compound on every switch.
-            draft.currency = v;
-            draft.fx.rates[v] = 1;
-            markDirty();
-            renderSettings();
-          },
-        });
-        baseSlot.appendChild(baseSelect.element);
 
         // Exchange rates, base excluded: its rate is definitionally 1 and an
         // editable field for it is just a way to break every other figure.
@@ -3115,17 +3621,20 @@
           stamp ? `Rates as of ${stamp}` : 'Rates have never been refreshed';
       }
 
+      // Settings sit behind the gear: rates, currency and sounds are set once
+      // and rarely touched, so they get no permanent tab beside the numbers.
+      let onSettings = false;
       function showTab(which) {
-        const settings = which === 'settings';
-        document.getElementById('view-dashboard').style.display = settings ? 'none' : '';
-        document.getElementById('view-settings').style.display = settings ? '' : 'none';
-        document.getElementById('tab-dashboard').classList.toggle('active', !settings);
-        document.getElementById('tab-settings').classList.toggle('active', settings);
-        if (settings) renderSettings();
+        onSettings = which === 'settings';
+        document.getElementById('view-dashboard').style.display = onSettings ? 'none' : '';
+        document.getElementById('view-settings').style.display = onSettings ? '' : 'none';
+        const gear = document.getElementById('tab-settings');
+        gear.classList.toggle('active', onSettings);
+        gear.setAttribute('aria-pressed', String(onSettings));
+        if (onSettings) renderSettings();
       }
 
-      document.getElementById('tab-dashboard').addEventListener('click', () => showTab('dashboard'));
-      document.getElementById('tab-settings').addEventListener('click', () => showTab('settings'));
+      document.getElementById('tab-settings').addEventListener('click', () => showTab(onSettings ? 'dashboard' : 'settings'));
 
       // The row "Add rate" last opened, outlined so it is found in a long table.
       let justAddedModel = null;
@@ -3138,7 +3647,7 @@
       function openAddRate(ids) {
         if (!ids.length) return;
         showTab('settings');
-        for (const id of ids) if (!draft.models[id]) draft.models[id] = [{}];
+        for (const id of ids) if (!draft.models[id]) draft.models[id] = [{ origin: 'override' }];
         justAddedModel = ids[0];
         renderSettings();
         const row = [...document.querySelectorAll('#price-body .rate-item')]
@@ -3160,7 +3669,7 @@
         let name = 'new-model';
         let n = 2;
         while (draft.models[name]) name = `new-model-${n++}`;
-        draft.models[name] = [{}];
+        draft.models[name] = [{ origin: 'override' }];
         markDirty();
         renderSettings();
       });
@@ -3326,7 +3835,12 @@
       lucidos.sse.on('DataFileWritten', (d) => {
         const path = String(d?.path || d?.event?.path || '');
         if (path.includes('token-cost/daily.json')) load();
-        else if (path.includes('token-cost/pricing.json')) onPricingWritten();
+        else if (path.includes('token-cost/threads-daily.json')) {
+          // Re-read only if it was read at all; otherwise the next Thread pick does.
+          if (threadsState !== 'idle') { threadsState = 'idle'; if (groups.includes('thread')) loadThreadsDaily(); }
+        }
+        else if (path.endsWith(OVERRIDE)) onFileWritten(OVERRIDE);
+        else if (path.endsWith(SETTINGS)) onFileWritten(SETTINGS);
       });
 
       // The first paint shows the sound controls on their defaults, then the
