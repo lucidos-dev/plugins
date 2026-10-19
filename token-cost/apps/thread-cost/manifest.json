@@ -1,9 +1,15 @@
 {
   "name": "Thread cost",
-  "description": "Live running cost per thread: today and all-time totals, top threads ranked. A row unfolds its spend per model; its arrow opens the thread. Hourly snapshot, plus each new call priced as it lands.",
+  "description": "What the thread you have open costs, sub-threads always included: total, today, model mix and the costliest sub-threads, with savings suggestions. Live on top of the hourly snapshot. Tap opens Token Cost.",
   "icon": "assets/icon.svg",
   "reveal": "on-ready",
   "kind": "widget",
   "reusable": true,
-  "origin_plugin_id": "token-cost"
+  "origin_plugin_id": "token-cost",
+  "params": {
+    "preview": {
+      "description": "Optional: small, medium or large. Draws that dashboard tile box inline, for previewing sizes.",
+      "required": false
+    }
+  }
 }

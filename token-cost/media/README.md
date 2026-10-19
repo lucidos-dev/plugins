@@ -6,7 +6,7 @@ See what your workspace spends on AI, live. Every model call the workspace makes
 
 - **The Token Cost app.** A dashboard with the running spend for the range you pick, calls, tokens in and out, and the share served from cache. A table splits the cost by model and by producer (the Lucidos Agent, Claude Code, Codex, auxiliary calls). Below it you find a live list of calls as they arrive, a cost per day chart, and how large each prompt was.
 - **Honest prices.** Each model has a price history. Each day is priced at the rate in force that day, and each call at the model that actually served it. A price change never reprices the past. You can edit any rate in Settings.
-- **The Thread cost widget.** A small live card you can show in any thread. It ranks your threads by cost, today or all time, and a row unfolds to show the spend per model. One tap on the arrow opens the thread. A filter shows the threads in flight right now.
+- **The Thread cost widget.** A small live card for the thread you have open. It shows what that thread costs, sub-threads always included: the total, today's share, the model mix and the costliest sub-threads, plus suggestions to save. It fits a small, medium or large dashboard tile. One tap opens Token Cost.
 - **Health in the header.** If the live stream drops, a gap opens behind it, or the rollup gets stale, the header says so.
 
 ## What it needs
@@ -22,7 +22,7 @@ All data stays in your workspace, under `artifacts/token-cost/`.
 
 1. Open the app and look at **By model**. Which model costs you the most?
 2. Start a chat and watch **Live calls** fill as the agent answers.
-3. Ask Lucidos to show the Thread cost widget in a thread. Switch to **In flight** while a coding agent works.
+3. Ask Lucidos to show the Thread cost widget in a thread that runs sub-threads, and watch its total grow as they work.
 4. Open **Settings** to check a rate, or add a price change from the day it took effect.
 
 ## Links

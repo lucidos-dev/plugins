@@ -8,270 +8,229 @@
 <link rel="stylesheet" href="/api/v1/sdk-iframe.css">
 <script src="/api/v1/sdk.js"></script>
 <style>
-  body { margin: 0; padding: var(--space-md); color: var(--text-primary); background: transparent; }
-  .head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-sm); }
-  .total { font-size: var(--font-size-xl); font-weight: 600; font-variant-numeric: tabular-nums; }
-  .meta { color: var(--text-muted); font-size: var(--font-size-xs); }
-  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); margin: var(--space-md) 0 var(--space-sm); }
-  .controls .pill-bar { overflow: visible; }
-  .check { display: inline-flex; align-items: center; gap: var(--space-xs); font-size: var(--font-size-xs); white-space: nowrap;
-    color: var(--text-secondary); cursor: pointer; user-select: none; }
-  .check[hidden], .controls-group[hidden], .segmented-control[hidden] { display: none; }
-  .check:has(input:disabled) { opacity: 0.45; cursor: default; }
-  .controls-group { display: contents; }
-  .list { display: flex; flex-direction: column; gap: 0.125rem; }
-  .row { border-top: 1px solid var(--border-color); }
-  .row:first-child { border-top: none; }
-  .head-row { display: grid; grid-template-columns: 1fr auto auto; gap: 0.25rem var(--space-sm); align-items: center;
-    padding: var(--space-sm) var(--space-xs); cursor: pointer; border-radius: var(--radius-control);
-    transition: background var(--duration-fast); }
-  @media (hover: hover) { .head-row:hover { background: var(--bg-secondary); } }
-  .head-row:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-  .title { display: flex; align-items: center; gap: var(--space-xs); font-size: var(--font-size-sm); min-width: 0; }
-  .title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .chev { flex: none; width: 0.75rem; height: 0.75rem; color: var(--text-muted); transition: transform var(--duration-normal); }
-  .row.open .chev { transform: rotate(90deg); }
-  .cost { font-variant-numeric: tabular-nums; font-size: var(--font-size-sm); font-weight: 600; }
-  .go { width: 1.5rem; height: 1.5rem; }
-  .go svg { width: var(--icon-size-sm); height: var(--icon-size-sm); }
-  .bar { grid-column: 1 / -1; height: 0.1875rem; background: var(--bg-secondary); border-radius: var(--radius-round); overflow: hidden; }
-  .bar i { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: transform var(--duration-normal); }
-  .sub { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--space-xs); color: var(--text-muted);
-    font-size: var(--font-size-2xs); overflow: hidden; white-space: nowrap; }
-  .sub span:last-child { overflow: hidden; text-overflow: ellipsis; }
-  /* A running thread: a still dot, never a pulse. */
-  .dot { flex: none; display: inline-block; width: 0.375rem; height: 0.375rem; border-radius: var(--radius-round); background: var(--text-secondary); }
-  .dot.waiting { background: var(--accent-yellow); }
-  /* The per-model breakdown rolls open under its row. */
-  .detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--duration-normal) ease; }
-  .row.open .detail { grid-template-rows: 1fr; }
-  .detail > div { overflow: hidden; }
-  .models { display: grid; grid-template-columns: 1fr auto auto; gap: 0.375rem var(--space-sm); align-items: center;
-    padding: 0.125rem var(--space-xs) var(--space-sm) calc(var(--space-xs) + 0.75rem + var(--space-xs));
-    font-size: var(--font-size-xs); font-variant-numeric: tabular-nums; color: var(--text-secondary); }
-  .models .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .models .calls { color: var(--text-muted); }
-  .models .share { grid-column: 1 / -1; height: 0.125rem; margin-top: -0.25rem; background: var(--bg-secondary); border-radius: var(--radius-round); overflow: hidden; }
-  .models .share i { display: block; height: 100%; background: var(--text-muted); transform-origin: left; }
-  .models .none { grid-column: 1 / -1; color: var(--text-muted); }
-  .row.entering { animation: rise var(--duration-slow) both; animation-delay: calc(var(--i) * var(--duration-fast) / 3); }
+  body { margin: 0; padding: var(--space-lg); color: var(--text-primary); background: transparent;
+    display: grid; gap: var(--space-lg); cursor: pointer; box-sizing: border-box; }
+  body:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+  .meta { color: var(--text-muted); font-size: var(--font-size-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hero { display: grid; gap: var(--space-xs); min-width: 0; }
+  .total { font-size: var(--font-size-3xl); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .today { color: var(--text-secondary); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums; }
+  .today b { color: var(--accent); font-weight: 600; }
+
+  /* Model mix: one stacked bar, each model its own fill. */
+  .mix { display: grid; gap: var(--space-sm); min-width: 0; }
+  .stack { display: flex; height: 0.5rem; border-radius: var(--radius-round); overflow: hidden; background: var(--bg-secondary); gap: 0.125rem; }
+  .stack i { display: block; height: 100%; transition: flex-grow var(--duration-normal); }
+  .legend { display: grid; gap: var(--space-xs); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums; }
+  .legend div { display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-sm); align-items: center; min-width: 0; }
+  .legend span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+  .sw { width: 0.5rem; height: 0.5rem; border-radius: var(--radius-round); }
+  .c0 { background: var(--accent); }
+  .c1 { background: var(--accent-green); }
+  .c2 { background: var(--accent-yellow); }
+  .c3 { background: var(--text-muted); }
+
+  /* Biggest threads in the tree. */
+  .subs { display: grid; gap: var(--space-sm); font-size: var(--font-size-xs); }
+  .sub { display: grid; grid-template-columns: 1fr auto; gap: 0.25rem var(--space-sm); min-width: 0; font-variant-numeric: tabular-nums; }
+  .sub span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+  .sub .bar { grid-column: 1 / -1; height: 0.1875rem; background: var(--bg-secondary); border-radius: var(--radius-round); overflow: hidden; }
+  .sub .bar i { display: block; height: 100%; background: var(--text-muted); transform-origin: left; transition: transform var(--duration-normal); }
+  .sub.root .bar i { background: var(--accent); }
+
+  /* Suggestions: a quiet tinted card, the saving in the accent. */
+  .tips { display: grid; gap: var(--space-sm); }
+  .tip { display: grid; grid-template-columns: auto 1fr; gap: var(--space-sm); align-items: start; padding: var(--space-sm) var(--space-md);
+    background: var(--bg-secondary); border-radius: var(--radius-surface); font-size: var(--font-size-xs); color: var(--text-secondary); }
+  .tip svg { width: 0.875rem; height: 0.875rem; color: var(--accent); margin-top: 0.0625rem; }
+  .tip b { color: var(--text-primary); font-weight: 600; }
+  .tip.ok svg { color: var(--accent-green); }
+
+  .empty { color: var(--text-muted); font-size: var(--font-size-sm); }
+  [hidden] { display: none !important; }
+
+  .enter { animation: rise var(--duration-slow) both; animation-delay: calc(var(--i, 0) * var(--duration-fast) / 2); }
   @keyframes rise { from { opacity: 0; transform: translateY(0.375rem); } }
-  :root[data-motion="reduce"] .row.entering { animation: none; }
-  #sentinel { height: 1px; }
-  .empty { color: var(--text-muted); font-size: var(--font-size-sm); padding: var(--space-md) var(--space-xs); }
-  /* Minimal widget window: the total and the top rows on a small card. */
-  html[data-widget-mode="minimal"] body { width: 16rem; padding: var(--space-sm) var(--space-md); background: var(--bg-primary);
-    border: 1px solid var(--border-color); border-radius: var(--radius-surface); box-sizing: border-box; }
-  html[data-widget-mode="minimal"] .controls,
-  html[data-widget-mode="minimal"] #sentinel,
-  html[data-widget-mode="minimal"] #stamp,
-  html[data-widget-mode="minimal"] .sub,
-  html[data-widget-mode="minimal"] .detail,
-  html[data-widget-mode="minimal"] .chev { display: none !important; }
-  html[data-widget-mode="minimal"] .total { font-size: var(--font-size-lg); }
-  html[data-widget-mode="minimal"] .list { margin-top: var(--space-xs); }
-  html[data-widget-mode="minimal"] .head-row { padding: 0.375rem 0; }
-  /* The window draws its controls over the top right corner here. */
-  html[data-widget-mode="docked"] #stamp { display: none; }
+  :root[data-motion="reduce"] .enter { animation: none; }
+  :root[data-motion="reduce"] .stack i, :root[data-motion="reduce"] .sub .bar i { transition: none; }
+
+  /* ---- Dashboard sizes. Inline and Canvas draw like large. ---- */
+  html[data-widget-size] body { height: 100vh; overflow: hidden; align-content: start; }
+  /* Small: one square cell. The total, the mix bar, one line of advice. */
+  html[data-widget-size="small"] body { padding: var(--space-md); gap: var(--space-md); align-content: space-between; }
+  html[data-widget-size="small"] .total { font-size: var(--font-size-2xl); }
+  html[data-widget-size="small"] .legend,
+  html[data-widget-size="small"] .subs,
+  html[data-widget-size="small"] .today { display: none; }
+  html[data-widget-size="small"] .tip { padding: 0; background: none; grid-template-columns: 1fr; }
+  html[data-widget-size="small"] .tip svg { display: none; }
+  html[data-widget-size="small"] .tip .long { display: none; }
+  html[data-widget-size="small"] .tip:not(:first-child) { display: none; }
+  /* Medium: two cells wide. Total left, mix right, one tip under. */
+  html[data-widget-size="medium"] body { padding: var(--space-md) var(--space-lg); gap: var(--space-sm) var(--space-lg);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); grid-template-rows: auto 1fr; align-content: stretch; }
+  html[data-widget-size="medium"] .total { font-size: var(--font-size-2xl); }
+  html[data-widget-size="medium"] .mix { align-content: start; padding-top: var(--space-xs); }
+  html[data-widget-size="medium"] .tips { align-self: end; min-width: 0; }
+  html[data-widget-size="medium"] .tip { padding: var(--space-xs) var(--space-sm); grid-template-columns: auto minmax(0, 1fr); align-items: center; }
+  html[data-widget-size="medium"] .tip .long { display: none; }
+  html[data-widget-size="medium"] .tip > :last-child { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  html[data-widget-size="medium"] .tips { grid-column: 1 / -1; }
+  html[data-widget-size="medium"] .tip:not(:first-child) { display: none; }
+  html[data-widget-size="medium"] .subs { display: none; }
+  html[data-widget-size="medium"] .legend div:nth-child(n+3) { display: none; }
+  /* Large: two by two. Everything, three subs, two tips. */
+  html[data-widget-size="large"] .subs .sub:nth-child(n+4) { display: none; }
+  html[data-widget-size="large"] .tip:nth-child(n+3) { display: none; }
+  /* Preview: param preview=small|medium|large draws one tile box inline. 10rem cell, 0.75rem gap. */
+  html.preview body { height: auto; width: 100%; max-width: 20.75rem; margin: 0 auto; outline: 1px dashed var(--border-color); outline-offset: -1px; overflow: hidden; }
+  html.preview[data-widget-size="small"] body { max-width: 10rem; height: 10rem; }
+  html.preview[data-widget-size="medium"] body { height: 10rem; }
+  html.preview[data-widget-size="large"] body { height: 20.75rem; }
 </style>
 </head>
-<body>
-  <div class="head">
-    <div>
-      <div class="meta" id="label">Today</div>
-      <div class="total" id="total">…</div>
-    </div>
-    <div class="meta" id="stamp"></div>
+<body tabindex="0" role="link" aria-label="Open Token Cost">
+  <div class="hero">
+    <div class="meta" id="label">This thread</div>
+    <div class="total" id="total">…</div>
+    <div class="today" id="today"></div>
   </div>
-  <div class="controls">
-    <div class="segmented-control" role="group" aria-label="Scope" id="scope" hidden>
-      <button class="segmented-btn" id="sc-all">All threads</button>
-      <button class="segmented-btn" id="f-this">This thread</button>
-    </div>
-    <div class="controls-group" id="all-controls">
-      <div class="segmented-control" role="group" aria-label="Period">
-        <button class="segmented-btn" id="b-today">Today</button>
-        <button class="segmented-btn" id="b-all">All time</button>
-        <button class="segmented-btn" id="b-flight">In flight</button>
-      </div>
-      <div class="segmented-control" role="group" aria-label="Sort by">
-        <button class="segmented-btn" id="s-cost">Top cost</button>
-        <button class="segmented-btn" id="s-latest">Latest</button>
-      </div>
-    </div>
-    <label class="check" id="subs-wrap" hidden><input type="checkbox" id="f-subs"> <span id="subs-text">Sub-threads</span></label>
+  <div class="mix" id="mix" hidden>
+    <div class="stack" id="stack"></div>
+    <div class="legend" id="legend"></div>
   </div>
-  <div class="list" id="list"></div>
-  <div id="sentinel" aria-hidden="true"></div>
+  <div class="subs" id="subs" hidden></div>
+  <div class="tips" id="tips"></div>
   <svg width="0" height="0" style="position:absolute">
-    <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></symbol>
-    <symbol id="i-go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></symbol>
+    <symbol id="i-tip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></symbol>
+    <symbol id="i-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></symbol>
   </svg>
 <script>
 lucidos.ui.applyPreferences();
 lucidos.ui.watchPreferences();
 const PATH = 'artifacts/token-cost/threads-cost.json';
-const PAGE = 20; // rows added each time the list end scrolls into view
-let data = null, mode = 'today', shown = PAGE, rowCount = 0;
 const usd = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const short = m => (m || '').replace(/^claude-/, '').replace(/-preview$/, '');
-let sort = 'cost', flight = false, active = new Map();
-let thisOnly = false, focus = null;
-let withSubs = false, subIds = new Set(), subsFor = null;
-const opened = new Set();
-const MINIMAL_ROWS = 3;
-const minimal = () => document.documentElement.dataset.widgetMode === 'minimal';
-// The host stamps the window mode after load, and changes it on a switch.
-new MutationObserver(() => render(false)).observe(document.documentElement, { attributes: true, attributeFilter: ['data-widget-mode'] });
-const icon = id => `<svg aria-hidden="true"><use href="#${id}"/></svg>`;
+const short = m => (m || '').replace(/^claude-/, '').replace(/-preview$/, '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-(\d)$/, ' $1');
 const ms = v => (typeof v === 'number' ? v : Date.parse(v || '') || 0);
-function ago(t) {
-  if (!t) return '';
-  const m = Math.max(0, Math.round((Date.now() - t) / 60000));
-  if (m < 1) return 'just now';
-  if (m < 60) return m + ' min ago';
-  const h = Math.round(m / 60);
-  return h < 24 ? h + ' h ago' : Math.round(h / 24) + ' d ago';
+let data = null, focus = null, subIds = new Set(), subsFor = null, visible = true, drawn = false;
+let live = new Map(), seen = new Set(), lastUsage = new Map(), titles = new Map(), dirty = false;
+
+// Tap anywhere opens the Token Cost app.
+const open = () => lucidos.ui.navigate('app', { app_id: 'token-cost' });
+document.body.addEventListener('click', open);
+document.body.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+
+// ---- Snapshot lookup -----------------------------------------------------
+function find(tid) {
+  const top = data.top_all.find(r => r.id === tid) || data.top_today.find(r => r.id === tid);
+  if (top) return top;
+  const c = data.rest && data.rest[tid];
+  if (!c) return undefined;
+  const [title, all, today, calls, last, byModel] = c;
+  const models = {};
+  for (const [k, [a, t, n]] of Object.entries(byModel || {})) models[k] = { all: a, today: t, calls: n };
+  return { id: tid, title: title || 'Untitled', all, today, calls, last, models };
 }
-function setBtn(id, on) { const b = document.getElementById(id); b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }
-function render(animate) {
-  if (!data) return;
-  // This thread has no period or sort: it shows the thread's whole spend, top cost first.
-  const key = thisOnly ? 'all' : (mode === 'today' ? 'today' : 'all');
-  const byId = pool(key);
-  let rows = [...byId.values()];
-  if (flight && !thisOnly) {
-    for (const [id, t] of active) if (!byId.has(id)) {
-      const base = find(id);
-      rows.push(base ? { ...base } : { id, title: t.title || 'Untitled', all: 0, today: 0, calls: 0, models: {} });
+// One thread's spend: snapshot plus calls priced live since it was built.
+function threadCost(tid) {
+  const base = find(tid);
+  const r = { id: tid, title: (base && base.title) || titles.get(tid) || 'Untitled', all: base ? base.all : 0, today: base ? base.today : 0,
+    calls: base ? base.calls : 0, models: {} };
+  for (const [k, v] of Object.entries((base && base.models) || {})) r.models[k] = { ...v };
+  const e = live.get(tid);
+  if (e) {
+    r.all += e.cost; r.today += e.cost; r.calls += e.calls;
+    for (const [k, v] of Object.entries(e.models)) {
+      const o = r.models[k] || { all: 0, today: 0, calls: 0 };
+      r.models[k] = { all: o.all + v.cost, today: o.today + v.cost, calls: o.calls + v.calls };
     }
-    rows = rows.filter(r => active.has(r.id));
-    rows.forEach(r => { const t = active.get(r.id); r.status = t.status; if (!r.lastMs) r.lastMs = ms(t.last_activity); });
-  } else if (mode === 'today' && !thisOnly) rows = rows.filter(r => r.today > 0);
-  let subCount = 0;
-  // The tree is walked whenever This thread is shown, so the box knows if
-  // there is anything to add. Until the walk lands, and on a thread with no
-  // sub-threads, the box is disabled and the headline is this thread alone.
-  const known = !!focus && subsFor === focus;
-  const hasSubs = known && subIds.size > 0;
-  const useSubs = withSubs && hasSubs;
-  if (thisOnly) {
-    if (focus && !rows.some(r => r.id === focus)) {
-      const base = find(focus), t = active.get(focus);
-      rows.push(base ? { ...base, lastMs: ms(base.last) } : { id: focus, title: titles.get(focus) || (t && t.title) || 'This thread', all: 0, today: 0, calls: 0, models: {}, lastMs: 0 });
-    }
-    const ids = new Set([focus]);
-    if (useSubs) {
-      subCount = subIds.size;
-      for (const id of subIds) {
-        ids.add(id);
-        // A sub-thread outside the period's pool still counts if the snapshot knows its spend.
-        if (!rows.some(r => r.id === id)) { const base = find(id); if (base && base[key] > 0) rows.push({ ...base, lastMs: ms(base.last) }); }
-      }
-    }
-    rows = rows.filter(r => ids.has(r.id));
   }
-  rows.sort(sort === 'latest' && !thisOnly ? (a, b) => b.lastMs - a.lastMs : (a, b) => b[key] - a[key]);
-  const sum = rows.reduce((n, r) => n + r[key], 0);
-  document.getElementById('subs-wrap').hidden = !thisOnly;
-  document.getElementById('all-controls').hidden = thisOnly;
-  const box = document.getElementById('f-subs');
-  box.disabled = !hasSubs;
-  box.checked = useSubs;
-  document.getElementById('subs-wrap').dataset.tooltip = !known ? 'Looking for sub-threads' : hasSubs ? '' : 'This thread has no sub-threads';
-  document.getElementById('subs-text').textContent = hasSubs ? `Sub-threads (${subIds.size})` : 'Sub-threads';
-  document.getElementById('label').textContent = thisOnly
-    ? 'This thread' + (useSubs ? ` + ${subCount} sub-thread${subCount === 1 ? '' : 's'}` : '')
-    : flight
-    ? `In flight, ${rows.length} thread${rows.length === 1 ? '' : 's'}`
-    : (mode === 'today' ? 'Today, all threads' : `All time, ${data.threads.toLocaleString()} threads`);
-  document.getElementById('total').textContent = usd(flight || thisOnly ? sum : (mode === 'today' ? data.total_today + liveToday : data.total_all + liveAll));
-  document.getElementById('stamp').textContent = 'Live';
-  setBtn('b-today', mode === 'today'); setBtn('b-all', mode === 'all'); setBtn('b-flight', mode === 'flight');
-  setBtn('s-cost', sort === 'cost'); setBtn('s-latest', sort === 'latest');
-  setBtn('sc-all', !thisOnly); setBtn('f-this', thisOnly);
-  const max = Math.max(0.0001, ...rows.map(r => r[key]));
-  const list = document.getElementById('list');
-  list.innerHTML = '';
-  if (!rows.length) {
-    const e = document.createElement('div'); e.className = 'empty';
-    e.textContent = thisOnly ? (focus ? 'No spend recorded for this thread yet.' : 'Open a thread to see its cost.') : flight ? 'Nothing in flight right now.' : 'No threads yet.';
-    list.appendChild(e);
-  }
-  rows.slice(0, minimal() ? MINIMAL_ROWS : shown).forEach((r, i) => list.appendChild(rowEl(r, i, key, max, animate)));
-  rowCount = rows.length;
+  return r;
 }
-// One thread: its title, cost and bar. A click unfolds its spend per model;
-// the arrow button opens the thread.
-function rowEl(r, i, key, max, animate) {
-  const el = document.createElement('div');
-  el.className = 'row' + (opened.has(r.id) ? ' open' : '') + (animate ? ' entering' : '');
-  el.style.setProperty('--i', i);
-  const headRow = document.createElement('div'); headRow.className = 'head-row';
-  headRow.tabIndex = 0; headRow.setAttribute('role', 'button');
-  headRow.setAttribute('aria-expanded', String(opened.has(r.id)));
-  const title = document.createElement('div'); title.className = 'title';
-  title.insertAdjacentHTML('beforeend', `<svg class="chev" aria-hidden="true"><use href="#i-chev"/></svg>`);
-  const text = document.createElement('span'); text.className = 'title-text'; text.textContent = r.title;
-  title.appendChild(text);
-  const cost = document.createElement('div'); cost.className = 'cost'; cost.textContent = usd(r[key]);
-  const go = document.createElement('button'); go.className = 'icon-btn go'; go.type = 'button';
-  go.setAttribute('aria-label', `Open ${r.title}`); go.dataset.tooltip = 'Open thread'; go.innerHTML = icon('i-go');
-  go.addEventListener('click', e => { e.stopPropagation(); lucidos.ui.navigate('thread', { id: r.id }); });
-  const bar = document.createElement('div'); bar.className = 'bar';
-  const fill = document.createElement('i'); fill.style.transform = `scaleX(${Math.max(0.02, r[key] / max)})`; bar.appendChild(fill);
-  const sub = document.createElement('div'); sub.className = 'sub';
-  if (r.status) { const d = document.createElement('span'); d.className = 'dot' + (r.status === 'running' ? '' : ' waiting'); sub.appendChild(d); }
-  const bits = [];
-  if (r.status) bits.push(r.status === 'running' ? 'running' : 'waiting on you');
-  const models = breakdown(r, key);
-  if (models.length) bits.push(short(models[0].name) + (models.length > 1 ? ` +${models.length - 1}` : ''));
-  bits.push(r.calls ? `${r.calls.toLocaleString()} calls` : 'no calls yet');
-  if (!thisOnly && (sort === 'latest' || flight)) bits.push(ago(r.lastMs));
-  if (key === 'today' && r.all > r.today) bits.push(`${usd(r.all)} all time`);
-  const subText = document.createElement('span'); subText.textContent = bits.filter(Boolean).join(' · ');
-  sub.appendChild(subText);
-  headRow.append(title, cost, go, bar, sub);
-  const detail = document.createElement('div'); detail.className = 'detail';
-  const inner = document.createElement('div');
-  const box = document.createElement('div'); box.className = 'models';
-  if (!models.length) {
-    const none = document.createElement('span'); none.className = 'none'; none.textContent = 'No priced calls in this period.';
-    box.appendChild(none);
-  }
-  const top = Math.max(0.0001, ...models.map(m => m.cost));
+
+// ---- Suggestions -----------------------------------------------------------
+// Each is a plain heuristic over the model mix and call counts the snapshot
+// holds. The saving is a rate-card estimate, never a measured value.
+function rateOf(m) { const k = rateKey(m); return k ? data.rates[k] : null; }
+function blended(r) { return r ? (r.in + r.out) : 0; }
+function suggest(tree, models, total, calls) {
+  const out = [];
+  if (total < 0.5) return out;
+  const cheaper = { 'claude-opus-5-5': 'claude-sonnet-5-5', 'claude-opus-5': 'claude-opus-5-5', 'claude-fable-5': 'claude-opus-5-5', 'claude-fable-5-1': 'claude-opus-5-5' };
   for (const m of models) {
-    const name = document.createElement('span'); name.className = 'name'; name.textContent = short(m.name);
-    const calls = document.createElement('span'); calls.className = 'calls'; calls.textContent = `${m.calls.toLocaleString()} calls`;
-    const c = document.createElement('span'); c.textContent = m.cost < 0.005 ? '<$0.01' : usd(m.cost);
-    const share = document.createElement('span'); share.className = 'share';
-    const s = document.createElement('i'); s.style.transform = `scaleX(${Math.max(0.02, m.cost / top)})`; share.appendChild(s);
-    box.append(name, calls, c, share);
+    const to = cheaper[m.name];
+    if (!to || m.cost / total < 0.25) continue;
+    const a = blended(rateOf(m.name)), b = blended(rateOf(to));
+    if (!a || !b || b >= a) continue;
+    const save = m.cost * (1 - b / a);
+    if (save < 0.25) continue;
+    const retired = /fable|opus-5$/.test(m.name);
+    out.push({ score: save, html: retired
+      ? `<b>${short(m.name)}</b> is off your list. On ${short(to)} this spend would be about <b>${usd(m.cost - save)}</b>.`
+      : `<b>${Math.round(m.cost / total * 100)}%</b> is ${short(m.name)}. Simple sub-tasks on ${short(to)} would save up to <b>${usd(save)}</b><span class="long">, about ${Math.round(save / m.cost * 100)}% of it</span>.` });
   }
-  inner.appendChild(box); detail.appendChild(inner);
-  el.append(headRow, detail);
-  // Toggled in place, so the roll runs; the next render keeps the state.
-  const toggle = () => {
-    const open = !opened.has(r.id);
-    if (open) opened.add(r.id); else opened.delete(r.id);
-    el.classList.toggle('open', open);
-    headRow.setAttribute('aria-expanded', String(open));
-  };
-  headRow.addEventListener('click', toggle);
-  headRow.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
-  return el;
+  const per = calls ? total / calls : 0;
+  if (calls >= 40 && per >= 0.12) out.push({ score: total * 0.3, html:
+    `<b>${usd(per)}</b> per call is high<span class="long">, a sign of a long context</span>. A fresh thread for the next step would cut it.` });
+  const kids = tree.filter(r => r.id !== focus).sort((a, b) => b.all - a.all);
+  if (kids.length && kids[0].all / total >= 0.5) out.push({ score: kids[0].all * 0.2, html:
+    `One sub-thread is <b>${Math.round(kids[0].all / total * 100)}%</b> of the spend<span class="long">: ${esc(kids[0].title)}</span>.` });
+  if (!out.length) out.push({ ok: true, score: 0, html: `Spend looks lean<span class="long">: no expensive model share and no long-context sign</span>.` });
+  return out.sort((a, b) => b.score - a.score);
 }
-document.getElementById('b-today').onclick = () => { mode = 'today'; flight = false; shown = PAGE; render(true); };
-document.getElementById('b-all').onclick = () => { mode = 'all'; flight = false; shown = PAGE; render(true); };
-// In flight is a period of its own: the running threads, each at its whole spend so far.
-document.getElementById('b-flight').onclick = async () => { mode = 'flight'; flight = true; shown = PAGE; await loadActive(); render(true); };
-document.getElementById('s-cost').onclick = () => { sort = 'cost'; shown = PAGE; render(true); };
-document.getElementById('s-latest').onclick = () => { sort = 'latest'; shown = PAGE; render(true); };
-document.getElementById('sc-all').onclick = () => { if (!thisOnly) return; thisOnly = false; shown = PAGE; render(true); };
-document.getElementById('f-this').onclick = () => { if (thisOnly) return; thisOnly = true; shown = PAGE; render(true); loadSubs(); };
-document.getElementById('f-subs').onchange = e => { withSubs = e.target.checked; shown = PAGE; render(true); };
-// Every descendant of the focused thread, walked level by level through
-// threads.list({ parent }), which returns direct children only.
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ---- Render ----------------------------------------------------------------
+function render() {
+  if (!data) return;
+  const $ = id => document.getElementById(id);
+  const anim = !drawn;
+  if (!focus) {
+    $('label').textContent = 'No thread open';
+    $('total').textContent = '—';
+    $('today').textContent = '';
+    $('mix').hidden = true; $('subs').hidden = true;
+    $('tips').innerHTML = '<div class="empty">Open a thread to see what it costs.</div>';
+    return;
+  }
+  const known = subsFor === focus;
+  const ids = [focus, ...(known ? subIds : [])];
+  const tree = ids.map(threadCost);
+  const total = tree.reduce((n, r) => n + r.all, 0);
+  const today = tree.reduce((n, r) => n + r.today, 0);
+  const calls = tree.reduce((n, r) => n + r.calls, 0);
+  const mm = {};
+  for (const r of tree) for (const [k, v] of Object.entries(r.models)) {
+    const o = mm[k] || (mm[k] = { name: k, cost: 0, calls: 0 }); o.cost += v.all || 0; o.calls += v.calls || 0;
+  }
+  const models = Object.values(mm).filter(m => m.cost > 0).sort((a, b) => b.cost - a.cost);
+  const n = known ? subIds.size : 0;
+  $('label').textContent = n ? `This thread + ${n} sub-thread${n === 1 ? '' : 's'}` : 'This thread';
+  $('total').textContent = usd(total);
+  $('today').innerHTML = calls ? `<b>${usd(today)}</b> today · ${calls.toLocaleString()} calls` : 'No calls yet';
+
+  // Mix: top three models, the rest folded into one.
+  const top = models.slice(0, 3), rest = models.slice(3).reduce((s, m) => s + m.cost, 0);
+  const parts = top.map((m, i) => ({ name: short(m.name), cost: m.cost, c: 'c' + i }));
+  if (rest > 0) parts.push({ name: `${models.length - 3} more`, cost: rest, c: 'c3' });
+  $('mix').hidden = !parts.length;
+  $('stack').innerHTML = parts.map(p => `<i class="${p.c}" style="flex-grow:${Math.max(p.cost / total, 0.01)}"></i>`).join('');
+  $('legend').innerHTML = parts.map(p => `<div><span class="sw ${p.c}"></span><span>${esc(p.name)}</span><span>${p.cost < 0.005 ? '<$0.01' : usd(p.cost)}</span></div>`).join('');
+
+  // Subs: only worth showing when the tree has more than the root.
+  const ranked = tree.filter(r => r.all > 0).sort((a, b) => b.all - a.all);
+  const max = Math.max(0.0001, ...ranked.map(r => r.all));
+  $('subs').hidden = tree.length < 2;
+  $('subs').innerHTML = ranked.slice(0, 6).map((r, i) =>
+    `<div class="sub${r.id === focus ? ' root' : ''}${anim ? ' enter' : ''}" style="--i:${i}"><span>${r.id === focus ? 'This thread' : esc(titles.get(r.id) || r.title)}</span><span>${usd(r.all)}</span><span class="bar"><i style="transform:scaleX(${Math.max(0.02, r.all / max)})"></i></span></div>`).join('');
+
+  const tips = suggest(tree, models, total, calls);
+  $('tips').innerHTML = tips.map((t, i) =>
+    `<div class="tip${t.ok ? ' ok' : ''}${anim ? ' enter' : ''}" style="--i:${i + 1}"><svg aria-hidden="true"><use href="#${t.ok ? 'i-ok' : 'i-tip'}"/></svg><span>${t.html}</span></div>`).join('');
+  drawn = true;
+}
+
+// ---- Sub-thread tree, walked level by level --------------------------------
 async function loadSubs() {
   const root = focus;
   if (!root) { subIds = new Set(); subsFor = null; dirty = true; return; }
@@ -286,7 +245,7 @@ async function loadSubs() {
           const cid = t.thread_id || t.id;
           if (!cid || cid === root || found.has(cid)) continue;
           found.add(cid); next.push(cid);
-          if (t.title && !titles.get(cid)) titles.set(cid, t.title);
+          if (t.title) titles.set(cid, t.title);
         }
       } catch (e) {}
     }));
@@ -294,35 +253,8 @@ async function loadSubs() {
   }
   if (focus === root) { subIds = found; subsFor = root; dirty = true; }
 }
-// New sub-threads spawn while you watch, so the tree is re-walked.
-setInterval(() => { if (thisOnly && !document.hidden) loadSubs(); }, 15000);
-// Infinite scroll: when the list end comes into view, add the next page.
-// Re-observing after a render makes the observer fire again if the end is
-// still visible (a tall window), so it keeps filling until it can scroll.
-const sentinel = document.getElementById('sentinel');
-const io = new IntersectionObserver(entries => {
-  if (!entries.some(e => e.isIntersecting) || minimal() || shown >= rowCount) return;
-  shown += PAGE; render(false);
-  io.unobserve(sentinel); io.observe(sentinel);
-}, { rootMargin: '0px 0px 200px 0px' });
-io.observe(sentinel);
-async function loadActive() {
-  try {
-    const rows = await lucidos.threads.list({ active: true, limit: 1000 });
-    active = new Map((rows || []).map(t => [t.thread_id || t.id, t]));
-    for (const [id, t] of active) if (titles.has(id) && !titles.get(id) && t.title) titles.set(id, t.title);
-    dirty = true;
-  } catch (e) {}
-}
-setInterval(() => { if (flight && !document.hidden) loadActive(); }, 10000);
-// ---- Live: price every new call on top of the snapshot ----------------
-// The snapshot (rebuilt hourly by scripts/token-cost/thread_costs.py) holds
-// totals up to `last_sequence` plus today's rate card per model. Calls after
-// the cursor arrive over SSE (and a catch-up query on load) and are priced
-// here with the same rules: served model wins when another model answered,
-// long tier above its threshold, repeated Claude Code usage frames dropped.
-let live = new Map(), seen = new Set(), lastUsage = new Map(), titles = new Map();
-let liveToday = 0, liveAll = 0, dirty = false;
+
+// ---- Live pricing on top of the hourly snapshot ----------------------------
 const undated = id => id.replace(/-\d{3,}(?:-\d+)*$/, '');
 function servedAsSent(sent, served) {
   const bare = id => String(id || '').split('/').pop().replace(/\[1m\]$/, '').replace(/@/g, '-').toLowerCase();
@@ -352,7 +284,8 @@ function priceCall(p) {
   if (r.long && (r.long.inclusive ? i >= r.long.t : i > r.long.t)) r = r.long;
   return { model: k, cost: (Math.max(0, i - cr - cw) * r.in + cr * r.cr + cw * r.cw + o * r.out) / 1e6 };
 }
-function fold(seq, tid, p, at) {
+const tracked = tid => tid === focus || subIds.has(tid);
+function fold(seq, tid, p) {
   if (!data || !p || !p.usage || !tid) return;
   if (seq != null) { if (seq <= (data.last_sequence || 0) || seen.has(seq)) return; seen.add(seq); }
   if (p.producer === 'claude_code') {
@@ -362,62 +295,11 @@ function fold(seq, tid, p, at) {
   }
   const c = priceCall(p);
   if (!c) return;
-  const e = live.get(tid) || { cost: 0, calls: 0, models: {}, last: 0 };
-  e.cost += c.cost; e.calls += 1; e.last = Math.max(e.last, at || Date.now()); live.set(tid, e);
+  const e = live.get(tid) || { cost: 0, calls: 0, models: {} };
+  e.cost += c.cost; e.calls += 1; live.set(tid, e);
   const m = e.models[c.model] || (e.models[c.model] = { cost: 0, calls: 0 });
   m.cost += c.cost; m.calls += 1;
-  liveToday += c.cost; liveAll += c.cost; dirty = true;
-  if (!titles.has(tid) && !find(tid)) titles.set(tid, null);
-}
-// The period's spend per model, most expensive first.
-function breakdown(r, key) {
-  return Object.entries(r.models || {}).map(([name, v]) => ({ name, cost: v[key] || 0, calls: v.calls || 0 }))
-    .filter(m => m.cost > 0).sort((a, b) => b.cost - a.cost);
-}
-const listed = tid => data.top_all.find(r => r.id === tid) || data.top_today.find(r => r.id === tid);
-// A thread in neither list comes from the snapshot's compact `rest` map.
-function find(tid) {
-  const top = listed(tid);
-  if (top) return top;
-  const c = data.rest && data.rest[tid];
-  if (!c) return undefined;
-  const [title, all, today, calls, last, byModel] = c;
-  const models = {};
-  for (const [k, [a, t, n]] of Object.entries(byModel || {})) models[k] = { all: a, today: t, calls: n };
-  return { id: tid, title: title || 'Untitled', all, today, calls, last, models };
-}
-function pool(key) {
-  // Today: every thread with spend today. All time: the 300 most expensive plus
-  // today's threads, so "Latest" also finds recent cheap threads.
-  const src = key === 'today' ? data.top_today : [...data.top_all, ...data.top_today];
-  const byId = new Map();
-  for (const r of src) if (!byId.has(r.id)) byId.set(r.id, { ...r, lastMs: ms(r.last) });
-  for (const [tid, e] of live) {
-    let r = byId.get(tid);
-    if (!r) {
-      const base = find(tid);
-      r = base ? { ...base, lastMs: ms(base.last) } : { id: tid, title: titles.get(tid) || (active.get(tid) || {}).title || 'New thread', all: 0, today: 0, calls: 0, models: {}, lastMs: 0 };
-      byId.set(tid, r);
-    }
-    r.all += e.cost; r.today += e.cost; r.calls += e.calls; r.live = true;
-    // New objects, so the snapshot's own models are never mutated across renders.
-    r.models = { ...r.models };
-    for (const [k, v] of Object.entries(e.models)) {
-      const o = r.models[k] || { all: 0, today: 0, calls: 0 };
-      r.models[k] = { all: o.all + v.cost, today: o.today + v.cost, calls: o.calls + v.calls };
-    }
-    if (e.last > r.lastMs) r.lastMs = e.last;
-  }
-  return byId;
-}
-async function fillTitles() {
-  const missing = [...titles].filter(([, t]) => !t).map(([id]) => id);
-  if (!missing.length) return;
-  try {
-    const rows = await lucidos.threads.list({ limit: 300 });
-    for (const t of rows || []) { const id = t.thread_id || t.id; if (titles.has(id) && t.title) titles.set(id, t.title); }
-    dirty = true;
-  } catch (e) {}
+  if (tracked(tid)) dirty = true;
 }
 async function catchUp() {
   const cursor = data.last_sequence || 0, rows = [];
@@ -432,49 +314,59 @@ async function catchUp() {
     if (done || got.length < 500) break;
     before = got[got.length - 1].id;
   }
-  rows.reverse().forEach(r => fold(r.sequence, r.thread_id, r.payload, ms(r.created_at || r.created || r.timestamp)));
-  fillTitles();
+  rows.reverse().forEach(r => fold(r.sequence, r.thread_id, r.payload));
 }
-setInterval(() => { if (dirty) { dirty = false; render(false); } }, 1000);
-setInterval(fillTitles, 30000);
-
-async function load(animate) {
+async function load() {
   try {
-    const fresh = JSON.parse(await lucidos.data.read(PATH));
-    const first = !data;
-    data = fresh;
-    // Drop live calls the new snapshot now covers, and rebuild the tail.
-    live = new Map(); seen = new Set([...seen].filter(s => s > (data.last_sequence || 0))); liveToday = 0; liveAll = 0;
-    render(animate);
+    data = JSON.parse(await lucidos.data.read(PATH));
+    live = new Map(); seen = new Set([...seen].filter(s => s > (data.last_sequence || 0)));
+    render();
     await catchUp();
-    render(false);
-    if (first) lucidos.ui.ready && lucidos.ui.ready();
+    render();
   } catch (e) {
     if (!data) document.getElementById('total').textContent = 'No data yet';
-    lucidos.ui.ready && lucidos.ui.ready();
   }
+  lucidos.ui.ready && lucidos.ui.ready();
 }
-// Focused thread: the thread in the main pane, null on an empty compose.
+
+// ---- Wiring ----------------------------------------------------------------
+let ticks = [];
+function startTimers() {
+  stopTimers();
+  ticks.push(setInterval(() => { if (dirty) { dirty = false; render(); } }, 1000));
+  ticks.push(setInterval(loadSubs, 15000)); // new sub-threads spawn while you watch
+}
+function stopTimers() { ticks.forEach(clearInterval); ticks = []; }
+if (lucidos.widget && lucidos.widget.onVisibility) lucidos.widget.onVisibility(v => {
+  visible = v; if (v) { loadSubs(); startTimers(); render(); } else stopTimers();
+});
+if (lucidos.widget && lucidos.widget.onSize) lucidos.widget.onSize(() => render());
+
+const PREVIEW = (() => { try { const v = (lucidos.params() || {}).preview; return ['small','medium','large'].includes(v) ? v : null; } catch (e) { return null; } })();
+function pinPreview() {
+  if (!PREVIEW) return;
+  const el = document.documentElement;
+  if (!el.classList.contains('preview')) el.classList.add('preview');
+  if (el.dataset.widgetSize !== PREVIEW) el.dataset.widgetSize = PREVIEW;
+}
+pinPreview();
+if (PREVIEW) new MutationObserver(pinPreview).observe(document.documentElement, { attributes: true, attributeFilter: ['data-widget-size', 'class'] });
+
 (async () => {
-  try {
-    focus = await lucidos.ui.focusedThread();
-  } catch (e) {
-    return; // Not inside Lucidos: no thread to follow, so the filter stays hidden.
-  }
-  document.getElementById('scope').hidden = false;
-  lucidos.ui.onFocusedThreadChange(id => { focus = id; if (thisOnly) { render(false); loadSubs(); } });
-  render(false);
+  try { focus = await lucidos.ui.focusedThread(); } catch (e) { focus = null; }
+  try { lucidos.ui.onFocusedThreadChange(id => { focus = id; subIds = new Set(); subsFor = null; drawn = false; render(); loadSubs(); }); } catch (e) {}
+  await load();
+  await loadSubs();
+  render();
+  startTimers();
 })();
 lucidos.sse.connect();
 lucidos.sse.on('ContextCaptured', ev => {
   const p = ev && (ev.event || ev.payload || ev);
   fold(ev && (ev.seq ?? ev.sequence), ev && ev.thread_id, p);
 });
-['ArtifactUpdated', 'ArtifactCreated', 'DataFileWritten'].forEach(ev => lucidos.sse.on(ev, p => {
-  const path = String((p && (p.path || p.file_path || (p.event && p.event.path))) || '');
-  if (path.includes('threads-cost.json')) load(false);
-}));
-load(true);
+lucidos.sse.on('ArtifactUpdated', p => { if (p && p.artifact_path === 'token-cost/threads-cost.json') load(); });
+lucidos.sse.on('ArtifactCreated', p => { if (p && p.artifact_path === 'token-cost/threads-cost.json') load(); });
 </script>
 </body>
 </html>

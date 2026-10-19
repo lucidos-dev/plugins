@@ -1,7 +1,7 @@
 id = "token-cost"
-version = "0.4.3"
+version = "0.4.4"
 name = "Token Cost"
-description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, cache-hit share, context-size distribution, and per-model/per-producer cost from a dated price history: each day is priced at the rate in force that day, and each call at the model that actually served it. A dead stream, a gap behind it, or a stale rollup are each detected and named in the header. Also ships the Thread cost widget, a live per-thread cost ranking any thread can show. Ships an incremental rollup script, a per-thread snapshot script and a price-check recipe; setup fills in real prices and offers an hourly rollup, an hourly thread snapshot and a daily price check."
+description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, cache-hit share, context-size distribution, and per-model/per-producer cost from a dated price history: each day is priced at the rate in force that day, and each call at the model that actually served it. A dead stream, a gap behind it, or a stale rollup are each detected and named in the header. Also ships the Thread cost widget: what the open thread costs, sub-threads included, with its model mix and savings suggestions. Ships an incremental rollup script, a per-thread snapshot script and a price-check recipe; setup fills in real prices and offers an hourly rollup, an hourly thread snapshot and a daily price check."
 source = "https://github.com/lucidos-dev/plugins/tree/main/token-cost"
 engine = ">=0.49.0"
 categories = ["developer-tools", "data"]
