@@ -70,9 +70,37 @@ the card must say so.
 | OpenRouter | `proxy_request(name: 'openrouter', path: '/models')`, where `pricing` is USD per token | none |
 | TypeSafe | https://docs.typesafe.ai/models.md | none |
 
-Read pages with `web_search` or `browser_open`. Store the URLs you used in
-`_sources`, keyed by provider. A provider whose models this workspace never
-calls needs no reading.
+Store the URLs you used in `_sources`, keyed by provider. A provider whose
+models this workspace never calls needs no reading.
+
+### How to fetch a page
+
+The canonical price pages for the three main providers are:
+
+- Anthropic: https://platform.claude.com/docs/en/about-claude/pricing
+- OpenAI: https://developers.openai.com/api/docs/pricing
+- Google: https://ai.google.dev/gemini-api/docs/pricing
+
+Fetch every page in two steps:
+
+1. **Download it with `http_request`**, method `GET`, with `temp_path` set to a
+   bare file name (for example `pricing-anthropic.html`). The tool saves the
+   page under `.lucidos/tmp/` and reports the path.
+2. **Parse the saved file with `run_python`.** Open the path that
+   `http_request` reported, strip the HTML and pull out the rate rows. The
+   Python makes no network calls: no `urllib`, `requests`, `httpx` or
+   `socket`, and no `curl` or `wget` through `subprocess`.
+
+Do not scrape with `urllib` or `curl` inside `run_python` or `run_bash`. The
+command guard reviews those calls, and it can block them. Use `web_search`
+only to find a page whose URL moved, and `browser_open` only for a page that
+needs JavaScript to show its table. OpenRouter is the exception: read it with
+`proxy_request`, as the table above says.
+
+If the command guard blocks a call anyway, do not ask for the trigger to be
+given a side-effect permission, and do not grant one. A price check only
+reads. Fetch the page with `http_request` instead. If that fails too, record
+it as a failed source (see "When a source cannot be read").
 
 Also read each provider's model deprecation page for retired models and for
 models routed to a newer one.
