@@ -5,11 +5,16 @@ makes: chat turns, trigger fires, and coding-agent sessions alike.
 
 ## What it shows
 
-- **Spend**, over today / 7 days / 30 days / all time, per producer.
+- **Spend** over the range you pick: presets from today to all time (week,
+  month and quarter to date among them), or any two dates on a calendar.
 - **Per day** stacked bars split into fresh input, cache write, cache read and output.
-- **Analysis**, one table and chart grouped by any mix of model, producer,
-  thread and day, by cost, calls, or cached against cold calls. Sub-threads
-  fold into their root thread.
+- **Analysis**, one table and chart grouped by any mix of model, type and
+  thread, by cost, calls, or cached against cold calls. Model splits into
+  Model:effort by the reasoning effort a call named. Type folds every
+  auxiliary call into one row; Type:subtype lists each auxiliary purpose
+  (memory, titles, compaction...) and the cache keep-alive pings on their own.
+  Sub-threads fold into their root thread, and the thread you have open in
+  Lucidos is marked. Click a legend entry to filter the chart and table to it.
 - **Context size per call**, the histogram that tells you where a long-context
   premium is actually biting.
 - **Live calls**, streamed over SSE as they land, including calls from other
@@ -68,8 +73,9 @@ and the total does not depend on the order they arrive in.
 
 ## Tests
 
-`tests/run.sh` runs the accounting and freshness suites headless: it extracts the
-app's script block and runs it against DOM and SDK stubs. No browser, no build
+`tests/run.sh` runs the accounting, freshness, save, defaults and markup suites
+headless (it extracts the app's script block and runs it against DOM and SDK
+stubs), then the rollup suite in Python with SQLite standing in for Postgres. No browser, no build
 step, about a second. Every assertion pins a way the dashboard was actually able
 to go wrong.
 

@@ -128,7 +128,7 @@ tc.setDaily({...empty, days:{}});
 tc.resetLive();
 const now = Date.now();
 // The store has five calls. SSE delivered NONE of them: this is the frozen
-// dashboard Kenneth saw, connected-looking and hours behind.
+// dashboard a user saw, connected-looking and hours behind.
 //
 // They are stamped AFTER `sseOpenedAt`, which the harness pins to the epoch
 // below. The app deliberately exempts anything older than the moment this

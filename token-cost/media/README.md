@@ -4,9 +4,9 @@ See what your workspace spends on AI, live. Every model call the workspace makes
 
 ## What you get
 
-- **The Token Cost app.** A dashboard with the running spend for the range you pick, calls, tokens in and out, and the share served from cache. An analysis table and chart group the cost by any mix of model, producer, thread and day (the Lucidos Agent, Claude Code, Codex, auxiliary calls). Below it you find a live list of calls as they arrive, a cost per day chart, and how large each prompt was.
+- **The Token Cost app.** A dashboard with the running spend for the range you pick (presets from today to all time, or any two dates on a calendar), calls, tokens in and out, and the share served from cache. An analysis table and chart group the cost by any mix of model, type and thread. Split a model by reasoning effort, or a type into its parts: each auxiliary purpose (memory, titles, compaction...) and the cache keep-alive pings get a row of their own. Click a legend entry to filter to it. Below it you find a live list of calls as they arrive, a cost per day chart, and how large each prompt was.
 - **Honest prices.** Each model has a price history. Each day is priced at the rate in force that day, and each call at the model that actually served it. A price change never reprices the past. Prices come from Lucidos's own price table, and any rate you edit in Settings is saved as your workspace override.
-- **The Thread cost widget.** A small live card for the thread you have open. It shows what that thread costs, sub-threads always included: the total, today's share, the model mix and the costliest sub-threads, plus suggestions to save. It fits a small, medium or large dashboard tile. One tap opens Token Cost.
+- **The Thread cost widget.** A small live card for the thread you have open. It shows what that thread costs, sub-threads always included: the total, today's share, the model mix and the costliest sub-threads. It fits a small, medium or large dashboard tile. One tap opens Token Cost.
 - **Health in the header.** If the live stream drops, a gap opens behind it, or the rollup gets stale, the header says so.
 
 ## What it needs
