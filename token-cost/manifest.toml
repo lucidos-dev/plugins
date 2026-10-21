@@ -7,6 +7,8 @@ engine = ">=0.50.0"
 categories = ["developer-tools", "data"]
 icon = "media/icon.svg"
 screenshots = ["media/dashboard.png", "media/thread-cost-widget.png", "media/settings.png"]
+setup_revision = 1
+setup_reason = "0.4.x left a daily price-check trigger behind; it now repeats Keep prices current and its recipe is gone."
 
 setup = """
 This plugin needs four things wired up: a schedule for its rollup script, the
@@ -51,10 +53,19 @@ tab lands in that override. There is nothing to seed.
 7. **Prices.** Tell the user that keeping prices current is Lucidos's job, not
    this plugin's: **Keep prices current** in Settings > Intelligence checks
    the providers' own pages on a schedule and writes any change to the
-   override. Do not create a price-check trigger here. If an older install
-   left one behind (an intent trigger with `app_id = "token-cost"` that checks
-   prices), offer to delete it, because it follows a recipe that no longer
-   exists.
+   override. Offer to turn it on if it is off. Do not create a price-check
+   trigger here.
+   Then look for a leftover from a 0.4.x install: an intent trigger with
+   `app_id = "token-cost"` that checks prices (its name is usually "Token Cost
+   daily price check"). Lucidos cannot remove it on update, because setup
+   created it, not the plugin. If you find one, recommend deleting it and say
+   why in plain words: it repeats what Keep prices current does, it writes
+   `artifacts/token-cost/pricing.json`, which nothing reads any more, and the
+   recipe it loads (`token-cost/daily-price-check`) is gone since 0.6.0, so
+   every fire now runs without its instructions. Delete it when the user
+   agrees. If they want to keep it, say it will keep firing daily until they
+   delete or pause it. Do the same check on a re-run, so a user who declined
+   before is asked again.
 8. Tell the user it is done, name any model in `daily.json` that the price
    table does not price, link the app, and tell them they can ask for the
    Thread cost widget in any thread.
