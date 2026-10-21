@@ -1,16 +1,11 @@
-// Defaults, and a fix from 2026-10-02 that failed only inside the real app frame:
-//
-//   rows    Lucidos's price table is the only price table. The app carries
-//           no prices, so a model the table lacks is unpriced rather than
-//           wrong, and opening the app never writes a file.
-//   sounds  an app frame has an opaque origin, so fetch() of the app's own
-//           sounds/*.m4a failed ("Failed to fetch"). Built-ins now decode from
-//           the bundled base64 copy; an uploaded clip falls back to <audio>.
+// Defaults: Lucidos's price table is the only price table. The app carries
+// no prices, so a model the table lacks is unpriced rather than wrong, and
+// opening the app never writes a file. The app plays no sound (removed
+// 2026-10-21), so it loads no audio script.
 import fs from 'fs';
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const src = html.match(/<script>([\s\S]*)<\/script>\s*<\/body>/)[1];
-const soundsJs = fs.readFileSync(new URL('../sounds/sounds.js', import.meta.url), 'utf8');
 
 // --- minimal DOM / SDK stubs -------------------------------------------------
 const els = new Map();
@@ -78,7 +73,7 @@ async function boot(table) {
     utils: { escapeHtml: (s) => String(s), escapeHtmlAttr: (s) => String(s), timeAgo: () => '1m ago' },
   };
   global.window.lucidos = global.lucidos;
-  new Function(src + ';globalThis.__tc = { loadSound, DEFAULT_SETTINGS, rateFor, get pricing(){ return pricing; } };')();
+  new Function(src + ';globalThis.__tc = { DEFAULT_SETTINGS, rateFor, get pricing(){ return pricing; } };')();
   await settle();
   return { tc: globalThis.__tc, writes: writes.filter((w) => !w.p.includes('ui-state')) };
 }
@@ -123,34 +118,9 @@ console.log('\n3. the price table is read as it is, and opening the app writes n
   ok(tc.pricing.currency === 'USD' && tc.pricing.checked === '2026-10-16', 'the table\'s currency and checked day are read');
 }
 
-console.log('\n4. a built-in sound decodes from the bundled copy, never fetch');
+console.log('\n4. the app carries no sound');
 {
-  new Function(soundsJs.replace('window.TC_SOUND_DATA', 'globalThis.window.TC_SOUND_DATA'))();
-  const { tc } = await boot(null);
-  let fetched = 0;
-  global.fetch = async () => { fetched++; throw new TypeError('Failed to fetch'); };
-  const ac = { decodeAudioData: (b, res) => res({ bytes: b.byteLength }) };
-  for (const f of ['arcade.m4a', 'register.m4a', 'coinbox.m4a']) {
-    const want = fs.statSync(new URL('../sounds/' + f, import.meta.url)).size;
-    const buf = await tc.loadSound(ac, '/dev/app/token-cost/sounds/' + f, f).catch((e) => ({ err: e.message }));
-    ok(buf.bytes === want, `${f} decodes from sounds.js at its real size (${buf.bytes ?? buf.err} of ${want} bytes)`);
-  }
-  ok(fetched === 0, 'and the refused fetch is never tried');
-}
-
-console.log('\n5. an uploaded clip the frame cannot fetch plays through <audio>');
-{
-  const { tc } = await boot(null);
-  global.fetch = async () => { throw new TypeError('Failed to fetch'); };
-  global.Audio = class { constructor() { this.l = {}; } addEventListener(t, f) { this.l[t] = f; }
-    load() { setImmediate(() => this.l.canplaythrough && this.l.canplaythrough()); } };
-  const ac = { decodeAudioData: () => { throw new Error('not reached'); } };
-  const got = await tc.loadSound(ac, '/dev/data/artifacts/imported/ding.mp3').catch((e) => ({ err: e.message }));
-  ok(got.element === '/dev/data/artifacts/imported/ding.mp3', 'it resolves to the element path: ' + JSON.stringify(got));
-  global.Audio = class { constructor() { this.l = {}; } addEventListener(t, f) { this.l[t] = f; }
-    load() { setImmediate(() => this.l.error && this.l.error()); } };
-  const bad = await tc.loadSound(ac, '/dev/data/artifacts/imported/bad.xyz').then(() => null, (e) => e.message);
-  ok(/cannot play/.test(bad || ''), 'a clip the browser cannot play still fails at load: ' + bad);
+  ok(!/sdk-iframe-audio|sounds\.js|AudioContext|btn-sound/.test(html), 'no audio script, context or toggle in index.html');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
