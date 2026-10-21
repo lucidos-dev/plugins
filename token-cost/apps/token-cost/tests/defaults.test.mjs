@@ -86,7 +86,10 @@ console.log('\n1. the app carries no prices of its own');
   ok(!('models' in tc.DEFAULT_SETTINGS), 'DEFAULT_SETTINGS holds no models');
   ok(!/uncached_in:\s*\d/.test(html.slice(html.indexOf('const DEFAULT_SETTINGS'), html.indexOf('const CURRENCY_NAMES'))),
      'and no rate appears anywhere in the built-in block');
-  ok(!/pricing\.json/.test(html), 'and the app never names the old pricing.json');
+  // The old pricing.json is named once, for the Settings note on what the
+  // migration moved. Nothing prices from it: upgrade.test.mjs case 1 boots
+  // with it present and its models stay unpriced.
+  ok((html.match(/pricing\.json/g) || []).length === 1, 'and the app names the old pricing.json only for the migration note');
 }
 
 const TABLE = { currency: 'USD', checked: '2026-10-16', unpriced_cache_shares: { read: 0.1, write_5m: 1.25, write_1h: 2 },

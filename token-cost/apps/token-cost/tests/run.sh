@@ -21,6 +21,9 @@
 #               is the only table), and the app plays no sound
 #   markup      rate badges use the shared .label tones, and every :hover
 #               rule sits inside @media (hover: hover)
+#   upgrade     an update from 0.4.4: before the migration the unpriced calls
+#               are named; after it the dashboard prices them at 0.4.4's
+#               rates and sources, and Settings says what moved and what not
 #   rollup      the daily rollup splits long context at the same dated card
 #               the app prices with (python3, SQL run in sqlite, no Postgres),
 #               and moves 0.4.x prices into the price table before it reads it
@@ -39,7 +42,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 export TZ="${TZ:-Europe/Oslo}"
 fail=0
-for t in accounting.test.mjs freshness.test.mjs save.test.mjs defaults.test.mjs markup.test.mjs; do
+for t in accounting.test.mjs freshness.test.mjs save.test.mjs defaults.test.mjs markup.test.mjs upgrade.test.mjs; do
   echo "== $t"
   if ! node "$t"; then fail=1; echo "   ^ $t FAILED"; fi
 done

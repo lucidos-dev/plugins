@@ -475,6 +475,7 @@
       }
       .save-bar .button-group { justify-content: flex-end; }
       .dirty-dot { color: var(--accent-yellow); font-size: var(--font-size-xs); }
+      #migration-note ul { margin: var(--space-xs) 0 0; padding-left: 1.25rem; }
       /* A button standing in for an input inside .field, so it lines up with
          the real inputs beside it instead of shrinking to its own text. */
       .field .action-btn { width: 100%; }
@@ -631,6 +632,7 @@
         <section class="block">
           <h2 class="sec">Model rates</h2>
           <p class="sec-note" id="price-status"></p>
+          <div class="sec-note" id="migration-note" hidden></div>
           <p class="sec-note" id="rates-note">Rates per 1,000,000 tokens.</p>
           <div class="card">
             <div class="rate-list" id="price-body"></div>
@@ -728,6 +730,12 @@
       // Small per-app UI state that used to live in localStorage, one key each:
       // the display currency, the chart groups and the metric. Now one JSON object in the workspace store. See loadUiState.
       const UI_STATE = 'artifacts/token-cost/ui-state.json';
+      // Token Cost 0.4.x kept its own price table here. Nothing prices from
+      // it now: scripts/token-cost/migrate_prices.py moves the cards the price
+      // table lacks into the override, on every rollup and snapshot run, and
+      // keeps its report beside it. Settings shows that report.
+      const LEGACY_PRICING = 'artifacts/token-cost/pricing.json';
+      const MIGRATION_REPORT = 'artifacts/token-cost/price-migration.json';
       let uiState = {};
 
       // The app's settings before settings.json exists. They hold NO model
@@ -2928,6 +2936,84 @@
         adoptFile(SETTINGS, st);
         composePricing();
         warnOverrideError();
+        await loadMigration();
+      }
+
+      /* ---------------- 0.4.x price migration ---------------- */
+
+      // The migration's last report, and whether a 0.4.x price file is there
+      // with no report yet. See loadMigration().
+      let migration = { report: null, legacy: false };
+      let warnedMigration = null;
+
+      /** Read the migration report, or failing that whether a legacy price
+       *  file waits for its first run. Never throws: a note is all it feeds. */
+      async function loadMigration() {
+        let report = null;
+        let legacy = false;
+        try {
+          const text = await readText(MIGRATION_REPORT);
+          const doc = text ? JSON.parse(text) : null;
+          report = doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : null;
+        } catch (e) { report = null; }
+        if (!report) {
+          try { legacy = (await readText(LEGACY_PRICING)) != null; } catch (e) { legacy = false; }
+        }
+        migration = { report, legacy };
+        renderMigration();
+      }
+
+      /** What moved from 0.4.x's price file, and, as a warning, every card
+       *  or setting that did not and why. Hidden when there is no 0.4.x file. */
+      function renderMigration() {
+        const el = document.getElementById('migration-note');
+        const esc = lucidos.utils.escapeHtml;
+        const r = migration.report;
+        if (!r && !migration.legacy) { el.hidden = true; el.innerHTML = ''; return; }
+        const legacy = `<code>${LEGACY_PRICING}</code>`;
+        if (!r) {
+          el.innerHTML = `Token Cost 0.4 kept its prices in ${legacy}. The ones Lucidos's price table lacks move into ` +
+            `<code>${OVERRIDE}</code> on the next rollup, and this note then says what moved.`;
+          el.className = 'sec-note';
+          el.hidden = false;
+          return;
+        }
+        const list = (xs) => (Array.isArray(xs) ? xs : []);
+        const moved = list(r.history);
+        const parts = [];
+        if (moved.length) {
+          const models = [...new Set(moved.map((e) => e.model))];
+          parts.push(`Moved from Token Cost 0.4 (${legacy}) into <code>${OVERRIDE}</code>: ` +
+            `<strong>${moved.length} card${moved.length === 1 ? '' : 's'} for ${models.length} model${models.length === 1 ? '' : 's'}</strong> ` +
+            `(${models.map(esc).join(', ')}), each with its 0.4 source and dates.`);
+        } else if (r.status === 'done') {
+          parts.push(`Lucidos's price table already prices every model in ${legacy}, so nothing moved from it.`);
+        } else {
+          parts.push(`Nothing has moved from ${legacy} yet.`);
+        }
+        const removed = list(r.removed);
+        if (removed.length) {
+          parts.push(`${removed.length} moved card${removed.length === 1 ? ' was' : 's were'} deleted from the override ` +
+            'since, and stay out.');
+        }
+        const problems = [
+          ...list(r.unsupported).map((u) => `<strong>${esc(u.model)}</strong> (${esc(u.from || 'undated')}): ${esc(u.reason)}`),
+          ...list(r.settings?.unsupported).map((u) => `<code>${esc(u.field)}</code>: ${esc(u.reason)}`),
+          ...list(r.errors).map((e) => esc(e)),
+        ];
+        if (problems.length) {
+          const again = ['error', 'retry', 'blocked'].includes(r.status) ? ' The next rollup tries again.' : '';
+          parts.push(`<strong>Not moved:</strong>${again}<ul>${problems.map((x) => `<li>${x}</li>`).join('')}</ul>`);
+        }
+        el.innerHTML = parts.join(' ');
+        el.className = 'sec-note' + (problems.length ? ' dirty-dot' : '');
+        el.hidden = false;
+        const key = problems.join('\n');
+        if (problems.length && key !== warnedMigration) {
+          lucidos.ui.toast('Some Token Cost 0.4 prices could not move into Lucidos\u2019s price table. Settings lists them.',
+            'warning', { key: 'tc-migration', durationMs: 8000 });
+        }
+        warnedMigration = problems.length ? key : null;
       }
 
       /** Take one settled file read as what this tab last saw of it. A file
@@ -3014,6 +3100,7 @@
         }
         composePricing();
         warnOverrideError();
+        await loadMigration();
         if (!dirty && !saving) renderSettings(); else renderPriceStatus();
         render();
       }
