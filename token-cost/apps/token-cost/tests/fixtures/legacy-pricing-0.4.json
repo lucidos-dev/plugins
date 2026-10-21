@@ -1,5 +1,5 @@
 {
-  "_comment": "Sanitized from a Token Cost 0.4.4 artifacts/token-cost/pricing.json (the work workspace, 2026-10-15): the cards of the models 0.5.0 left unpriced, plus one the shipped table covers and one dated id. Only public price facts and their sources.",
+  "_comment": "Sanitized from a real Token Cost 0.4.4 artifacts/token-cost/pricing.json (2026-10-15): the cards of the models 0.5.0 left unpriced, plus one the shipped table covers and one dated id. Only public price facts and their sources.",
   "_updated": "2026-10-15",
   "_sources": {
     "checked": "2026-10-15",
@@ -117,7 +117,7 @@
         "cache_write": 1.25,
         "cache_read": 0.1,
         "out": 5,
-        "source": "https://platform.claude.com/docs/en/about-claude/pricing: Claude Haiku 4.5 rates. Bare `haiku` alias as logged by Claude Code (May 15 to Jun 30 2026); the resolved id is not recorded, and Claude Code logged claude-haiku-4-5-20251001 in the same period, so priced as Haiku 4.5. Inferred, added 2026-10-15"
+        "source": "https://platform.claude.com/docs/en/about-claude/pricing: Claude Haiku 4.5 rates. Bare `haiku` alias as logged by Claude Code; the resolved id is not recorded, so priced as Haiku 4.5. Inferred, added 2026-10-15"
       }
     ],
     "sonnet": [
@@ -134,7 +134,7 @@
         "cache_write": 2.5,
         "cache_read": 0.2,
         "out": 10,
-        "source": "https://platform.claude.com/docs/en/about-claude/pricing: Claude Sonnet 5 rates. Switch date INFERRED: the first day claude-sonnet-5 appears in Claude Code's ContextCaptured events. The real date the alias moved depends on the Claude Code update and is unknown. Added 2026-10-15"
+        "source": "https://platform.claude.com/docs/en/about-claude/pricing: Claude Sonnet 5 rates. Switch date inferred; the real date the alias moved is unknown. Added 2026-10-15"
       }
     ]
   },
