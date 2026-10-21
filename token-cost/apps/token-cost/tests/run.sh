@@ -22,7 +22,15 @@
 #   markup      rate badges use the shared .label tones, and every :hover
 #               rule sits inside @media (hover: hover)
 #   rollup      the daily rollup splits long context at the same dated card
-#               the app prices with (python3, SQL run in sqlite, no Postgres)
+#               the app prices with (python3, SQL run in sqlite, no Postgres),
+#               and moves 0.4.x prices into the price table before it reads it
+#   migrate     the 0.4.x pricing.json cards the price table does not price
+#               move into config/model-prices.json unchanged, once, through
+#               the engine's write path; nothing is lost, invented or dropped
+#               silently, and the legacy file is never written (python3,
+#               against fake_lucidos.py, which merges like the engine)
+#   snapshot    the Thread cost snapshot migrates first, and counts the calls
+#               it cannot price instead of folding them in as $0
 #
 # The app tests price from tests/fixtures/price-table.json: the table as
 # lucidos.priceTable.get() returns it, the cards Lucidos shipped on 2026-10-16
@@ -35,6 +43,8 @@ for t in accounting.test.mjs freshness.test.mjs save.test.mjs defaults.test.mjs 
   echo "== $t"
   if ! node "$t"; then fail=1; echo "   ^ $t FAILED"; fi
 done
-echo "== rollup.test.py"
-if ! python3 rollup.test.py; then fail=1; echo "   ^ rollup.test.py FAILED"; fi
+for t in rollup.test.py migrate.test.py snapshot.test.py; do
+  echo "== $t"
+  if ! python3 "$t"; then fail=1; echo "   ^ $t FAILED"; fi
+done
 exit $fail

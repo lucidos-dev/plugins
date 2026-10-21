@@ -6,9 +6,16 @@ Lucidos's price table, `lucidos model-prices` (same rules as the Token Cost
 rollup; TOKEN_COST_PRICE_TABLE names a file holding the same JSON instead), then
 writes artifacts/token-cost/threads-cost.json through `lucidos data write`, so
 the write is committed and announced. The snapshot carries `last_sequence` and
-today's rate cards, so the widget prices calls after the cursor live.
+today's rate cards, so the widget prices calls after the cursor live. A call no
+card prices is kept out of every total and counted, per thread and in all, so
+the widget can say what its total leaves out.
+
+It first moves any Token Cost 0.4.x prices into the price table
+(migrate_prices.py, beside this script), so they price this same run.
 """
 import os, sys, json, re, subprocess, datetime, pathlib
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import migrate_prices
 # Resolved before the chdir below, so a relative path means the caller's.
 TABLE_FILE=os.path.abspath(os.environ['TOKEN_COST_PRICE_TABLE']) if os.environ.get('TOKEN_COST_PRICE_TABLE') else None
 WS = os.environ.get('LUCIDOS_WORKSPACE')
@@ -49,6 +56,8 @@ sql=sql.replace("WHERE event_type='ContextCaptured' AND",f"WHERE event_type='Con
 rows=json.loads(psql(sql))
 def price_table():
     if TABLE_FILE: return json.load(open(TABLE_FILE))
+    line=migrate_prices.run_quietly(WS)
+    if line: print(line)
     r=subprocess.run(['lucidos','model-prices'],capture_output=True,text=True)
     if r.returncode: raise SystemExit('lucidos model-prices failed: '+(r.stderr or r.stdout)[:400])
     return json.loads(r.stdout)
@@ -73,15 +82,17 @@ def price(i,cr,cw,o,cc):
 for r in rows:
     m=r['mdl'] or ''
     k=key(m); c=card(k,r['dy']) if k else None
-    if not (c and isinstance(c.get('uncached_in'),(int,float)) and isinstance(c.get('out'),(int,float))):
+    priced=bool(c and isinstance(c.get('uncached_in'),(int,float)) and isinstance(c.get('out'),(int,float)))
+    if not priced:
         unpriced[m]=unpriced.get(m,0)+r['calls']; cost=0
     else:
         lg=c.get('long')
         if lg and r['li'] and lg.get('threshold_tokens')==272000:
             cost=price(r['i']-r['li'],r['cr']-r['lcr'],r['cw']-r['lcw'],r['o']-r['lo'],c)+price(r['li'],r['lcr'],r['lcw'],r['lo'],{**c,**lg})
         else: cost=price(r['i'],r['cr'],r['cw'],r['o'],c)
-    t=per.setdefault(r['tid'],{'cost':0,'calls':0,'models':{},'first':r['dy'],'last':r['dy'],'producers':set(),'today':0})
+    t=per.setdefault(r['tid'],{'cost':0,'calls':0,'unpriced':0,'models':{},'first':r['dy'],'last':r['dy'],'producers':set(),'today':0})
     t['cost']+=cost; t['calls']+=r['calls']
+    if not priced: t['unpriced']+=r['calls']
     tm=t['models'].setdefault(k or m,{'all':0,'today':0,'calls':0}); tm['all']+=cost; tm['calls']+=r['calls']
     t['first']=min(t['first'],r['dy']); t['last']=max(t['last'],r['dy']); t['producers'].add(r['producer'])
     if r['dy']==datetime.date.today().isoformat(): t['today']+=cost; tm['today']+=cost
@@ -91,7 +102,8 @@ except SystemExit as e: print('titles err',str(e)[:200])
 total=sum(t['cost'] for t in per.values()); today=sum(t['today'] for t in per.values())
 lst=[{'thread_id':tid,'title':titles.get(tid,''),'cost_usd':round(t['cost'],2),'today_usd':round(t['today'],2),'calls':t['calls'],'first':t['first'],'last':t['last'],
       'producers':sorted(p for p in t['producers'] if p),'top_model':max(t['models'],key=lambda mk:t['models'][mk]['all']),
-      'models':{mk:{'all':round(v['all'],4),'today':round(v['today'],4),'calls':v['calls']} for mk,v in t['models'].items()}} for tid,t in per.items()]
+      'models':{mk:{'all':round(v['all'],4),'today':round(v['today'],4),'calls':v['calls']} for mk,v in t['models'].items()},
+      'unpriced':t['unpriced']} for tid,t in per.items()]
 lst.sort(key=lambda x:-x['cost_usd'])
 json.dump({'generated':datetime.datetime.now(datetime.UTC).isoformat(),'total_usd':round(total,2),'today_usd':round(today,2),'threads':len(lst),'unpriced_calls':unpriced,'items':lst},open(os.path.join(os.environ.get('LUCIDOS_WORKSPACE','.'),'.lucidos/tmp/threads-cost-full.json'),'w'),indent=1)
 print('total',round(total,2),'today',round(today,2),'threads',len(lst))
@@ -105,7 +117,11 @@ bands=[(1000,1e9),(100,1000),(10,100),(1,10),(0,1)]
 for a,b in bands: s=[x for x in lst if a<=x['cost_usd']<b]; print(a,b,len(s),round(sum(x['cost_usd'] for x in s),2))
 
 lastts=json.loads(psql(f"SELECT coalesce(json_object_agg(t,l),'{{}}') FROM (SELECT thread_id::text t, max(created) l FROM events WHERE event_type='ContextCaptured' AND sequence<={max_seq} AND thread_id IS NOT NULL GROUP BY 1) x"))
-def slim(x): return {'id':x['thread_id'],'title':x['title'] or 'Untitled','all':x['cost_usd'],'today':x['today_usd'],'calls':x['calls'],'models':x['models'],'last':lastts.get(x['thread_id'])}
+def slim(x):
+    r={'id':x['thread_id'],'title':x['title'] or 'Untitled','all':x['cost_usd'],'today':x['today_usd'],'calls':x['calls'],'models':x['models'],'last':lastts.get(x['thread_id'])}
+    # Calls no card prices: in `calls`, kept out of `all` and `today`.
+    if x['unpriced']: r['unpriced']=x['unpriced']
+    return r
 day=datetime.date.today().isoformat()
 rates={}
 for k in P:
@@ -119,12 +135,15 @@ for k in P:
 top_all=[slim(x) for x in lst[:300]]
 top_today=[slim(x) for x in sorted(lst,key=lambda x:-x['today_usd'])[:400] if x['today_usd']>0]
 listed={r['id'] for r in top_all+top_today}
-# Every other thread, compact: [title, all, today, calls, last, {model: [all, today, calls]}].
+# Every other thread, compact: [title, all, today, calls, last, {model: [all, today, calls]}, unpriced],
+# the unpriced call count only when there are any.
 # The widget looks a thread up here when it is in neither list, so it never reads $0.
 rest={x['thread_id']:[x['title'],x['cost_usd'],x['today_usd'],x['calls'],lastts.get(x['thread_id']),{mk:[v['all'],v['today'],v['calls']] for mk,v in x['models'].items()}]
+      +([x['unpriced']] if x['unpriced'] else [])
       for x in lst if x['thread_id'] not in listed}
 out={'generated':datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds'),'day':day,'last_sequence':max_seq,
  'total_all':round(total,2),'total_today':round(today,2),'threads':len(lst),'rates':rates,
+ 'unpriced_calls':sum(unpriced.values()),'unpriced_models':unpriced,
  'top_all':top_all,'top_today':top_today,'rest':rest}
 w=subprocess.run(['lucidos','data','write','artifacts/token-cost/threads-cost.json','--from','-'],input=json.dumps(out),capture_output=True,text=True)
 if w.returncode: raise SystemExit('lucidos data write failed: '+w.stderr[:400])

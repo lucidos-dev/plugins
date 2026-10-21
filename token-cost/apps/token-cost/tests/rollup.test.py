@@ -496,5 +496,47 @@ check("a root carries no parent", meta["root"], ["Parent"])
 check("a thread the summaries lost is left out", "gone" in meta, False)
 check("unreadable summaries give no titles, not a crash", meta_from([]), {})
 
+# 20. Token Cost 0.4.x prices move into the price table before the rollup
+# reads it, so a model priced only in the old pricing.json splits at its own
+# card. migrate.test.py covers the migration itself.
+order = []
+real_migrate, real_read = rollup.migrate_legacy_prices, rollup.read_pricing
+rollup.migrate_legacy_prices = lambda: order.append("migrate")
+rollup.read_pricing = lambda: (order.append("read"), real_read())[1]
+try:
+    run_main("4242|2026-10-10")
+finally:
+    rollup.migrate_legacy_prices, rollup.read_pricing = real_migrate, real_read
+check("the migration runs before the price table is read", order[:2], ["migrate", "read"])
+check("the rollup finds the migration script beside it", rollup.MIGRATE.exists(), True)
+
+import os  # noqa: E402
+
+ws = pathlib.Path(tempfile.mkdtemp())
+(ws / "data" / "artifacts" / "token-cost").mkdir(parents=True)
+(ws / "data" / "artifacts" / "token-cost" / "pricing.json").write_text(
+    (HERE / "fixtures" / "legacy-pricing-0.4.json").read_text())
+(ws / "bin").mkdir()
+(ws / "bin" / "lucidos").write_text(f'#!/bin/sh\nexec "{sys.executable}" -I "{HERE / "fake_lucidos.py"}" "$@"\n')
+(ws / "bin" / "lucidos").chmod(0o755)
+saved_env = dict(os.environ)
+os.environ.update({"PATH": f"{ws / 'bin'}:{os.environ['PATH']}", "LUCIDOS_WORKSPACE": str(ws),
+                   "FAKE_SHIPPED": str(HERE / "fixtures" / "shipped-prices.json")})
+real_ws, real_table = rollup.WS, rollup.PRICE_TABLE
+override = ws / "data" / "config" / "model-prices.json"
+try:
+    rollup.WS = ws
+    rollup.PRICE_TABLE = "/fixed/table.json"
+    rollup.migrate_legacy_prices()
+    check("a fixed test table skips the migration", override.exists(), False)
+    rollup.PRICE_TABLE = None
+    rollup.migrate_legacy_prices()
+    check("otherwise the legacy cards land in the override",
+          "gemini-3-flash-preview" in json.loads(override.read_text())["models"], True)
+finally:
+    rollup.WS, rollup.PRICE_TABLE = real_ws, real_table
+    os.environ.clear()
+    os.environ.update(saved_env)
+
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

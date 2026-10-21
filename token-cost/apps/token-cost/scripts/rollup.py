@@ -115,6 +115,10 @@ THREADS_OUT = WS / "data" / "artifacts" / "token-cost" / "threads-daily.json"
 # prints it. TOKEN_COST_PRICE_TABLE names a file holding the same JSON
 # instead, which is how a test or a replay feeds the rollup a fixed table.
 PRICE_TABLE = os.environ.get("TOKEN_COST_PRICE_TABLE") or None
+# The plugin's scripts/token-cost/migrate_prices.py, which moves Token Cost
+# 0.4.x prices into the price table. This file sits three folders below the
+# plugin root in the repo and below data/ in a workspace, so one path fits both.
+MIGRATE = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "token-cost" / "migrate_prices.py"
 
 BUCKET_EDGES = [0, 32000, 64000, 128000, 200000, 400000]
 LONG_CTX_THRESHOLD = 200000
@@ -979,7 +983,27 @@ def needs_rebuild(state: dict | None, env: dict, split: str | None = None) -> st
     return None
 
 
+def migrate_legacy_prices() -> None:
+    """Move Token Cost 0.4.x prices into the price table before reading it,
+    so a model priced only in the old pricing.json splits and prices at its
+    own card. Never stops the rollup: a failure is one printed line, and the
+    next run tries again. A fixed test table has no engine to write to."""
+    if PRICE_TABLE or not MIGRATE.exists():
+        return
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("migrate_prices", MIGRATE)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        line = mod.run_quietly(WS)
+    except Exception as e:  # noqa: BLE001 - nothing here may stop the rollup
+        line = f"price migration failed to load: {e}"
+    if line:
+        print(line)
+
+
 def main() -> None:
+    migrate_legacy_prices()
     try:
         # Split on the model the row is filed and priced under, so a rerouted
         # call splits at the card of the model that ran.
