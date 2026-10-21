@@ -16,6 +16,10 @@
   .total { font-size: var(--font-size-3xl); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
   .today { color: var(--text-secondary); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums; }
   .today b { color: var(--accent); font-weight: 600; }
+  /* Calls no price card covers: kept out of the total, so the total says it
+     is incomplete. Yellow like Token Cost's own "not included" note. */
+  .unpriced { color: var(--accent-yellow); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* Model mix: one stacked bar, each model its own fill. */
   .mix { display: grid; gap: var(--space-sm); min-width: 0; }
@@ -124,6 +128,7 @@
   <div class="hero">
     <div class="total" id="total">…</div>
     <div class="today" id="today"></div>
+    <div class="unpriced" id="unpriced" hidden></div>
   </div>
   <div class="mix" id="mix" hidden>
     <div class="stack" id="stack"></div>
@@ -164,20 +169,21 @@ function find(tid) {
   if (top) return top;
   const c = data.rest && data.rest[tid];
   if (!c) return undefined;
-  const [title, all, today, calls, last, byModel] = c;
+  const [title, all, today, calls, last, byModel, unpriced] = c;
   const models = {};
   for (const [k, [a, t, n]] of Object.entries(byModel || {})) models[k] = { all: a, today: t, calls: n };
-  return { id: tid, title: title || 'Untitled', all, today, calls, last, models };
+  return { id: tid, title: title || 'Untitled', all, today, calls, last, models, unpriced: unpriced || 0 };
 }
 // One thread's spend: snapshot plus calls priced live since it was built.
+// `unpriced` counts the calls no card prices: in `calls`, kept out of the money.
 function threadCost(tid) {
   const base = find(tid);
   const r = { id: tid, title: (base && base.title) || titles.get(tid) || 'Untitled', all: base ? base.all : 0, today: base ? base.today : 0,
-    calls: base ? base.calls : 0, models: {} };
+    calls: base ? base.calls : 0, unpriced: (base && base.unpriced) || 0, models: {} };
   for (const [k, v] of Object.entries((base && base.models) || {})) r.models[k] = { ...v };
   const e = live.get(tid);
   if (e) {
-    r.all += e.cost; r.today += e.cost; r.calls += e.calls;
+    r.all += e.cost; r.today += e.cost; r.calls += e.calls; r.unpriced += e.unpriced;
     for (const [k, v] of Object.entries(e.models)) {
       const o = r.models[k] || { all: 0, today: 0, calls: 0 };
       r.models[k] = { all: o.all + v.cost, today: o.today + v.cost, calls: o.calls + v.calls };
@@ -208,6 +214,7 @@ function render() {
     $('label').textContent = 'No thread open';
     $('total').textContent = '—';
     $('today').textContent = '';
+    $('unpriced').hidden = true;
     $('mix').hidden = true; $('subs').hidden = true;
     fit();
     return;
@@ -219,6 +226,7 @@ function render() {
   const total = tree.reduce((n, r) => n + r.all, 0);
   const today = tree.reduce((n, r) => n + r.today, 0);
   const calls = tree.reduce((n, r) => n + r.calls, 0);
+  const unpriced = tree.reduce((n, r) => n + r.unpriced, 0);
   const mm = {};
   for (const r of tree) for (const [k, v] of Object.entries(r.models)) {
     const o = mm[k] || (mm[k] = { name: k, cost: 0, calls: 0 }); o.cost += v.all || 0; o.calls += v.calls || 0;
@@ -238,6 +246,9 @@ function render() {
   $('label').textContent = n ? (small ? `This thread +${n}` : `This thread + ${n} sub-thread${n === 1 ? '' : 's'}`) : 'This thread';
   $('total').textContent = usd(total);
   $('today').innerHTML = calls ? `<b>${usd(today)}</b> today · ${calls.toLocaleString()} calls` : 'No calls yet';
+  // Never dropped by fit(): without it the total reads as complete.
+  $('unpriced').hidden = !unpriced;
+  $('unpriced').textContent = unpriced ? `Not included: ${unpriced.toLocaleString()} unpriced call${unpriced === 1 ? '' : 's'}` : '';
 
   // Mix: up to four models by name. Fold only when two or more remain,
   // since "1 more" hides a name that fits in the same row.
@@ -402,9 +413,11 @@ function fold(seq, tid, p) {
     lastUsage.set(tid, sig);
   }
   const c = priceCall(p);
-  if (!c) return;
-  const e = live.get(tid) || { cost: 0, calls: 0, models: {} };
-  e.cost += c.cost; e.calls += 1; live.set(tid, e);
+  const e = live.get(tid) || { cost: 0, calls: 0, unpriced: 0, models: {} };
+  live.set(tid, e);
+  e.calls += 1;
+  if (!c) { e.unpriced += 1; if (tracked(tid)) dirty = true; return; }
+  e.cost += c.cost;
   const m = e.models[c.model] || (e.models[c.model] = { cost: 0, calls: 0 });
   m.cost += c.cost; m.calls += 1;
   if (tracked(tid)) dirty = true;

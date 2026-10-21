@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Headless accounting and freshness tests for the Token Cost dashboard.
+# Headless tests for the Token Cost dashboard, the Thread cost widget and
+# the plugin's scripts.
 #
 # The app is one HTML file, so these extract its <script> block and run it
 # against small DOM and SDK stubs. No browser, no build step, about a second.
@@ -24,6 +25,8 @@
 #   upgrade     an update from 0.4.4: before the migration the unpriced calls
 #               are named; after it the dashboard prices them at 0.4.4's
 #               rates and sources, and Settings says what moved and what not
+#   thread-cost the Thread cost widget prices a moved 0.4.4 card live, and
+#               says how many calls its total leaves out
 #   rollup      the daily rollup splits long context at the same dated card
 #               the app prices with (python3, SQL run in sqlite, no Postgres),
 #               and moves 0.4.x prices into the price table before it reads it
@@ -42,7 +45,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 export TZ="${TZ:-Europe/Oslo}"
 fail=0
-for t in accounting.test.mjs freshness.test.mjs save.test.mjs defaults.test.mjs markup.test.mjs upgrade.test.mjs; do
+for t in accounting.test.mjs freshness.test.mjs save.test.mjs defaults.test.mjs markup.test.mjs upgrade.test.mjs thread-cost.test.mjs; do
   echo "== $t"
   if ! node "$t"; then fail=1; echo "   ^ $t FAILED"; fi
 done

@@ -18,34 +18,15 @@
 //
 // The engine is tests/fake_lucidos.py, which merges like llm/model_prices.rs.
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
-import { execFileSync } from 'child_process';
+import { fakeWorkspace as workspace, LEGACY_TEXT } from './fake-engine.mjs';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const html = fs.readFileSync(path.join(HERE, '../index.html'), 'utf8');
 const src = html.match(/<script>([\s\S]*)<\/script>\s*<\/body>/)[1];
-const MIGRATE = path.resolve(HERE, '../../../scripts/token-cost/migrate_prices.py');
-const LEGACY_TEXT = fs.readFileSync(path.join(HERE, 'fixtures/legacy-pricing-0.4.json'), 'utf8');
 const LEGACY = JSON.parse(LEGACY_TEXT);
 
 // --- the engine, before and after the migration ------------------------------
-function workspace(withLegacy) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-upgrade-'));
-  fs.mkdirSync(path.join(root, 'data/artifacts/token-cost'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'bin'));
-  if (withLegacy) fs.writeFileSync(path.join(root, 'data/artifacts/token-cost/pricing.json'), LEGACY_TEXT);
-  fs.writeFileSync(path.join(root, 'bin/lucidos'),
-    `#!/bin/sh\nexec python3 -I "${path.join(HERE, 'fake_lucidos.py')}" "$@"\n`, { mode: 0o755 });
-  const env = { ...process.env, PATH: `${path.join(root, 'bin')}:${process.env.PATH}`, LUCIDOS_WORKSPACE: root,
-                FAKE_SHIPPED: path.join(HERE, 'fixtures/shipped-prices.json') };
-  const read = (rel) => { try { return fs.readFileSync(path.join(root, 'data', rel), 'utf8'); } catch (e) { return null; } };
-  return {
-    migrate: () => execFileSync('python3', ['-I', MIGRATE], { env, encoding: 'utf8' }),
-    table: () => JSON.parse(execFileSync('lucidos', ['model-prices'], { env, encoding: 'utf8' })),
-    read,
-  };
-}
 const before = workspace(true);
 const shippedTable = before.table();
 const after = workspace(true);
