@@ -135,29 +135,40 @@ check("a literal card that starts later falls through to the plain tier before i
       cutoff("openai/gpt-5.5", "2026-08-31"), 272000)
 check("and pins its own split from its day", cutoff("openai/gpt-5.5", "2026-09-01"), 200000)
 
-# 7b. The served model: a row is priced as the model that answered, by the
+# 7b. The served model: a row is filed under the id the provider's reply names,
+# else the id Lucidos sent. `asked` keeps the sent id only on a reroute, by the
 # engine's served_as_sent() rule (llm/served_model.rs), whose own cases these are.
-def priced(model, served):
-    row = DB.execute(f"SELECT {rollup.priced_model_sql('m', 's')}, {rollup.asked_sql('m', 's')} "
+def filed(model, served):
+    row = DB.execute(f"SELECT {rollup.row_model_sql('m', 's')}, {rollup.asked_sql('m', 's')} "
                      "FROM (SELECT ? AS m, ? AS s)", (model, served)).fetchone()
     return tuple(row)
 
 
 for sent, served in [("gemini-3.5-flash", "gemini-3.6-flash"), ("gemini-3.5-flash", "gemini-3.5-pro"),
-                     ("claude-opus-5", "claude-opus-5-5"), ("gemini-3.8-flash", "gemini-3.8-flash-lite")]:
-    check(f"{sent} answered by {served} is priced as {served}", priced(sent, served), (served, sent))
+                     ("claude-opus-5", "claude-opus-5-5"), ("gemini-3.8-flash", "gemini-3.8-flash-lite"),
+                     ("claude-opus-5-5[1m]", "claude-opus-5")]:
+    check(f"{sent} answered by {served} is filed under {served}", filed(sent, served), (served, sent))
 for sent, served in [("gemini-3.8-flash", "gemini-3.8-flash"), ("claude-haiku-4-5", "claude-haiku-4-5-20251001"),
                      ("gpt-5.6-luna", "gpt-5.6-luna-2026-04-01"), ("gemini-3.8-flash", "gemini-3.8-flash-001"),
                      ("google/gemini-3.8-flash", "gemini-3.8-flash"), ("gemini-3.8-flash", "google/gemini-3.8-flash"),
                      ("claude-opus-5[1m]", "claude-opus-5"), ("claude-opus-4-5", "claude-opus-4-5@20251101"),
                      ("claude-opus-4-5@20251101", "claude-opus-4-5-20251101"), ("qwen3", "qwen3:latest"),
                      ("GPT-5.6-Luna", "gpt-5.6-luna")]:
-    check(f"{sent} answered by {served} keeps the requested id", priced(sent, served), (sent, None))
-check("a row with no served model keeps its model", priced("claude-opus-5-5[1m]", None), ("claude-opus-5-5[1m]", None))
-check("an empty served model too", priced("x", ""), ("x", None))
+    check(f"{sent} answered by {served} is filed under {served}, not a reroute", filed(sent, served), (served, None))
+for sent in ("claude-opus-5-5[1m]", "claude-sonnet-5-5[1m]", "claude-fable-5-1[1m]"):
+    bare = sent.removesuffix("[1m]")
+    check(f"{sent} answered as {bare} shares the plain row", filed(sent, bare), filed(bare, bare))
+check("a row with no served model keeps its model, less [1m]", filed("claude-opus-5-5[1m]", None), ("claude-opus-5-5", None))
+check("a reroute's [1m] served id drops it too", filed("claude-opus-5", "claude-opus-5-5[1m]"), ("claude-opus-5-5", "claude-opus-5"))
+check("an empty served model too", filed("x", ""), ("x", None))
+# The [1m] twin and its bare id split at the same cut, so filing under the bare
+# id moves no token between the long and short rates.
+with_pricing({"claude-haiku-5-5": {"uncached_in": 1, "long": {"threshold_tokens": 100000, "uncached_in": 2}}})
+check("a [1m] id splits where its bare id does", cutoff("claude-haiku-5-5[1m]"), cutoff("claude-haiku-5-5"))
+check("and that is the card's own tier", cutoff("claude-haiku-5-5"), 100000)
 # A rerouted call splits at the card of the model that ran.
 with_pricing({"gpt-5.5": GPT})
-sql = rollup.long_cutoff_sql(rollup.priced_model_sql("m", "s"), "d")
+sql = rollup.long_cutoff_sql(rollup.row_model_sql("m", "s"), "d")
 got = DB.execute(f"SELECT {sql} FROM (SELECT ? AS m, ? AS s, ? AS d)", ("gpt-5.4-mini", "gpt-5.5", "2026-10-10")).fetchone()[0]
 check("a rerouted call splits at the served model's tier", got, 272000)
 check("a release stamp finds the undated card", cutoff("gpt-5.5-2026-04-23"), 272000)
@@ -415,9 +426,58 @@ check("a long call keeps its tail",
       [1, 0, 300000, 0, 0, 0, 0, 0, 300000])
 check("the rollup counts calls that read the cache",
       "count(*) FILTER (WHERE cr > 0) AS cached_calls" in rollup.ROLLUP_SQL, True)
-check("the rollup groups by thread", "GROUP BY 1, 2, 3, 4, 5, 6" in rollup.ROLLUP_SQL, True)
+check("the rollup groups by effort", "coalesce(payload->>'reasoning_effort', '') AS effort" in rollup.ROLLUP_SQL, True)
+check("an effort joins the key", rollup.row_key("p", "m", "high"), "p|m|high")
+check("no effort keeps the old key", rollup.row_key("p", "m", ""), "p|m")
+check("the rollup groups by thread", "GROUP BY 1, 2, 3, 4, 5, 6, 7" in rollup.ROLLUP_SQL, True)
 check("a file from before the thread split is rebuilt",
       rollup.needs_rebuild({"rollup_version": 6}, {}) is not None, True)
+
+# 19. A cache keep-alive ping is filed under its own type, by its anchor.
+check("a keep-alive call is filed under its own type",
+      "CASE WHEN keep_alive THEN 'cache_keep_alive' ELSE producer END AS producer" in rollup.ROLLUP_SQL, True)
+check("the anchor test reads the capture's request_event_id, not the anchor's",
+      "FROM events c" in rollup.ROLLUP_SQL and "(c.payload->>'request_event_id')::uuid" in rollup.KEEP_ALIVE, True)
+check("a malformed request_event_id never reaches the cast", "a.id = CASE" in rollup.KEEP_ALIVE, True)
+check("a file from before the keep-alive type is rebuilt",
+      rollup.needs_rebuild({"rollup_version": 7}, {}) is not None, True)
+
+# 20. Auxiliary calls are filed per purpose, so the app can filter and group
+# by each one. Every other producer keeps its own id. Voice and proxy rows are
+# `auxiliary` too (purpose voice, proxy), so they split the same way.
+def producer_id(producer, purpose="<absent>"):
+    payload = {"producer": producer}
+    if purpose != "<absent>":
+        payload["purpose"] = purpose
+    sql = rollup.producer_id_sql("payload")
+    return DB.execute(f"SELECT {sql} FROM (SELECT ? AS payload)", (json.dumps(payload),)).fetchone()[0]
+
+
+check("an auxiliary call is filed under its purpose", producer_id("auxiliary", "memory"), "auxiliary:memory")
+check("a purpose with an underscore", producer_id("auxiliary", "summary_compaction"), "auxiliary:summary_compaction")
+check("voice is its own auxiliary row", producer_id("auxiliary", "voice"), "auxiliary:voice")
+check("proxy is its own auxiliary row", producer_id("auxiliary", "proxy"), "auxiliary:proxy")
+check("no purpose stays bare auxiliary", producer_id("auxiliary", None), "auxiliary")
+check("an empty purpose stays bare auxiliary", producer_id("auxiliary", ""), "auxiliary")
+check("a missing purpose stays bare auxiliary", producer_id("auxiliary"), "auxiliary")
+check("a pipe in a purpose cannot split the row key", producer_id("auxiliary", "a|b"), "auxiliary:a_b")
+check("main_llm keeps its id", producer_id("main_llm"), "main_llm")
+check("claude_code keeps its id whatever the purpose", producer_id("claude_code", "proxy"), "claude_code")
+check("codex keeps its id", producer_id("codex", "voice"), "codex")
+check("a producer-less row stays NULL, as before", producer_id(None, "memory"), None)
+check("the main query files by the producer id",
+      f"{rollup.producer_id_sql('payload')} AS producer" in rollup.ROLLUP_SQL, True)
+check("voice seconds join on the same id, or they would land on another row",
+      f"{rollup.producer_id_sql('payload')} AS producer" in rollup.SECONDS_SQL, True)
+check("the keep-alive CASE still sits over it",
+      "CASE WHEN keep_alive THEN 'cache_keep_alive' ELSE producer END AS producer" in rollup.ROLLUP_SQL, True)
+check("an auxiliary key reads back as producer|model", rollup.row_key("auxiliary:memory", "m"), "auxiliary:memory|m")
+check("the duplicate-frame test still reads the raw producer",
+      "AND payload->>'producer' = 'claude_code' AS dup" in rollup.ROLLUP_SQL, True)
+check("a file from before the aux split is rebuilt",
+      rollup.needs_rebuild({"rollup_version": 11}, {}) is not None, True)
+src = (HERE.parent / "scripts" / "rollup.py").read_text()
+check("the format note names the aux ids", src.count("auxiliary:<purpose>") >= 2, True)
 
 
 def meta_from(doc):

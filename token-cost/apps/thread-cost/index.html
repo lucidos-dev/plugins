@@ -38,21 +38,20 @@
   .sub .bar i { display: block; height: 100%; background: var(--text-muted); transform-origin: left; transition: transform var(--duration-normal); }
   .sub.root .bar i { background: var(--accent); }
 
-  /* Suggestions: a quiet tinted card, the saving in the accent. */
-  .tips { display: grid; gap: var(--space-sm); }
-  .tip { display: grid; grid-template-columns: auto 1fr; gap: var(--space-sm); align-items: start; padding: var(--space-sm) var(--space-md);
-    background: var(--bg-secondary); border-radius: var(--radius-surface); font-size: var(--font-size-xs); color: var(--text-secondary); }
-  .tip svg { width: 0.875rem; height: 0.875rem; color: var(--accent); margin-top: 0.0625rem; }
-  .tip b { color: var(--text-primary); font-weight: 600; }
-  .tip.ok svg { color: var(--accent-green); }
-
   /* Scope pill: this thread alone, or with its sub-threads. It never grows
-     past its box: buttons shrink and ellipsize instead of spilling out. */
+     past its box: buttons shrink and ellipsize instead of spilling out.
+     Centering is optical, not metric. Each label is trimmed to cap height and
+     baseline (text-box), then flex centers that box. Line-height centering uses
+     the font's ascent and descent, which differ per font, so the label sat high
+     in one theme font and low in another. */
   .scope { display: inline-flex; justify-self: start; align-items: stretch; padding: 0.125rem; gap: 0.125rem; background: var(--bg-secondary);
-    border-radius: var(--radius-round); font-size: var(--font-size-xs); width: max-content; max-width: 100%; min-width: 0; overflow: hidden; box-sizing: border-box; }
-  .scope button { all: unset; box-sizing: border-box; display: block; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
-    text-align: center; height: 1.75rem; line-height: 1.75rem; cursor: pointer; padding: 0 var(--space-sm); border-radius: var(--radius-round);
+    border-radius: var(--radius-round); font-size: var(--font-size-xs); width: max-content; max-width: 100%; min-width: 0; box-sizing: border-box;
+    height: 2rem; flex: none; overflow: hidden; }
+  .scope button { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: center; flex: 0 1 auto; min-width: 0;
+    height: 100%; cursor: pointer; padding: 0 var(--space-sm); border-radius: var(--radius-round);
     color: var(--text-muted); font-weight: 600; white-space: nowrap; transition: background var(--duration-fast), color var(--duration-fast); }
+  .scope button > span { display: block; min-width: 0; text-box: trim-both cap alphabetic;
+    overflow: clip; overflow-clip-margin: 0.4em; text-overflow: ellipsis; }
   /* Same weight pressed or not: a weight change would resize the pill on every tap. */
   .scope button[aria-pressed="true"] { background: var(--accent); color: var(--bg-primary); }
   .scope button:focus-visible { box-shadow: inset 0 0 0 0.125rem var(--text-primary); }
@@ -94,31 +93,21 @@
   html[data-widget-size="small"] .today { display: none; }
   /* The legend is sorted by cost, so its first row is the top model. */
   html[data-widget-size="small"] .legend div:nth-child(n+2) { display: none; }
-  html[data-widget-size="small"] .tip { padding: 0; background: none; grid-template-columns: minmax(0, 1fr); }
-  html[data-widget-size="small"] .tip svg { display: none; }
-  html[data-widget-size="small"] .tip .long { display: none; }
-  html[data-widget-size="small"] .tip:not(:first-child) { display: none; }
   /* Medium: two cells wide. One named area per child:
-     head across, total left, mix right, one tip across the bottom. */
+     head across, total left, mix right. */
   html[data-widget-size="medium"] body { padding: var(--space-md) var(--space-lg); gap: var(--space-sm) var(--space-lg);
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); grid-template-rows: auto auto 1fr;
-    grid-template-areas: "head head" "hero mix" "tips tips"; align-content: stretch; }
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); grid-template-rows: auto 1fr;
+    grid-template-areas: "head head" "hero mix"; align-content: stretch; }
   html[data-widget-size="medium"] #label,
   html[data-widget-size="medium"] #scope { grid-area: head; }
   html[data-widget-size="medium"] .hero { grid-area: hero; }
   html[data-widget-size="medium"] .mix { grid-area: mix; align-content: start; padding-top: var(--space-xs); }
-  html[data-widget-size="medium"] .tips { grid-area: tips; align-self: end; }
   html[data-widget-size="medium"] .subs { display: none; }
   html[data-widget-size="medium"] .total { font-size: var(--font-size-2xl); }
-  html[data-widget-size="medium"] .tip { padding: var(--space-xs) var(--space-sm); grid-template-columns: auto minmax(0, 1fr); align-items: center; }
-  html[data-widget-size="medium"] .tip .long { display: none; }
-  html[data-widget-size="medium"] .tip > :last-child { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-  html[data-widget-size="medium"] .tip:not(:first-child) { display: none; }
   html[data-widget-size="medium"] .legend div:nth-child(n+3) { display: none; }
-  /* Large: two by two. Everything, three subs, two tips; fit() trims the rest. */
+  /* Large: two by two. Everything, three subs; fit() trims the rest. */
   html[data-widget-size="large"] body { gap: var(--space-md); }
   html[data-widget-size="large"] .subs .sub:nth-child(n+4) { display: none; }
-  html[data-widget-size="large"] .tip:nth-child(n+3) { display: none; }
   /* Preview: param preview=small|medium|large draws one tile box inline. 10rem cell, 0.75rem gap. */
   html.preview body { height: auto; width: 100%; max-width: 20.75rem; margin: 0 auto; outline: 1px dashed var(--border-color); outline-offset: -1px; overflow: hidden; }
   html.preview[data-widget-size="small"] body { max-width: 10rem; height: 10rem; }
@@ -129,8 +118,8 @@
 <body tabindex="0" role="link" aria-label="Open Token Cost">
   <div class="meta" id="label">This thread</div>
   <div class="scope" id="scope" role="group" aria-label="Cost scope">
-    <button type="button" data-incl="0">This thread</button>
-    <button type="button" data-incl="1" id="scope-subs">+ sub-threads</button>
+    <button type="button" data-incl="0"><span>This thread</span></button>
+    <button type="button" data-incl="1" id="scope-subs"><span>+ sub-threads</span></button>
   </div>
   <div class="hero">
     <div class="total" id="total">…</div>
@@ -141,11 +130,6 @@
     <div class="legend" id="legend"></div>
   </div>
   <div class="subs" id="subs" hidden></div>
-  <div class="tips" id="tips"></div>
-  <svg width="0" height="0" style="position:absolute">
-    <symbol id="i-tip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></symbol>
-    <symbol id="i-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></symbol>
-  </svg>
 <script>
 lucidos.ui.applyPreferences();
 lucidos.ui.watchPreferences();
@@ -202,36 +186,6 @@ function threadCost(tid) {
   return r;
 }
 
-// ---- Suggestions -----------------------------------------------------------
-// Each is a plain heuristic over the model mix and call counts the snapshot
-// holds. The saving is a rate-card estimate, never a measured value.
-function rateOf(m) { const k = rateKey(m); return k ? currentRates()[k] : null; }
-function blended(r) { return r ? (r.in + r.out) : 0; }
-function suggest(tree, models, total, calls) {
-  const out = [];
-  if (total < 0.5) return out;
-  const cheaper = { 'claude-opus-5-5': 'claude-sonnet-5-5', 'claude-opus-5': 'claude-opus-5-5', 'claude-fable-5': 'claude-opus-5-5', 'claude-fable-5-1': 'claude-opus-5-5' };
-  for (const m of models) {
-    const to = cheaper[m.name];
-    if (!to || m.cost / total < 0.25) continue;
-    const a = blended(rateOf(m.name)), b = blended(rateOf(to));
-    if (!a || !b || b >= a) continue;
-    const save = m.cost * (1 - b / a);
-    if (save < 0.25) continue;
-    const retired = /fable|opus-5$/.test(m.name);
-    out.push({ score: save, html: retired
-      ? `<b>${short(m.name)}</b> is off your list. On ${short(to)} this spend would be about <b>${usd(m.cost - save)}</b>.`
-      : `<b>${Math.round(m.cost / total * 100)}%</b> is ${short(m.name)}. Simple sub-tasks on ${short(to)} would save up to <b>${usd(save)}</b><span class="long">, about ${Math.round(save / m.cost * 100)}% of it</span>.` });
-  }
-  const per = calls ? total / calls : 0;
-  if (calls >= 40 && per >= 0.12) out.push({ score: total * 0.3, html:
-    `<b>${usd(per)}</b> per call is high<span class="long">, a sign of a long context</span>. A fresh thread for the next step would cut it.` });
-  const kids = tree.filter(r => r.id !== focus).sort((a, b) => b.all - a.all);
-  if (kids.length && kids[0].all / total >= 0.5) out.push({ score: kids[0].all * 0.2, html:
-    `One sub-thread is <b>${Math.round(kids[0].all / total * 100)}%</b> of the spend<span class="long">: ${esc(kids[0].title)}</span>.` });
-  if (!out.length) out.push({ ok: true, score: 0, html: `Spend looks lean<span class="long">: no expensive model share and no long-context sign</span>.` });
-  return out.sort((a, b) => b.score - a.score);
-}
 // Write a region only when its markup changed, so a re-render that changes
 // nothing touches no nodes, and one that changes something swaps them once.
 function setHTML(el, html) { if (el._html !== html) { el._html = html; el.innerHTML = html; } }
@@ -255,7 +209,6 @@ function render() {
     $('total').textContent = '—';
     $('today').textContent = '';
     $('mix').hidden = true; $('subs').hidden = true;
-    setHTML($('tips'), '<div class="empty">Open a thread to see what it costs.</div>');
     fit();
     return;
   }
@@ -278,7 +231,7 @@ function render() {
   // before a thread has any sub-threads.
   const pill = true;
   $('scope').hidden = false;
-  $('scope-subs').textContent = known ? `+ ${avail} sub-thread${avail === 1 ? '' : 's'}` : '+ sub-threads';
+  $('scope-subs').firstElementChild.textContent = known ? `+ ${avail} sub-thread${avail === 1 ? '' : 's'}` : '+ sub-threads';
   for (const b of $('scope').querySelectorAll('button')) b.setAttribute('aria-pressed', String((b.dataset.incl === '1') === incl));
   const small = document.documentElement.dataset.widgetSize === 'small';
   $('label').hidden = false; // CSS picks label or pill for the head slot, never both
@@ -303,9 +256,6 @@ function render() {
   setHTML($('subs'), ranked.slice(0, 6).map((r, i) =>
     `<div class="sub${r.id === focus ? ' root' : ''}${anim ? ' enter' : ''}" style="--i:${i}"><span>${r.id === focus ? 'This thread' : esc(titles.get(r.id) || r.title)}</span><span>${usd(r.all)}</span><span class="bar"><i style="transform:scaleX(${Math.max(0.02, r.all / max)})"></i></span></div>`).join(''));
 
-  const tips = suggest(tree, models, total, calls);
-  setHTML($('tips'), tips.map((t, i) =>
-    `<div class="tip${t.ok ? ' ok' : ''}${anim ? ' enter' : ''}" style="--i:${i + 1}"><svg aria-hidden="true"><use href="#${t.ok ? 'i-ok' : 'i-tip'}"/></svg><span>${t.html}</span></div>`).join(''));
   drawn = true;
   fit();
 }
@@ -320,11 +270,9 @@ function fit() {
   const over = () => b.scrollHeight > b.clientHeight + 1;
   if (!over()) return;
   const cuts = [
-    ...$$('#tips > .tip').slice(1).reverse(),
     ...$$('#subs > .sub').reverse(),
     ...$$('#legend > div').slice(1).reverse(),
     document.getElementById('today'),
-    document.getElementById('tips'),
     document.getElementById('subs'),
     document.getElementById('legend'),
   ];

@@ -146,8 +146,13 @@
       }
       #tip-title:empty { display: none; }
 
-      .stat-strip { display: flex; gap: var(--space-xl); flex-wrap: wrap; }
-      .stat { min-width: 7rem; }
+      .stat-strip {
+        display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--space-xl); min-width: min(100%, 30rem);
+      }
+      @media (max-width: 40rem) { .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+      .stat { min-width: 0; }
+      #an-metric .segmented-btn, #btn-refresh { white-space: nowrap; }
       .stat-v {
         font-family: var(--font-mono); font-size: var(--font-size-2xl);
         color: var(--text-primary); font-variant-numeric: tabular-nums;
@@ -158,6 +163,115 @@
         display: flex; gap: var(--space-md); align-items: center;
         flex-wrap: wrap; margin-bottom: var(--space-xl);
       }
+      /* Currency goes to the row's end, with its note hung just under it so
+         the note never changes the row's height or pushes a dropdown. */
+      .ccy-group { position: relative; margin-left: auto; }
+      #fx-note {
+        position: absolute; top: 100%; right: 0; margin-top: var(--space-2xs, 0.25rem);
+        font-size: var(--font-size-2xs); white-space: nowrap;
+      }
+      /* Fixed widths, so picking a longer or shorter option never resizes a
+         dropdown and shoves its neighbours along the row. */
+      /* Range picker: one button opens presets, two months and From/To.
+         The native date popup ignores the theme, so the app draws its own.
+         Fixed width: the label changes, the row does not move. */
+      #range { display: none; }
+      .date-span { position: relative; flex: none; }
+      .date-btn {
+        display: inline-flex; align-items: center; gap: var(--space-xs);
+        width: 15rem; box-sizing: border-box;
+        padding: 0.1875rem var(--space-sm); line-height: 1.2;
+        font: inherit; font-size: var(--font-size-sm); color: var(--text-primary);
+        background: var(--bg-secondary); border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm); cursor: pointer; text-align: left;
+      }
+      .date-btn svg { width: 0.875rem; height: 0.875rem; flex: none; color: var(--text-muted); }
+      .date-btn .chev { margin-left: auto; transition: transform var(--duration-fast); }
+      .date-btn[aria-expanded="true"] .chev { transform: rotate(180deg); }
+      .date-btn span { line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .date-btn[aria-expanded="true"], .date-btn:focus-visible { border-color: var(--accent); outline: none; }
+      .cal-pop {
+        position: absolute; top: calc(100% + var(--space-xs)); left: 0; z-index: 50;
+        display: grid; grid-template-columns: 9rem auto;
+        background: var(--bg-secondary); border: 1px solid var(--border-color);
+        border-radius: var(--radius-md); box-shadow: var(--shadow-sm); overflow: hidden;
+      }
+      .cal-pop[hidden] { display: none; }
+      .cal-presets {
+        display: flex; flex-direction: column; gap: 2px; padding: var(--space-sm);
+        border-right: 1px solid var(--border-color);
+      }
+      .cal-preset {
+        text-align: left; border: 0; background: transparent; cursor: pointer;
+        padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-sm);
+        font: inherit; font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap;
+      }
+      .cal-sep { border: 0; height: 1px; background: var(--border-color); margin: var(--space-xs) var(--space-sm); }
+      .cal-preset.on { background: var(--bg-selected, var(--bg-hover)); color: var(--text-primary); }
+      .cal-main { padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+      .cal-months { position: relative; display: grid; grid-template-columns: repeat(2, 14rem); gap: var(--space-lg); }
+      .cal-nav {
+        position: absolute; top: -0.25rem; width: 1.75rem; height: 1.75rem;
+        display: grid; place-items: center; padding: 0;
+        border: 0; border-radius: var(--radius-sm);
+        background: transparent; color: var(--text-secondary); font: inherit; cursor: pointer;
+      }
+      #cal-prev { left: 0; } #cal-next { right: 0; }
+      .cal-nav:disabled { opacity: 0.3; cursor: default; }
+      .cal-title { text-align: center; font-size: var(--font-size-sm); color: var(--text-primary); height: 1.5rem; line-height: 1.25rem; }
+      .cal-grid { display: grid; grid-template-columns: repeat(7, 2rem); justify-content: space-between; row-gap: 0.25rem; }
+      .cal-dow { text-align: center; font-size: var(--font-size-2xs); color: var(--text-muted); padding-bottom: var(--space-2xs); }
+      .cal-day {
+        position: relative; display: grid; place-items: center;
+        width: 2rem; height: 2rem; border: 0; padding: 0; margin: 0;
+        background: transparent; border-radius: var(--radius-sm); cursor: pointer;
+        font: inherit; font-size: var(--font-size-sm); font-variant-numeric: tabular-nums;
+        line-height: 1; color: var(--text-primary);
+        transition: background var(--duration-fast), color var(--duration-fast);
+      }
+      .cal-day.blank { visibility: hidden; }
+      .cal-day:disabled { opacity: 0.25; cursor: default; }
+      /* Today: a small dot under the number, no box. */
+      .cal-day.today { color: var(--accent); font-weight: 600; }
+      .cal-day.today::after {
+        content: ''; position: absolute; bottom: 0.2rem; left: 50%; translate: -50% 0;
+        width: 0.25rem; height: 0.25rem; border-radius: 50%; background: currentColor;
+      }
+      .cal-day.in { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text-primary); }
+      .cal-day.end { background: var(--accent); color: var(--bg-primary); font-weight: 600; }
+      .cal-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); }
+      .cal-field { display: flex; flex-direction: column; gap: var(--space-2xs); font-size: var(--font-size-xs); color: var(--text-muted); }
+      .cal-field input {
+        font-family: var(--font-mono); font-size: var(--font-size-sm); color: var(--text-primary);
+        background: var(--bg-primary); border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm); padding: var(--space-xs) var(--space-sm);
+      }
+      .cal-field input:focus { border-color: var(--accent); outline: none; }
+      .cal-field input.bad { border-color: var(--accent-red); }
+      .cal-foot { display: flex; justify-content: flex-end; }
+      .cal-apply {
+        border: 0; border-radius: var(--radius-sm); cursor: pointer;
+        padding: var(--space-xs) var(--space-md); font: inherit; font-size: var(--font-size-sm);
+        background: var(--accent); color: var(--bg-primary);
+      }
+      .cal-apply:disabled { opacity: 0.4; cursor: default; }
+      @media (hover: hover) {
+        .date-btn:hover { border-color: var(--text-muted); }
+        .cal-preset:not(.on):hover { background: var(--bg-hover); color: var(--text-primary); }
+        .cal-nav:not(:disabled):hover { background: var(--bg-hover); color: var(--text-primary); }
+        .cal-day:not(:disabled):not(.end):hover { background: var(--bg-hover); color: var(--text-primary); border-radius: var(--radius-sm); }
+      }
+      /* Phone: presets become a wrapping row on top, one month shows. */
+      @media (max-width: 40rem) {
+        .cal-pop { position: fixed; left: var(--space-sm); right: var(--space-sm); top: 4rem; grid-template-columns: 1fr; }
+        .cal-sep { display: none; }
+        .cal-presets { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border-color); }
+        .cal-months { grid-template-columns: 1fr; }
+        .cal-month + .cal-month { display: none; }
+      }
+      #producer-slot { width: 13rem; flex: none; }
+      #currency-slot { width: 9rem; flex: none; }
+      #producer-slot > *, #currency-slot > * { width: 100%; max-width: 100%; }
 
       section.block { margin-bottom: var(--space-xl); }
       h2.sec {
@@ -208,6 +322,45 @@
         background: var(--accent); color: var(--bg-primary); font-size: var(--font-size-2xs);
         font-weight: 700; text-align: center;
       }
+      /* A chip family (Model / Model:effort, Type / Type:subtype) is one split
+         chip, as the Apply button is: the face toggles the variant it shows,
+         the caret opens a frame that fuses with the chip and offers the
+         variants. Only one variant of a family can be on, by construction. */
+      .chip-split { position: relative; display: inline-flex; }
+      .chip-split .chip-face { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right-width: 0; }
+      .chip-split .chip-caret {
+        border-top-left-radius: 0; border-bottom-left-radius: 0; padding: 0 0.4375rem;
+        border-left: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+      }
+      .chip-split.on .chip-caret {
+        color: var(--text-primary); border-color: var(--accent);
+        border-left-color: color-mix(in srgb, var(--accent) 45%, transparent);
+        background: color-mix(in srgb, var(--accent) 18%, transparent);
+      }
+      .chip-caret svg { width: 0.75rem; height: 0.75rem; transition: transform var(--duration-normal) ease; }
+      .chip-split.open .chip-caret svg { transform: rotate(180deg); }
+      .chip-menu {
+        display: none; position: absolute; top: 100%; left: -0.375rem; z-index: 20;
+        min-width: calc(100% + 0.75rem); width: max-content; box-sizing: border-box;
+        flex-direction: column; gap: var(--space-xs); padding: 0.375rem;
+        background: color-mix(in srgb, var(--bg-secondary) 90%, transparent);
+        backdrop-filter: blur(0.75rem); -webkit-backdrop-filter: blur(0.75rem);
+        border: 1px solid var(--border-color); border-top: none;
+        border-radius: 0 0.75rem 0.75rem 0.75rem;
+        box-shadow: 0 0.5rem 1.5rem -0.25rem rgba(0, 0, 0, 0.35);
+        animation: chip-menu-in var(--duration-normal) ease;
+      }
+      .chip-split.open .chip-menu { display: flex; }
+      .chip-split.open::before {
+        content: ""; position: absolute; left: -0.375rem; right: -0.375rem; top: -0.375rem; bottom: 0; z-index: 19;
+        background: color-mix(in srgb, var(--bg-secondary) 90%, transparent);
+        border: 1px solid var(--border-color); border-bottom: none; border-radius: 0.75rem 0.75rem 0 0;
+      }
+      .chip-split.open > .chip { position: relative; z-index: 21; }
+      .chip-menu .chip { justify-content: center; white-space: nowrap; }
+      @keyframes chip-menu-in { from { opacity: 0; transform: translateY(-0.25rem); } to { opacity: 1; transform: none; } }
+      [data-motion="reduce"] .chip-menu { animation: none; }
+      [data-motion="reduce"] .chip-caret svg { transition: none; }
 
       .an-chart { display: flex; align-items: stretch; gap: 0.1875rem; height: 8rem; }
       .an-col { flex: 1 1 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; cursor: default; }
@@ -220,7 +373,18 @@
       .legend { display: flex; gap: var(--space-lg); flex-wrap: wrap; margin-top: var(--space-md); font-size: var(--font-size-xs); color: var(--text-secondary); }
       .swatch { display: inline-block; width: 0.625rem; height: 0.625rem; border-radius: var(--radius-sm); margin-right: var(--space-xs); vertical-align: baseline; flex: none; }
 
-      #an-legend > .lg-item { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #an-legend > .lg-item {
+        display: inline-flex; align-items: center; max-width: 16rem; white-space: nowrap;
+        background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer;
+        transition: opacity var(--duration-fast) ease, color var(--duration-fast) ease;
+      }
+      @media (hover: hover) { #an-legend > .lg-item:hover { color: var(--text-primary); } }
+      #an-legend > .lg-item.on { color: var(--text-primary); font-weight: 600; }
+      #an-legend.filtered > .lg-item:not(.on) { opacity: 0.45; }
+      #an-legend .lg-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .an-seg { transition: opacity var(--duration-fast) ease; }
+      .an-seg.dim { opacity: 0.2; }
+      [data-motion="reduce"] .an-seg, [data-motion="reduce"] #an-legend > .lg-item { transition: none; }
       .an-scroll { overflow-x: auto; margin-top: var(--space-lg); }
       table.an-table { table-layout: auto; min-width: 46rem; }
       table.an-table th, table.an-table td { width: auto; white-space: nowrap; }
@@ -240,6 +404,11 @@
       table.an-table td.an-barc { width: 9rem; min-width: 9rem; text-align: left; }
       .an-bar { display: inline-block; height: 0.5rem; border-radius: 2px; background: var(--accent); vertical-align: middle; }
       tr.an-row.deep .an-bar { opacity: 0.6; }
+      /* The thread open in Lucidos right now, and the row that holds it. */
+      tr.an-row.here td { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text-primary); }
+      tr.an-row.here td:first-child { box-shadow: inset 0.1875rem 0 0 var(--accent); }
+      tr.an-row.holds-here td:first-child { box-shadow: inset 0.1875rem 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+      .an-here { color: var(--accent); font-size: var(--font-size-2xs); font-weight: 600; margin-left: var(--space-xs); }
       .split { display: inline-flex; width: 7rem; height: 0.5rem; border-radius: 2px; overflow: hidden; vertical-align: middle; background: var(--bg-tertiary); }
       .split span { height: 100%; }
       tr.an-more td { color: var(--text-muted); font-style: italic; cursor: pointer; }
@@ -450,19 +619,52 @@
       </div>
 
       <div class="controls">
-        <select class="lucidos-select" id="range">
+        <!-- Hidden: holds the chosen preset for the code. The picker below is what shows. -->
+        <select id="range" aria-hidden="true" tabindex="-1">
           <option value="1" selected>Today</option>
+          <option value="wtd">Week to date</option>
           <option value="7">Last 7 days</option>
+          <option value="mtd">Month to date</option>
           <option value="30">Last 30 days</option>
+          <option value="lastmonth">Last month</option>
+          <option value="90">Last 90 days</option>
+          <option value="qtd">This quarter</option>
+          <option value="ytd">This year</option>
+          <option value="365">Last 12 months</option>
           <option value="0">All time</option>
+          <option value="custom">Custom</option>
         </select>
-        <!-- A gateway ledger usually counts days in UTC, and this dashboard
-             counts them in the browser's zone. Named here so two "today"
-             figures are not compared across different windows unawares. -->
-        <span class="muted" id="tz-note" style="font-size: var(--font-size-xs)"></span>
+        <div class="date-span" id="date-span">
+          <button type="button" class="date-btn" id="date-btn" aria-haspopup="dialog" aria-expanded="false" aria-label="Pick dates">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg>
+            <span id="date-label"></span>
+            <svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+          </button>
+          <input type="hidden" id="range-from" />
+          <input type="hidden" id="range-to" />
+          <div class="cal-pop" id="cal-pop" role="dialog" aria-label="Pick a date range" hidden>
+            <div class="cal-presets" id="cal-presets"></div>
+            <div class="cal-main">
+              <div class="cal-months">
+                <button type="button" class="cal-nav" id="cal-prev" aria-label="Earlier months">&lsaquo;</button>
+                <button type="button" class="cal-nav" id="cal-next" aria-label="Later months">&rsaquo;</button>
+                <div class="cal-month"><div class="cal-title" id="cal-title-a"></div><div class="cal-grid" id="cal-grid-a"></div></div>
+                <div class="cal-month"><div class="cal-title" id="cal-title-b"></div><div class="cal-grid" id="cal-grid-b"></div></div>
+              </div>
+              <div class="cal-fields">
+                <label class="cal-field">From<input id="cal-from" inputmode="numeric" placeholder="dd/mm/yyyy" autocomplete="off" /></label>
+                <label class="cal-field">To<input id="cal-to" inputmode="numeric" placeholder="dd/mm/yyyy" autocomplete="off" /></label>
+              </div>
+              <div class="cal-foot"><button type="button" class="cal-apply" id="cal-apply">Apply range</button></div>
+            </div>
+          </div>
+        </div>
         <div id="producer-slot"></div>
-        <div id="currency-slot"></div>
-        <span class="muted" id="fx-note" style="font-size: var(--font-size-xs)"></span>
+        <!-- The conversion note sits under its own dropdown, not loose in the row. -->
+        <div class="ccy-group">
+          <div id="currency-slot"></div>
+          <span class="muted" id="fx-note"></span>
+        </div>
       </div>
 
       <!-- ONE analysis panel, grouped by whatever chips are on. It replaced
@@ -567,7 +769,7 @@
 
         <section class="block">
           <h2 class="sec">Producer labels</h2>
-          <p class="sec-note">How each producer the engine reports is named in the table and the filter. Unlabelled producers show their raw id.</p>
+          <p class="sec-note">How each producer the engine reports is named in the table and the filter. An unlabelled auxiliary purpose reads as its name; any other unlabelled producer shows its raw id.</p>
           <div class="card">
             <table class="price-table">
               <thead><tr><th>Producer id</th><th style="text-align: left">Label</th><th></th></tr></thead>
@@ -608,7 +810,22 @@
     <script>
       lucidos.ui.applyPreferences();
       lucidos.ui.watchPreferences();
-      lucidos.ui.enhanceSelects();
+      // The thread open in Lucidos beside this app, so its row stands out.
+      let hereThread = null;
+      // Follow the thread the user has open, so its row is marked. Outside
+      // Lucidos there is no host to ask and nothing is marked.
+      (async () => {
+        try { hereThread = await lucidos.ui.focusedThread(); } catch (e) { hereThread = null; }
+        // Before the first data load render() may have nothing to draw yet, so
+        // a failed early repaint is fine: the first real render marks the row.
+        const repaint = () => { try { render(); } catch (e) {} };
+        if (hereThread) repaint();
+        try {
+          lucidos.ui.onFocusedThreadChange((id) => { hereThread = id || null; repaint(); });
+        } catch (e) {}
+      })();
+      // Keep the drawn range dropdown, so a date edit can flip it to Custom.
+      const enhancedSelects = lucidos.ui.enhanceSelects() || [];
 
       const DAILY = 'artifacts/token-cost/daily.json';
       // Prices come from Lucidos's price table (lucidos.priceTable.get(), ADR
@@ -640,6 +857,16 @@
           claude_code: 'Claude Code',
           codex: 'Codex',
           jev_browser: 'Jev Browser',
+          cache_keep_alive: 'Cache keep-alive',
+          // The engine's auxiliary calls, one id per purpose (`auxiliary:<purpose>`).
+          // A purpose not listed reads as its own name, see producerLabel().
+          auxiliary: 'Auxiliary',
+          'auxiliary:summary_compaction': 'Compaction',
+          'auxiliary:memory': 'Memory',
+          'auxiliary:title': 'Title',
+          'auxiliary:query_classification': 'Query classification',
+          'auxiliary:command_judge': 'Command judge',
+          'auxiliary:image_describe': 'Image describe',
         },
         // No seeded exchange rates either: a seed is a second copy that goes
         // stale. A fresh workspace reads in the base currency until Settings →
@@ -725,6 +952,22 @@
        *  double counting a real call or swallowing one. Sorting first makes
        *  the result depend only on WHAT arrived, never on WHEN, so any
        *  delivery order lands on the same total. */
+      // A cache keep-alive ping is a Claude Code turn like any other. What tells
+      // it apart is its anchor: a PromptInjected with engine reason
+      // `cache_keep_alive`, which each capture of the turn names as
+      // `request_event_id`. The rollup files those calls under their own type,
+      // and the live tail does the same from the anchors it has seen. Derived
+      // in countedLive, like the collapse, so an anchor that arrives after its
+      // calls still relabels them.
+      const KEEP_ALIVE_TYPE = 'cache_keep_alive';
+      const keepAliveAnchors = new Set();
+      function noteKeepAliveAnchor(id, payload) {
+        if (!id || payload?.origin?.reason?.kind !== KEEP_ALIVE_TYPE || keepAliveAnchors.has(id)) return false;
+        keepAliveAnchors.add(id);
+        liveRevision++;
+        return true;
+      }
+
       function countedLive() {
         const cursor = daily.last_sequence || 0;
         if (countedCache.rev === liveRevision && countedCache.cursor === cursor) {
@@ -741,7 +984,7 @@
             if (lastUsageByThread.get(c.thread) === key) continue;
             lastUsageByThread.set(c.thread, key);
           }
-          out.push(c);
+          out.push(keepAliveAnchors.has(c.request) ? { ...c, producer: KEEP_ALIVE_TYPE } : c);
         }
         countedCache = { rev: liveRevision, cursor, calls: out };
         return out;
@@ -829,7 +1072,10 @@
         if (soundId === 'custom' && !customSound) soundId = DEFAULT_SOUND;
         // A pick stored before a sound was retired would leave no card selected.
         if (soundId !== 'custom' && !SOUNDS.some((s) => s.id === soundId)) soundId = DEFAULT_SOUND;
-        if (Array.isArray(uiState.groups)) groups = uiState.groups.filter((g) => DIMS.some((d) => d.id === g));
+        if (Array.isArray(uiState.groups)) groups = oneOfEachFamily(uiState.groups.filter((g) => DIMS.some((d) => d.id === g)));
+        if (uiState.variants && typeof uiState.variants === 'object') {
+          for (const f of FAMILIES) if (f.dims.includes(uiState.variants[f.id])) variants[f.id] = uiState.variants[f.id];
+        }
         if (METRICS.includes(uiState.metric)) metric = uiState.metric;
         renderSoundBtn();
         renderSoundGrid();
@@ -1262,9 +1508,21 @@
        *  the model the provider's reply names. When that is a DIFFERENT model
        *  (a provider rerouted the call), it is what ran and what was billed,
        *  so it wins. A snapshot or tag of the requested id keeps the
-       *  requested id, which is what the cards and the [1m] check key on. */
+       *  requested id. A row is filed under rowModel(); this decides only
+       *  whether the call counts as rerouted. */
       function pricedModel(model, served) {
         return served && !servedAsSent(model, served) ? served : model;
+      }
+
+      /** The model a usage row is filed under: the id the provider's reply
+       *  names, else the id Lucidos sent, less a `[1m]` suffix. So a
+       *  `claude-opus-5-5[1m]` call shares a row with a plain one, also from
+       *  before the engine recorded `served_model`, and a reroute files under
+       *  the model that ran. It prices the same as pricedModel(): every card
+       *  lookup strips `[1m]` first. The rollup's row_model_sql() is the
+       *  same rule. */
+      function rowModel(model, served) {
+        return String(served || model).replace(/\[1m\]$/, '');
       }
 
       /** Every id a pricing card might be filed under for this model, most
@@ -1507,15 +1765,100 @@
         return [...s].sort();
       }
 
-      function selectedDays() {
-        const n = parseInt(document.getElementById('range').value, 10);
-        const all = knownDays();
-        if (!n) return all;
+      /** The [from, to] days a preset stands for, cut fresh on each call so
+       *  "Today" follows midnight. `0` is all time, from the first known day. */
+      function presetSpan(p) {
+        const today = localDay(new Date());
+        if (p === '0') return [knownDays()[0] || today, today];
+        if (p === 'ytd') return [`${today.slice(0, 4)}-01-01`, today];
+        if (p === 'wtd') {
+          // Weeks start on Monday.
+          const d = new Date(`${today}T12:00:00`);
+          d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+          return [localDay(d), today];
+        }
+        if (p === 'mtd') return [`${today.slice(0, 7)}-01`, today];
+        if (p === 'qtd') {
+          const q = Math.floor((parseInt(today.slice(5, 7), 10) - 1) / 3) * 3 + 1;
+          return [`${today.slice(0, 4)}-${String(q).padStart(2, '0')}-01`, today];
+        }
+        if (p === 'lastmonth') {
+          const first = new Date(`${today.slice(0, 7)}-01T12:00:00`);
+          const last = new Date(first); last.setDate(0);
+          return [`${localDay(last).slice(0, 7)}-01`, localDay(last)];
+        }
+        const n = parseInt(p, 10) || 1;
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - (n - 1));
-        const from = localDay(cutoff);
-        return all.filter((d) => d >= from);
+        return [localDay(cutoff), today];
       }
+
+      /** The span on screen. A preset writes its dates into the two inputs;
+       *  Custom reads them back, swapped if they are the wrong way round. */
+      function currentSpan() {
+        const p = document.getElementById('range').value;
+        const fromEl = document.getElementById('range-from');
+        const toEl = document.getElementById('range-to');
+        const today = localDay(new Date());
+        fromEl.max = today; toEl.max = today;
+        if (p !== 'custom') {
+          const [f, t] = presetSpan(p);
+          fromEl.value = f; toEl.value = t;
+          setDateLabel(f, t);
+          return { from: f, to: t };
+        }
+        let f = fromEl.value || today, t = toEl.value || today;
+        if (f > t) [f, t] = [t, f];
+        setDateLabel(f, t);
+        return { from: f, to: t };
+      }
+
+      /** "20 Oct", or "14 Oct → 20 Oct"; the year shows only when it is not this one. */
+      function dayLabel(d) {
+        const dt = new Date(`${d}T12:00:00`);
+        const opts = { day: 'numeric', month: 'short' };
+        if (d.slice(0, 4) !== localDay(new Date()).slice(0, 4)) opts.year = 'numeric';
+        return dt.toLocaleDateString('en-GB', opts);
+      }
+      /** The button reads like the pick: "Today, 20 Oct", "Last 7 days", or the dates. */
+      function setDateLabel(f, t) {
+        const el = document.getElementById('date-label');
+        if (!el) return;
+        const r = document.getElementById('range');
+        const p = r.value;
+        const name = p === 'ytd' ? f.slice(0, 4) : (r.selectedOptions && r.selectedOptions[0] ? r.selectedOptions[0].textContent : '');
+        const dates = f === t ? dayLabel(f) : `${dayLabel(f)} – ${dayLabel(t)}`;
+        el.textContent = p === 'custom' || !name ? dates : p === '1' ? `Today, ${dayLabel(t)}` : name;
+        el.title = dates;
+      }
+
+      function selectedDays() {
+        const { from, to } = currentSpan();
+        return knownDays().filter((d) => d >= from && d <= to);
+      }
+
+      /** The filter value that stands for every auxiliary sub-producer. */
+      const AUX_ALL = 'auxiliary:*';
+      const AUX_PREFIX = 'auxiliary:';
+
+      /** Whether a row's producer id passes the producer filter. `all` passes
+       *  everything, `auxiliary:*` the bare `auxiliary` id and every
+       *  `auxiliary:<purpose>`, anything else only itself. */
+      function producerMatches(pf, producer) {
+        if (pf === 'all' || producer === pf) return true;
+        return pf === AUX_ALL && typeParent(producer) === 'auxiliary';
+      }
+
+      /** The Type row a producer id sits under. A producer with a type of its
+       *  own is its own row. Everything else, whatever carries no type, is under
+       *  `auxiliary`: the auxiliary purposes, cache keep-alive pings, and any
+       *  producer this list does not know. */
+      const TYPED_PRODUCERS = new Set(['main_llm', 'claude_code', 'codex', 'jev_browser']);
+      function typeParent(producer) {
+        return TYPED_PRODUCERS.has(producer) ? producer : 'auxiliary';
+      }
+      // What Auxiliary calls its calls that have no purpose.
+      const OWN_SUBTYPE_LABEL = { auxiliary: 'Auxiliary (unspecified)' };
 
       function producerFilter() {
         return producerSelect ? (producerSelect.getValue() || 'all') : 'all';
@@ -1595,7 +1938,8 @@
       /** Add one live call into a series map, bucketed and long-context split
        *  exactly as the rollup does it. */
       function foldCall(out, c) {
-        const key = `${c.producer}|${c.model}`;
+        // The rollup's key: producer|model, plus |effort when the call named one.
+        const key = `${c.producer}|${c.model}` + (c.effort ? `|${c.effort}` : '');
         const b = out[key] || (out[key] = emptyU());
         const edges = daily.bucket_edges;
         let bi = 0;
@@ -1629,7 +1973,7 @@
         for (const day of days) {
           for (const [key, v] of Object.entries(seriesForDay(day))) {
             const [producer, model] = key.split('|');
-            if (pf !== 'all' && producer !== pf) continue;
+            if (!producerMatches(pf, producer)) continue;
             addU(byKey[key] || (byKey[key] = emptyU()), v);
             const c = costOf(model, v, v.long, day);
             if (c === null) addU(keyUnpriced[key] || (keyUnpriced[key] = emptyU()), v);
@@ -1656,7 +2000,6 @@
         const isToday = days.length === 1 && days[0] === todayKey;
         document.getElementById('hero-label-text').textContent =
           isToday ? 'Spend today' : `Spend, ${days.length} day${days.length === 1 ? '' : 's'}`;
-        document.getElementById('tz-note').textContent = dayZoneLabel();
         const heroEl = document.getElementById('hero-cost');
         const heroText = fmtMoney(totalCost);
         // Reuse the span instead of rebuilding it: replacing innerHTML would
@@ -1727,9 +2070,44 @@
       const THREADS_DAILY = 'artifacts/token-cost/threads-daily.json';
       const DIMS = [
         { id: 'model', label: 'Model' },
+        { id: 'model_effort', label: 'Model:effort' },
         { id: 'type', label: 'Type' },
+        { id: 'subtype', label: 'Type:subtype' },
         { id: 'thread', label: 'Thread' },
       ];
+      // Chips that cut the same calls two ways. One split chip each, and only
+      // one variant of a family can be on: Model and Model:effort together
+      // would nest a model under itself.
+      const FAMILIES = [
+        { id: 'model', dims: ['model', 'model_effort'] },
+        { id: 'type', dims: ['type', 'subtype'] },
+        { id: 'thread', dims: ['thread'] },
+      ];
+      const familyOf = (d) => FAMILIES.find((f) => f.dims.includes(d));
+      const dimLabelOf = (d) => DIMS.find((x) => x.id === d).label;
+      /** The face toggles: off if on, else on in place of its sibling (same
+       *  nesting position), else appended. */
+      function pickDim(gs, d) {
+        if (gs.includes(d)) return gs.filter((g) => g !== d);
+        return chooseDim(gs, d);
+      }
+      /** A menu pick never turns a chip off: it swaps the sibling in place. */
+      function chooseDim(gs, d) {
+        if (gs.includes(d)) return gs;
+        const fam = familyOf(d);
+        const i = gs.findIndex((g) => fam.dims.includes(g));
+        if (i < 0) return gs.concat(d);
+        const n = gs.slice(); n[i] = d; return n;
+      }
+      /** A stored pick from before the families: keep the first of each. */
+      function oneOfEachFamily(gs) {
+        const seen = new Set();
+        return gs.filter((g) => { const f = familyOf(g)?.id; if (!f || seen.has(f)) return false; seen.add(f); return true; });
+      }
+      // Family -> the variant last picked, so an off chip's face still shows it.
+      let variants = {};
+      let openFamily = null;
+      const CHEVRON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>';
       // What the panel opens with the first time. After that the last pick is
       // remembered in ui-state.json.
       const DEFAULT_GROUPS = ['type', 'model'];
@@ -1746,6 +2124,13 @@
 
       let groups = DEFAULT_GROUPS.slice();
       let metric = 'cost';
+      // The legend item clicked to filter the chart and table to one series,
+      // or null for all. Cleared when that series is no longer on the chart.
+      let focusSeries = null;
+      // The ids of the series the chart drew, in legend order, so a legend
+      // item and its bars can point at one by index (an id may hold
+      // characters an HTML attribute would mangle).
+      let chartSeriesIds = [];
       const expanded = new Set();   // row paths opened by a click
       const showAll = new Set();    // level paths whose "+ N more" was clicked
 
@@ -1856,8 +2241,8 @@
           const id = tid + '\n' + key;
           let f = map.get(id);
           if (!f) {
-            const [producer, model] = key.split('|');
-            f = { day, thread: tid, key, producer, model, u: emptyU(), cost: null };
+            const [producer, model, effort = ''] = key.split('|');
+            f = { day, thread: tid, key, producer, model, effort, u: emptyU(), cost: null };
             map.set(id, f);
           }
           addU(f.u, u);
@@ -1888,21 +2273,50 @@
       }
 
       function dimOf(dim, f) {
-        if (dim === 'type') return f.producer;
+        if (dim === 'type') return typeParent(f.producer);
+        if (dim === 'subtype') return f.producer;
         if (dim === 'model') return f.model;
+        if (dim === 'model_effort') return `${f.model}|${f.effort}`;
         return rootOf(f.thread || '') || '';
       }
 
+      /** A producer's name: the workspace's own label, else the built-in one,
+       *  else the raw id. Settings saved before a producer existed lack it. */
+      function producerLabel(id) {
+        const named = (pricing?.producers || {})[id] || DEFAULT_SETTINGS.producers[id];
+        if (named) return named;
+        // An auxiliary purpose with no label: "Change summary", not the raw id.
+        if (id.startsWith(AUX_PREFIX)) {
+          const name = id.slice(AUX_PREFIX.length).replace(/_/g, ' ');
+          return name.charAt(0).toUpperCase() + name.slice(1);
+        }
+        return id;
+      }
+
       function dimLabel(dim, id) {
-        if (dim === 'type') return (pricing?.producers || DEFAULT_SETTINGS.producers)[id] || id;
+        if (dim === 'type') return producerLabel(id);
+        if (dim === 'subtype') return OWN_SUBTYPE_LABEL[id] || producerLabel(id);
         if (dim === 'model') return modelName(id);
+        if (dim === 'model_effort') {
+          // Rows from before the engine recorded an effort say so.
+          const [model, effort] = splitModelEffort(id);
+          return `${modelName(model)} · ${effort || 'effort unknown'}`;
+        }
         return threadTitle(id);
+      }
+
+      /** A Model:effort row id back to its model and effort. The model is
+       *  everything before the last `|`. */
+      function splitModelEffort(id) {
+        const i = id.lastIndexOf('|');
+        return i < 0 ? [id, ''] : [id.slice(0, i), id.slice(i + 1)];
       }
 
       /** A row of the tree: the facts under it summed, and what it can open
        *  into. `cost` is null only when NONE of it is priced; a partly priced
        *  row shows the priced part, and the hero says what was left out. */
       function makeNode(dim, id, facts, rest, path, sub) {
+        rest = withoutEmptySubtype(facts, rest, dim === 'type');
         const u = emptyU();
         const uUnpriced = emptyU();
         const unpriced = new Set();
@@ -1925,9 +2339,24 @@
       const sortNodes = (nodes) => nodes.sort((a, b) =>
         (b.cost ?? Infinity) - (a.cost ?? Infinity) || b.u.calls - a.u.calls);
 
+      /** Type:subtype picked right after Type: a Type row with one producer id
+       *  and nothing else under it has no sub-types, so the level is left out
+       *  and the next chip's groups follow directly. Anywhere else the
+       *  Type:subtype chip is a plain flat grouping and always shows. */
+      function withoutEmptySubtype(facts, dims, underType) {
+        if (!underType || dims[0] !== 'subtype') return dims;
+        const ids = new Set(facts.map((f) => f.producer));
+        const own = ids.size === 1 && typeParent([...ids][0]) === [...ids][0];
+        return own ? dims.slice(1) : dims;
+      }
+
       function groupLevel(facts, dims, path) {
+        dims = withoutEmptySubtype(facts, dims, /\/type:[^/]*$/.test(path));
         if (!dims.length) return [];
-        const [dim, ...rest] = dims;
+        const [dim, ...next] = dims;
+        // Type folds the auxiliary purposes into one row; Type:subtype is
+        // its own chip, so a Type row opens straight into the next chip.
+        const rest = next;
         const by = new Map();
         for (const f of facts) {
           const id = dimOf(dim, f);
@@ -1980,7 +2409,7 @@
 
         const dayFacts = new Map();
         for (const day of days) {
-          dayFacts.set(day, factsFor(day, null, threadsOn).filter((f) => pf === 'all' || f.producer === pf));
+          dayFacts.set(day, factsFor(day, null, threadsOn).filter((f) => producerMatches(pf, f.producer)));
         }
         const all = [...dayFacts.values()].flat();
         if (threadsOn && all.some((f) => f.thread && !threadMeta.has(f.thread))) lookupThreads();
@@ -1988,7 +2417,16 @@
         const top = groupLevel(all, dims, '');
         const colour = new Map(top.slice(0, SERIES.length).map((n, i) => [n.id, SERIES[i]]));
         renderChart(days, pf, dims, top, colour, dayFacts, threadsOn);
-        renderTable(top, makeNode(null, 'all', all, dims, '', false), dims, colour);
+        // A legend filter on a grouped series narrows the table to its rows
+        // too. The cache split is not a grouping, so the table stays whole.
+        if (focusSeries && metric !== 'cache' && dims.length) {
+          const rows = focusSeries === OTHER_ID
+            ? top.filter((n) => !colour.has(n.id))
+            : top.filter((n) => n.id === focusSeries);
+          renderTable(rows, makeNode(null, 'all', rows.flatMap((n) => n.facts), dims, '', false), dims, colour);
+        } else {
+          renderTable(top, makeNode(null, 'all', all, dims, '', false), dims, colour);
+        }
 
         // Say so when the rows show raw ids, not registry labels.
         const labelNote = document.getElementById('model-label-note');
@@ -1996,11 +2434,49 @@
       }
 
       function renderChips() {
-        document.getElementById('an-chips').innerHTML = DIMS.map((d) => {
-          const i = groups.indexOf(d.id);
-          return `<button type="button" class="chip${i >= 0 ? ' on' : ''}" data-dim="${d.id}" aria-pressed="${i >= 0}">` +
-            (i >= 0 ? `<span class="n">${i + 1}</span>` : '') + d.label + '</button>';
-        }).join('');
+        // Update the chips in place. Rebuilding them with innerHTML on every
+        // live-tail render swapped the button under the pointer, so its hover
+        // state dropped and came back: a flicker while hovering.
+        const host = document.getElementById('an-chips');
+        const sig = FAMILIES.map((f) => f.dims.join(':')).join(',');
+        if (host.dataset.dims !== sig) {
+          host.innerHTML = FAMILIES.map((f) => {
+            const d0 = f.dims[0];
+            const face = `<button type="button" class="chip${f.dims.length > 1 ? ' chip-face' : ''}" data-dim="${d0}" aria-pressed="false"><span class="lbl">${dimLabelOf(d0)}</span></button>`;
+            if (f.dims.length === 1) return `<span class="chip-split" data-family="${f.id}">${face}</span>`;
+            return `<span class="chip-split" data-family="${f.id}">${face}`
+              + `<button type="button" class="chip chip-caret" data-caret="${f.id}" aria-haspopup="menu" aria-expanded="false" aria-label="${dimLabelOf(d0)} variants">${CHEVRON}</button>`
+              + `<span class="chip-menu" role="menu">${f.dims.map((d) =>
+                  `<button type="button" class="chip" role="menuitemradio" data-pick="${d}" aria-checked="false">${dimLabelOf(d)}</button>`).join('')}</span></span>`;
+          }).join('');
+          host.dataset.dims = sig;
+        }
+        for (const w of host.querySelectorAll('[data-family]')) {
+          const f = FAMILIES.find((x) => x.id === w.dataset.family);
+          const current = f.dims.find((d) => groups.includes(d)) || variants[f.id] || f.dims[0];
+          const i = groups.indexOf(current);
+          const on = i >= 0;
+          const open = openFamily === f.id;
+          w.classList.toggle('on', on);
+          w.classList.toggle('open', open);
+          const b = w.querySelector('[data-dim]');
+          if (b.dataset.dim !== current) b.dataset.dim = current;
+          const lbl = b.querySelector('.lbl');
+          if (lbl.textContent !== dimLabelOf(current)) lbl.textContent = dimLabelOf(current);
+          if (b.classList.contains('on') !== on) b.classList.toggle('on', on);
+          if (b.getAttribute('aria-pressed') !== String(on)) b.setAttribute('aria-pressed', String(on));
+          let n = b.querySelector('.n');
+          if (on && !n) { n = document.createElement('span'); n.className = 'n'; b.prepend(n); }
+          if (!on && n) n.remove();
+          if (on && n.textContent !== String(i + 1)) n.textContent = String(i + 1);
+          const caret = w.querySelector('[data-caret]');
+          if (caret) caret.setAttribute('aria-expanded', String(open));
+          for (const p of w.querySelectorAll('[data-pick]')) {
+            const sel = p.dataset.pick === current;
+            p.classList.toggle('on', sel && on);
+            p.setAttribute('aria-checked', String(sel));
+          }
+        }
         for (const b of document.querySelectorAll('#an-metric [data-metric]')) {
           b.classList.toggle('active', b.dataset.metric === metric);
         }
@@ -2020,7 +2496,7 @@
           for (let h = 0; h < 24; h++) {
             cols.push({
               label: `${pad(h)}:00`,
-              facts: factsFor(day, h, threadsOn).filter((f) => pf === 'all' || f.producer === pf),
+              facts: factsFor(day, h, threadsOn).filter((f) => producerMatches(pf, f.producer)),
               now: day === today && h === nowHour,
             });
           }
@@ -2055,8 +2531,19 @@
               add(dim && !colour.has(id) ? OTHER_ID : id, metric === 'cost' ? (f.cost || 0) : f.u.calls);
             }
           }
+          c.allValues = v;
           c.values = v;
-          c.total = [...v.values()].reduce((a, b) => a + b, 0);
+        }
+        // The legend lists every series that has data, filtered or not.
+        const used = new Set(cols.flatMap((c) => [...c.allValues.keys()]));
+        if (focusSeries !== null && !used.has(focusSeries)) focusSeries = null;
+        chartSeriesIds = series.map(([id]) => id);
+        for (const c of cols) {
+          if (focusSeries !== null) {
+            const n = c.allValues.get(focusSeries);
+            c.values = new Map(n ? [[focusSeries, n]] : []);
+          }
+          c.total = [...c.values.values()].reduce((a, b) => a + b, 0);
         }
 
         const chart = document.getElementById('an-chart');
@@ -2077,6 +2564,7 @@
             if (!n) continue;
             const seg = document.createElement('div');
             seg.className = 'an-seg';
+            seg.dataset.si = String(chartSeriesIds.indexOf(id));
             seg.style.height = ((n / max) * 100).toFixed(3) + '%';
             seg.style.background = paint;
             col.appendChild(seg);
@@ -2089,12 +2577,20 @@
         document.getElementById('ax-to').textContent = shown.length > 1 ? shown[shown.length - 1].label : '';
 
         const esc = lucidos.utils.escapeHtml;
-        const used = new Set(cols.flatMap((c) => [...c.values.keys()]));
         const what = metric === 'cost' ? 'cost' : metric === 'calls' ? 'calls' : 'cached and cold calls';
         const per = hourly ? 'per hour' : 'per day';
-        document.getElementById('an-legend').innerHTML =
-          series.filter(([id]) => used.has(id))
-            .map(([, label, paint]) => `<span class="lg-item" data-tooltip="${escAttr(label)}"><span class="swatch" style="background:${paint}"></span>${esc(label)}</span>`)
+        const legend = document.getElementById('an-legend');
+        legend.classList.toggle('filtered', focusSeries !== null);
+        const canFilter = series.filter(([id]) => used.has(id)).length > 1 || focusSeries !== null;
+        legend.innerHTML =
+          series.map((s, i) => [s, i]).filter(([[id]]) => used.has(id))
+            .map(([[id, label, paint], i]) => {
+              const on = id === focusSeries;
+              const tip = !canFilter ? label : on ? `${label}\nClick to show all` : `${label}\nClick to show only this`;
+              return `<button type="button" class="lg-item${on ? ' on' : ''}" data-si="${i}" aria-pressed="${on}"` +
+                `${canFilter ? '' : ' disabled'} data-tooltip="${escAttr(tip)}">` +
+                `<span class="swatch" style="background:${paint}"></span><span class="lg-t">${esc(label)}</span></button>`;
+            })
             .join('') +
           (max ? `<span class="muted">${what} ${per}, top ${fmt(max)}</span>` : '');
       }
@@ -2132,7 +2628,10 @@
           const limit = showAll.has(levelPath) ? nodes.length : LEVEL_ROWS;
           for (const n of nodes.slice(0, limit)) {
             const tr = document.createElement('tr');
-            tr.className = 'an-row' + (n.kids ? ' kids' : '') + (level ? ' deep' : '');
+            const isHere = n.dim === 'thread' && hereThread && n.id === hereThread;
+            const holdsHere = !isHere && n.dim === 'thread' && hereThread && n.id && childUnder(n.id, hereThread);
+            tr.className = 'an-row' + (n.kids ? ' kids' : '') + (level ? ' deep' : '') +
+              (isHere ? ' here' : holdsHere ? ' holds-here' : '');
             tr.dataset.path = n.path;
             // A transparent swatch on uncoloured top rows keeps their names in line.
             tr.innerHTML = rowCells(n, level, level === 0 ? (colour.get(n.id) || 'transparent') : null, scale);
@@ -2197,7 +2696,9 @@
         const swatch = paint ? `<span class="swatch" style="background:${paint}"></span>` : '';
         const subTag = n.sub ? '<span class="an-sub">sub</span> ' : '';
         const subCount = n.subThreads ? `<span class="an-sub">+${n.subThreads} sub</span>` : '';
-        const routed = n.dim === 'model' ? routedNote(n.u.routed_from, n.id) : '';
+        const hereTag = n.dim === 'thread' && hereThread && n.id === hereThread ? '<span class="an-here">open now</span>' : '';
+        const routed = n.dim === 'model' ? routedNote(n.u.routed_from, n.id)
+          : n.dim === 'model_effort' ? routedNote(n.u.routed_from, splitModelEffort(n.id)[0]) : '';
         // A thread's name opens the thread; the rest of the row still folds.
         const name = n.dim === 'thread' && n.id
           ? `<a class="an-link" href="#" data-thread="${escAttr(n.id)}">${esc(label)}</a>` : esc(label);
@@ -2214,17 +2715,28 @@
           : `<td class="money">${fmtMoney(n.cost)}</td>`;
         const w = scale.max > 0 ? ((scale.byCost ? (n.cost || 0) : n.u.calls) / scale.max) * 100 : 0;
         return `<td style="padding-left: calc(${level} * 1.25rem + var(--space-sm))"${tip}>` +
-            `<span class="tw">${twisty}</span>${swatch}${subTag}${name}${subCount}${routed}</td>` +
+            `<span class="tw">${twisty}</span>${swatch}${subTag}${name}${hereTag}${subCount}${routed}</td>` +
           costCell +
           `<td class="an-barc">${w > 0 ? `<span class="an-bar" style="width:${Math.max(w, 0.5).toFixed(2)}%"></span>` : ''}</td>` +
           numberCells(n.u);
       }
 
       document.getElementById('an-chips').addEventListener('click', (e) => {
-        const b = e.target.closest?.('[data-dim]');
+        const caret = e.target.closest?.('[data-caret]');
+        if (caret) {
+          openFamily = openFamily === caret.dataset.caret ? null : caret.dataset.caret;
+          renderChips();
+          return;
+        }
+        const pick = e.target.closest?.('[data-pick]');
+        const b = pick || e.target.closest?.('[data-dim]');
         if (!b) return;
-        const d = b.dataset.dim;
-        groups = groups.includes(d) ? groups.filter((g) => g !== d) : groups.concat(d);
+        const d = pick ? pick.dataset.pick : b.dataset.dim;
+        groups = pick ? chooseDim(groups, d) : pickDim(groups, d);
+        variants[familyOf(d).id] = d;
+        uiState.variants = variants;
+        openFamily = null;
+        focusSeries = null;
         expanded.clear();
         showAll.clear();
         uiState.groups = groups;
@@ -2232,10 +2744,54 @@
         render();
       });
 
+      // An open chip menu closes on a click anywhere else, or on Escape.
+      document.addEventListener('click', (e) => {
+        if (openFamily && !e.target.closest?.('.chip-split.open')) { openFamily = null; renderChips(); }
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && openFamily) { openFamily = null; renderChips(); }
+      });
+
+      // Legend: hovering an item dims every other series' bars; clicking it
+      // filters the chart and table to that series, and clicking it again
+      // shows all. Delegated, since the legend is redrawn on every render.
+      const anLegend = document.getElementById('an-legend');
+      const highlightSeries = (si) => {
+        for (const seg of document.querySelectorAll('#an-chart .an-seg')) {
+          seg.classList.toggle('dim', si !== null && seg.dataset.si !== si);
+        }
+      };
+      anLegend.addEventListener('pointerover', (e) => {
+        const b = e.target.closest?.('.lg-item[data-si]');
+        if (b && !b.disabled) highlightSeries(b.dataset.si);
+      });
+      anLegend.addEventListener('pointerout', (e) => {
+        const b = e.target.closest?.('.lg-item[data-si]');
+        if (b && !b.contains(e.relatedTarget)) highlightSeries(null);
+      });
+      anLegend.addEventListener('focusin', (e) => {
+        const b = e.target.closest?.('.lg-item[data-si]');
+        if (b) highlightSeries(b.dataset.si);
+      });
+      anLegend.addEventListener('focusout', () => highlightSeries(null));
+      anLegend.addEventListener('click', (e) => {
+        const b = e.target.closest?.('.lg-item[data-si]');
+        if (!b || b.disabled) return;
+        const id = chartSeriesIds[Number(b.dataset.si)];
+        if (id === undefined) return;
+        focusSeries = focusSeries === id ? null : id;
+        expanded.clear();
+        showAll.clear();
+        render();
+        // Keep the keyboard on the item that was pressed.
+        anLegend.querySelector(`.lg-item[data-si="${b.dataset.si}"]`)?.focus({ preventScroll: true });
+      });
+
       document.getElementById('an-metric').addEventListener('click', (e) => {
         const b = e.target.closest?.('[data-metric]');
         if (!b || b.dataset.metric === metric) return;
         metric = b.dataset.metric;
+        focusSeries = null;
         uiState.metric = metric;
         saveUiState();
         render();
@@ -2307,6 +2863,15 @@
         return '';
       }
 
+      /** A call's producer id, as the rollup files it: `auxiliary:<purpose>` for
+       *  an auxiliary call (bare `auxiliary` with no purpose), else the producer.
+       *  A purpose is cut to [A-Za-z0-9_.-], since a row key is `producer|model`. */
+      function producerId(p) {
+        const producer = p.producer || 'unknown';
+        const purpose = typeof p.purpose === 'string' ? p.purpose.replace(/[^A-Za-z0-9_.-]/g, '_') : '';
+        return producer === 'auxiliary' && purpose ? `auxiliary:${purpose}` : producer;
+      }
+
       /** Fold one ContextCaptured into the live tail.
        *
        *  `opts.quiet` is the backfill replaying history: same accounting, but
@@ -2319,14 +2884,17 @@
         if (!p || p.type !== 'ContextCaptured' || !p.usage) return false;
         const u = p.usage;
         const asked = p.model || 'unknown';
-        const model = pricedModel(asked, p.served_model);
         const call = {
           seq: ev.seq,
           at: ev.created || new Date().toISOString(),
-          model,
+          model: rowModel(asked, p.served_model),
           // The id Lucidos asked for, kept only when another model answered.
-          asked: model === asked ? null : asked,
-          producer: p.producer || 'unknown',
+          asked: pricedModel(asked, p.served_model) === asked ? null : asked,
+          producer: producerId(p),
+          // The thinking level the call asked for (none, low, medium, high...).
+          effort: p.reasoning_effort || '',
+          // The turn's anchor, which says whether a keep-alive made the call.
+          request: p.request_event_id || null,
           // Kept on the call, because the frame collapse is per thread and is
           // now computed from the stored rows rather than at arrival.
           thread: ev.thread_id || '',
@@ -2494,9 +3062,13 @@
         }
       }
 
+      // A row is filed under the id the reply names, which can carry a
+      // release stamp the registry does not (`claude-haiku-4-5-20251001`),
+      // so the undated id is tried last.
       function modelName(id) {
         return modelLabels[id]
             || modelLabelsNoAlias[stripEndpointAlias(id)]
+            || modelLabelsNoAlias[undated(stripEndpointAlias(id))]
             || id;
       }
 
@@ -2602,6 +3174,8 @@
           before = rows[rows.length - 1].id;
         }
 
+        const anchorsAdded = await catchUpKeepAliveAnchors(since);
+
         // Oldest first, so the per-thread dedupe below sees the same order the
         // rollup's SQL window function does.
         collected.reverse();
@@ -2637,7 +3211,34 @@
           }).length;
           if (missed) streamMissed += Math.min(missed, added);
         }
-        if (added || failed || !opts.initial) render();
+        if (added || failed || anchorsAdded || !opts.initial) render();
+      }
+
+      /** The keep-alive anchors since `since`, which the stream may have
+       *  dropped like any other row. A failure only leaves some keep-alive
+       *  calls filed under Claude Code, never a cost wrong, so it is logged
+       *  and the catch-up carries on. Returns how many anchors were new. */
+      async function catchUpKeepAliveAnchors(since) {
+        const PAGE = 500;
+        let before = null;
+        let added = 0;
+        try {
+          for (let page = 0; page < 40; page++) {
+            const rows = await lucidos.events.query({
+              event_type: 'PromptInjected',
+              since: since.toISOString(),
+              limit: PAGE,
+              ...(before ? { before_event_id: before } : {}),
+            });
+            if (!Array.isArray(rows) || !rows.length) break;
+            for (const r of rows) if (noteKeepAliveAnchor(r.id, r.payload)) added++;
+            if (rows.length < PAGE) break;
+            before = rows[rows.length - 1].id;
+          }
+        } catch (e) {
+          console.warn('token-cost: keep-alive anchor catch-up failed', e);
+        }
+        return added;
       }
 
       async function load() {
@@ -2842,15 +3443,19 @@
         render();
       }
 
-      /** Keep the producer dropdown in step with the configured labels, plus any
-       *  producer the data mentions that has no label yet. */
+      /** Keep the producer dropdown in step with the data: a producer is listed
+       *  only when a row mentions it, labelled from the settings. */
       function syncProducerFilter() {
-        const seen = new Set(Object.keys(pricing.producers || {}));
+        const seen = new Set();
         for (const day of Object.values(daily.days || {})) {
           for (const key of Object.keys(day)) seen.add(key.split('|')[0]);
         }
-        const options = [{ value: 'all', label: 'All producers' }].concat(
-          [...seen].sort().map((pid) => ({ value: pid, label: (pricing.producers || {})[pid] || pid })));
+        for (const c of live) seen.add(c.producer);
+        const ids = [...seen].sort();
+        const options = [{ value: 'all', label: 'All producers' }];
+        // The group sits before its members, and only when the data has any.
+        if (ids.some((pid) => producerMatches(AUX_ALL, pid))) options.push({ value: AUX_ALL, label: 'Auxiliary (all)' });
+        for (const pid of ids) options.push({ value: pid, label: producerLabel(pid) });
 
         if (!producerSelect) {
           producerSelect = lucidos.ui.Select.create({
@@ -2904,14 +3509,13 @@
         if (!displayCcy || displayCcy === base) { el.textContent = ''; return; }
         const stamp = pricing?.fx?._updated;
         const age = stamp ? Math.floor((Date.now() - new Date(stamp + 'T00:00:00Z').getTime()) / 864e5) : null;
-        const when = age === null ? 'an undated rate'
+        const when = age === null ? 'undated rate'
           : age <= 0 ? "today's rate"
-          : age === 1 ? "yesterday's rate"
-          : age < 14 ? `a rate from ${age} days ago`
-          : `a rate from ${stamp}, ${age} days old`;
-        el.textContent = `converted from ${base} at ${when}`;
+          : age === 1 ? 'rate 1 day old'
+          : `rate ${age} days old`;
+        el.textContent = `From ${base}, ${when}`;
+        if (stamp) el.title = `Rate dated ${stamp}`;
         el.className = age !== null && age >= 14 ? 'dirty-dot' : 'muted';
-        el.style.fontSize = 'var(--font-size-xs)';
       }
 
       /* ---------------- Settings ---------------- */
@@ -3760,6 +4364,138 @@
       });
 
       document.getElementById('range').addEventListener('change', render);
+      // The range picker. A preset applies at once. Calendar clicks and the
+      // From/To fields edit a draft, and Apply range commits it as Custom.
+      // Two clicks pick a span; weeks start on Monday; days after today are off.
+      const rangeSel = document.getElementById('range');
+      const calPop = document.getElementById('cal-pop');
+      const dateBtn = document.getElementById('date-btn');
+      const cal = { month: null, from: null, to: null, anchor: null, hover: null };
+      // Shortest span first; a '-' draws a divider between the short, long and all-time groups.
+      const PRESETS = ['1', 'wtd', '7', 'mtd', '30', 'lastmonth', '90', '-', 'qtd', 'ytd', '365', '-', '0'];
+      const toField = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : '');
+      function fromField(v) {
+        const m = v.trim().match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/) || null;
+        const iso = m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : v.trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+        const dt = new Date(`${iso}T12:00:00`);
+        return isNaN(dt) || localDay(dt) !== iso || iso > localDay(new Date()) ? null : iso;
+      }
+      function monthStart(d) { return new Date(`${d.slice(0, 7)}-01T12:00:00`); }
+      function openCal() {
+        const { from, to } = currentSpan();
+        cal.from = from; cal.to = to; cal.anchor = null; cal.hover = null;
+        const m = monthStart(to); m.setMonth(m.getMonth() - 1);
+        cal.month = m;
+        calPop.hidden = false; dateBtn.setAttribute('aria-expanded', 'true');
+        drawPresets(); drawCal(); syncFields();
+      }
+      function closeCal() { calPop.hidden = true; dateBtn.setAttribute('aria-expanded', 'false'); }
+      function drawPresets() {
+        document.getElementById('cal-presets').innerHTML = PRESETS.map((v) => {
+          if (v === '-') return '<hr class="cal-sep" aria-hidden="true">';
+          const o = rangeSel.querySelector(`option[value="${v}"]`);
+          const label = v === 'ytd' ? localDay(new Date()).slice(0, 4) : o.textContent;
+          return `<button type="button" class="cal-preset${rangeSel.value === v ? ' on' : ''}" data-p="${v}">${label}</button>`;
+        }).join('');
+      }
+      function syncFields() {
+        for (const [id, v] of [['cal-from', cal.from], ['cal-to', cal.anchor ? null : cal.to]]) {
+          const el = document.getElementById(id);
+          el.value = toField(v); el.classList.remove('bad');
+        }
+        document.getElementById('cal-apply').disabled = !!cal.anchor;
+      }
+      function drawMonth(m, titleId, gridId, f, t, today) {
+        document.getElementById(titleId).textContent = m.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+        let html = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((d) => `<span class="cal-dow">${d}</span>`).join('');
+        const lead = (m.getDay() + 6) % 7;
+        for (let i = 0; i < lead; i++) html += '<span class="cal-day blank"></span>';
+        const d = new Date(m);
+        while (d.getMonth() === m.getMonth()) {
+          const k = localDay(d);
+          const cls = ['cal-day'];
+          if (k === today) cls.push('today');
+          if (f && k > f && k < t) cls.push('in');
+          if (k === f || k === t) cls.push('end');
+          html += `<button type="button" class="${cls.join(' ')}" data-day="${k}"${k > today ? ' disabled' : ''}>${d.getDate()}</button>`;
+          d.setDate(d.getDate() + 1);
+        }
+        document.getElementById(gridId).innerHTML = html;
+      }
+      function drawCal() {
+        const today = localDay(new Date());
+        let f = cal.from, t = cal.to;
+        if (cal.anchor) {
+          const o = cal.hover || cal.anchor;
+          [f, t] = cal.anchor <= o ? [cal.anchor, o] : [o, cal.anchor];
+        }
+        const a = cal.month, b = new Date(a); b.setMonth(b.getMonth() + 1);
+        drawMonth(a, 'cal-title-a', 'cal-grid-a', f, t, today);
+        drawMonth(b, 'cal-title-b', 'cal-grid-b', f, t, today);
+        document.getElementById('cal-next').disabled = localDay(b).slice(0, 7) >= today.slice(0, 7);
+      }
+      function commit(preset, f, t) {
+        rangeSel.value = preset;
+        if (preset === 'custom') {
+          document.getElementById('range-from').value = f;
+          document.getElementById('range-to').value = t;
+        }
+        closeCal();
+        render();
+      }
+      dateBtn.addEventListener('click', () => (calPop.hidden ? openCal() : closeCal()));
+      document.getElementById('cal-presets').addEventListener('click', (e) => {
+        const b = e.target.closest('.cal-preset');
+        if (b) commit(b.dataset.p);
+      });
+      document.getElementById('cal-prev').addEventListener('click', () => { cal.month.setMonth(cal.month.getMonth() - 1); drawCal(); });
+      document.getElementById('cal-next').addEventListener('click', () => { cal.month.setMonth(cal.month.getMonth() + 1); drawCal(); });
+      for (const id of ['cal-grid-a', 'cal-grid-b']) {
+        const g = document.getElementById(id);
+        g.addEventListener('click', (e) => {
+          const b = e.target.closest('.cal-day');
+          if (!b || b.disabled || !b.dataset.day) return;
+          const k = b.dataset.day;
+          if (!cal.anchor) { cal.anchor = k; cal.from = k; cal.hover = null; }
+          else {
+            // Second click: the span is picked, so apply it at once.
+            const [f, t] = cal.anchor <= k ? [cal.anchor, k] : [k, cal.anchor];
+            cal.anchor = null;
+            commit('custom', f, t);
+            return;
+          }
+          drawCal(); syncFields();
+        });
+        g.addEventListener('mouseover', (e) => {
+          const b = e.target.closest('.cal-day');
+          if (!cal.anchor || !b || b.disabled || !b.dataset.day || b.dataset.day === cal.hover) return;
+          cal.hover = b.dataset.day; drawCal();
+        });
+      }
+      for (const [id, key] of [['cal-from', 'from'], ['cal-to', 'to']]) {
+        document.getElementById(id).addEventListener('change', (e) => {
+          const v = fromField(e.target.value);
+          e.target.classList.toggle('bad', !v);
+          if (!v) return;
+          cal[key] = v; cal.anchor = null;
+          if (cal.from > cal.to) [cal.from, cal.to] = [cal.to, cal.from];
+          cal.month = monthStart(cal.to); cal.month.setMonth(cal.month.getMonth() - 1);
+          drawCal(); syncFields();
+        });
+      }
+      document.getElementById('cal-apply').addEventListener('click', () => commit('custom', cal.from, cal.to));
+      // A click inside the picker never reaches the outside-click check below.
+      // A day click redraws the grid and detaches its button, so any check that
+      // runs after the handler can mistake it for an outside click.
+      document.getElementById('date-span').addEventListener('click', (e) => e.stopPropagation());
+      // Outside dismissal runs on pointerdown, before any handler redraws.
+      document.addEventListener('pointerdown', (e) => {
+        if (!calPop.hidden && !document.getElementById('date-span').contains(e.target)) closeCal();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !calPop.hidden) { closeCal(); dateBtn.focus(); }
+      });
 
       document.getElementById('btn-sound').addEventListener('click', () => {
         soundOn = !soundOn;
@@ -3830,6 +4566,9 @@
       lucidos.sse.on('ContextCaptured', (data) => {
         lastSseAt = performance.now();
         pushLive(data);
+      });
+      lucidos.sse.on('PromptInjected', (data) => {
+        if (noteKeepAliveAnchor(data?.event_id, data?.event)) render();
       });
       // The rollup trigger rewrites the file, so pick it up without a reload.
       lucidos.sse.on('DataFileWritten', (d) => {

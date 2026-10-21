@@ -501,17 +501,17 @@ def served_as_sent_sql(sent: str, served: str) -> str:
     )
 
 
-def priced_model_sql(model: str, served: str) -> str:
-    """The model a call is priced as, as the app's pricedModel() decides it.
+def row_model_sql(model: str, served: str) -> str:
+    """The model a usage row is filed under, as the app's rowModel().
 
-    `served_model` is the model the provider's reply names. When it is a
-    DIFFERENT model, the provider rerouted the call, and the model that ran
-    is the one billed. A snapshot or tag of the requested id keeps the
-    requested id, which the cards and the [1m] check key on. Rows from
-    before the engine recorded it have none and keep `model`.
+    The id the provider's reply names, else the id Lucidos sent, less a
+    `[1m]` suffix. So a `claude-opus-5-5[1m]` call shares a row with a plain
+    `claude-opus-5-5` call, also from before the engine recorded
+    `served_model`, and a reroute files under the model that ran. Pricing
+    reads this id too: every card lookup and the long split strip `[1m]`
+    first, so the bare id prices the same.
     """
-    same = f"coalesce({served}, '') = '' OR {served_as_sent_sql(model, served)}"
-    return f"(CASE WHEN {same} THEN {model} ELSE {served} END)"
+    return f"regexp_replace(coalesce(nullif({served}, ''), {model}), '\\[1m\\]$', '')"
 
 
 def asked_sql(model: str, served: str) -> str:
@@ -522,7 +522,7 @@ def asked_sql(model: str, served: str) -> str:
 
 REQ = "payload->>'model'"
 SERVED = "payload->>'served_model'"
-PRICED_MODEL = priced_model_sql(REQ, SERVED)
+ROW_MODEL = row_model_sql(REQ, SERVED)
 ASKED = asked_sql(REQ, SERVED)
 
 
@@ -646,6 +646,43 @@ _USAGE_TUPLE = """(
         (payload->'usage'->>'output_tokens')::bigint
       )"""
 
+# A cache keep-alive ping is a Claude Code turn like any other: same producer,
+# same purpose. What tells it apart is its anchor. The engine opens each ping
+# with a PromptInjected whose engine reason is `cache_keep_alive`, and every
+# capture of that turn names it as `request_event_id`. Those calls are filed
+# under their own type, so the Type column shows what the keep-alive costs.
+# The CASE keeps a malformed id from failing the cast, since AND does not
+# promise an order, and the lookup still uses the primary key. `c` is the
+# capture row of ROLLUP_SQL.
+KEEP_ALIVE_TYPE = "cache_keep_alive"
+KEEP_ALIVE = """(c.payload->>'producer' = 'claude_code' AND EXISTS (
+          SELECT 1 FROM events a
+          WHERE a.id = CASE
+              WHEN c.payload->>'request_event_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              THEN (c.payload->>'request_event_id')::uuid END
+            AND a.event_type = 'PromptInjected'
+            AND a.payload->'origin'->'reason'->>'kind' = 'cache_keep_alive'
+        ))"""
+
+# The engine files every housekeeping model call (compaction, memory, titles,
+# voice, proxy...) under the one producer `auxiliary` and names what it was for
+# in `purpose`. One row for all of them hides where the money goes, so a call is
+# filed under `auxiliary:<purpose>` (bare `auxiliary` when the purpose is empty
+# or missing). Other producers keep their own id, `purpose` or not: for
+# claude_code and codex it is a transport detail, not a different spend. A
+# purpose is cut to [A-Za-z0-9_.-] because a row key is `producer|model` and a
+# stray `|` would split it. The voice-seconds query uses the same expression, or
+# a session's seconds would land on a row its tokens are not in.
+def producer_id_sql(payload: str = "payload") -> str:
+    """The SQL expression for a call's producer id, read from this JSON column."""
+    return (
+        f"CASE WHEN {payload}->>'producer' = 'auxiliary' "
+        f"AND coalesce({payload}->>'purpose', '') <> '' "
+        f"THEN 'auxiliary:' || regexp_replace({payload}->>'purpose', '[^A-Za-z0-9_.-]', '_', 'g') "
+        f"ELSE {payload}->>'producer' END"
+    )
+
+
 ROLLUP_SQL = (
     """
 COPY (
@@ -653,9 +690,12 @@ COPY (
     SELECT
       to_char(local_day, 'YYYY-MM-DD') AS day,
       local_hour AS hour,
-      producer,
+      CASE WHEN keep_alive THEN '"""
+    + KEEP_ALIVE_TYPE
+    + """' ELSE producer END AS producer,
       model,
       asked,
+      effort,
       thread_id::text AS thread,
       count(*) AS calls,
       count(*) FILTER (WHERE cr > 0) AS cached_calls,
@@ -687,13 +727,16 @@ COPY (
     + LOCAL_HOUR
     + """ AS local_hour,
         thread_id,
-        payload->>'producer' AS producer,
         """
-    + PRICED_MODEL
+    + producer_id_sql("payload")
+    + """ AS producer,
+        """
+    + ROW_MODEL
     + """ AS model,
         """
     + ASKED
     + """ AS asked,
+        coalesce(payload->>'reasoning_effort', '') AS effort,
         (payload->'usage'->>'input_tokens')::bigint AS in_tok,
         coalesce((payload->'usage'->>'cache_read_tokens')::bigint, 0) AS cr,
         coalesce((payload->'usage'->>'cache_creation_tokens')::bigint, 0) AS cw,
@@ -708,8 +751,11 @@ COPY (
     + _USAGE_TUPLE
     + """)
           OVER (PARTITION BY thread_id ORDER BY sequence)
-        AND payload->>'producer' = 'claude_code' AS dup
-      FROM events
+        AND payload->>'producer' = 'claude_code' AS dup,
+        """
+    + KEEP_ALIVE
+    + """ AS keep_alive
+      FROM events c
       WHERE event_type = 'ContextCaptured'
         AND payload->'usage' IS NOT NULL
         AND sequence <= %(max_seq)s
@@ -723,7 +769,7 @@ COPY (
     ) s
     WHERE NOT dup
       AND local_day = ANY (%(days)s)
-    GROUP BY 1, 2, 3, 4, 5, 6
+    GROUP BY 1, 2, 3, 4, 5, 6, 7
   ) t
 ) TO STDOUT;
 """
@@ -761,7 +807,12 @@ SECONDS_SQL = (
 COPY (
   WITH voice_calls AS MATERIALIZED (
     SELECT thread_id, sequence, created,
-           payload->>'producer' AS producer, payload->>'model' AS model
+           """
+    + producer_id_sql("payload")
+    + """ AS producer,
+           """
+    + ROW_MODEL
+    + """ AS model
     FROM events
     WHERE event_type = 'ContextCaptured' AND payload->>'purpose' = 'voice'
   )
@@ -819,7 +870,17 @@ COPY (
 #      is kept apart in `flex`, which the app prices at the card's `flex` rates
 #   7  2026-10-19: rows count `cached_calls` (calls that read any cache), and
 #      the same pass writes the per-thread file, threads-daily.json
-ROLLUP_VERSION = 7
+#   8  2026-10-19: a cache keep-alive ping is filed under its own type,
+#      `cache_keep_alive`, rather than under claude_code
+#   9  2026-10-19: a row is filed under the reply's `served_model` whenever
+#      it has one, so `claude-opus-5-5[1m]` and `claude-opus-5-5` are one row
+#  10  2026-10-19: a call that names its `reasoning_effort` is filed under
+#      producer|model|effort, so the app can group by model and effort
+#  11  2026-10-19: a row id drops its `[1m]` suffix, so a call from before
+#      the engine recorded `served_model` joins its bare id's row too
+#  12  2026-10-20: an auxiliary call is filed under `auxiliary:<purpose>`
+#      (bare `auxiliary` with no purpose), so history splits per sub-producer
+ROLLUP_VERSION = 12
 
 
 # A thread row is a flat list in this order, trailing zeros dropped. Most
@@ -830,6 +891,13 @@ THREAD_FIELDS = (
     "long.in", "long.cache_read", "long.cache_write", "long.out",
     "flex.in", "flex.cache_read", "flex.cache_write", "flex.out",
 )
+
+
+def row_key(producer: str, model: str, effort: str | None = None) -> str:
+    """A bucket's key: producer|model, plus |effort when the call named one.
+    A reader that splits on `|` and takes the first two parts still gets the
+    producer and the model."""
+    return f"{producer}|{model}|{effort}" if effort else f"{producer}|{model}"
 
 
 def thread_row(b: dict) -> list:
@@ -913,9 +981,9 @@ def needs_rebuild(state: dict | None, env: dict, split: str | None = None) -> st
 
 def main() -> None:
     try:
-        # Split on the model the call is PRICED as, so a rerouted call splits
-        # at the card of the model that ran.
-        long_cut = long_cutoff_sql(PRICED_MODEL, LOCAL_DAY)
+        # Split on the model the row is filed and priced under, so a rerouted
+        # call splits at the card of the model that ran.
+        long_cut = long_cutoff_sql(ROW_MODEL, LOCAL_DAY)
     except PricingUnreadable as e:
         sys.exit(f"not rolling up: {e}")
     split = split_signature(long_cut)
@@ -1030,12 +1098,12 @@ def main() -> None:
         t_days[d] = {}
         t_hours[d] = {}
     kept = 0
-    # The query returns one row per (day, hour, producer, model, thread). The
+    # The query returns one row per (day, hour, producer, model, effort, thread). The
     # day totals are that summed over hours and threads, so no two views can
     # disagree.
     for x in rows:
         kept += int(x["calls"])
-        key = f"{x['producer']}|{x['model']}"
+        key = row_key(x["producer"], x["model"], x.get("effort"))
         tid = x.get("thread") or ""
         hr = str(int(x["hour"]))
         fold(days[x["day"]].setdefault(key, blank()), x)
@@ -1052,7 +1120,7 @@ def main() -> None:
     for x in secs:
         n = int(x["seconds"] or 0)
         total_secs += n
-        key = f"{x['producer']}|{x['model']}"
+        key = row_key(x["producer"], x["model"])
         tid = x.get("thread") or ""
         days[x["day"]].setdefault(key, blank())["seconds"] += n
         hr = str(int(x["hour"]))
@@ -1108,10 +1176,17 @@ def main() -> None:
             "fingerprints those thresholds; a change rebuilds every day. "
             "A claude_code row whose usage tuple repeats the previous row in the same "
             "thread is dropped as a re-delivered streaming frame, not counted as a "
-            "second call. Other producers are never collapsed. A row is filed under "
-            "the model it is PRICED as: the reply's `served_model` when the provider "
-            "answered with a different model (a reroute), else the requested model; "
-            "'routed_from' counts those rerouted calls by the id that was asked for. "
+            "second call. Other producers are never collapsed. A claude_code call made "
+            "by a cache keep-alive (its request_event_id names a PromptInjected with "
+            "engine reason cache_keep_alive) is filed under the cache_keep_alive type. "
+            "A row is filed under "
+            "the model the provider answered with: the reply's `served_model` when it "
+            "has one, else the requested model, less a [1m] suffix, and is priced as that model; "
+            "'routed_from' counts calls a different model answered (a reroute) by the "
+            "id that was asked for. A call that names its reasoning_effort is keyed "
+            "producer|model|effort, else producer|model. An auxiliary call is filed "
+            "under the producer id auxiliary:<purpose> (bare auxiliary when it has no "
+            "purpose), e.g. auxiliary:memory. "
             "'seconds' is voice "
             "session wall-clock time, for a model billed by the minute rather than by "
             "tokens, taken from VoiceSessionEnded.duration_secs. Days are bucketed in "
@@ -1134,10 +1209,11 @@ def main() -> None:
         "rollup_version": ROLLUP_VERSION,
         "fields": list(THREAD_FIELDS),
         "note": (
-            "The rows of daily.json split by thread: days[day][thread][producer|model] "
-            "and hours[day][hour][thread][producer|model], each a list in `fields` "
+            "The rows of daily.json split by thread: days[day][thread][producer|model[|effort]] "
+            "and hours[day][hour][thread][producer|model[|effort]], each a list in `fields` "
             "order with trailing zeros dropped. Same dedupe, long split and Flex split "
             "as daily.json, from the same query, so the two always sum alike. "
+            "The producer is auxiliary:<purpose> for an auxiliary call, as in daily.json. "
             "threads[id] is [title] or [title, parent id]; a sub-thread folds into "
             "its root by walking parents. The empty thread id holds calls with no "
             "thread (Jev)."

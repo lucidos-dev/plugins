@@ -20,6 +20,35 @@ check('in force is a success label', html.includes("'label label-success'"), tru
 check('upcoming is a warning label', html.includes("'label label-warning'"), true);
 check('an earlier card is a neutral label', html.includes("'label label-neutral'"), true);
 
+// --- chips -------------------------------------------------------------------
+// Chips are updated in place, never rebuilt with innerHTML on each render: a
+// rebuild swaps the button under the pointer and its hover flickers.
+const chipStart = html.indexOf('function renderChips()');
+const chipFn = html.slice(chipStart, html.indexOf('\n      }\n', chipStart));
+check('chips are not rebuilt on every render', /host\.dataset\.dims\s*!==/.test(chipFn), true);
+check('chip state is toggled in place', /classList\.toggle\('on', on\)/.test(chipFn), true);
+
+// --- dropdowns ---------------------------------------------------------------
+// The time, producer and currency dropdowns have fixed widths, so a pick never
+// resizes them and shoves the row.
+for (const sel of ['.date-btn', '#producer-slot', '#currency-slot']) {
+  const re = new RegExp(sel.replace('.', '\\.') + '\\s*\\{[^}]*width:\\s*[\\d.]+rem');
+  check(`${sel} has a fixed width`, re.test(css), true);
+}
+
+// --- time range --------------------------------------------------------------
+// Presets fill two free date inputs; editing a date flips the range to Custom.
+for (const v of ['1', 'wtd', '7', 'mtd', '30', 'lastmonth', '90', 'qtd', 'ytd', '365', '0', 'custom']) {
+  check(`range offers ${v}`, html.includes(`<option value="${v}"`), true);
+}
+check('a from date value', /<input type="hidden" id="range-from"/.test(html), true);
+check('a to date value', /<input type="hidden" id="range-to"/.test(html), true);
+check('Apply range commits Custom', /commit\('custom'/.test(html), true);
+// The native date popup ignores the theme (2026-10-20), so the app draws its own.
+check('no native date input in the range picker', /<input type="date" id="range-/.test(html), false);
+check('two months side by side', /id="cal-grid-b"/.test(html), true);
+check('a themed calendar', /id="cal-pop"/.test(html), true);
+
 // --- hover -------------------------------------------------------------------
 // Walk the stylesheet with a stack of block preludes. A :hover selector is safe
 // only when some enclosing block is @media (hover: hover).

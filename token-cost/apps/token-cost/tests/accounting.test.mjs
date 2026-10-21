@@ -52,13 +52,15 @@ const daily = JSON.parse(fs.readFileSync(P('data/artifacts/token-cost/daily.json
 // shipped on 2026-10-16 merged with this workspace's migrated override.
 const priceTableRaw = fs.readFileSync(new URL('./fixtures/price-table.json', import.meta.url),'utf8');
 
+const selects = [];
 global.lucidos = {
   // Both engine calls go over the SDK bridge: the pager through
   // lucidos.events.query and /models through lucidos.request. An app frame
   // runs at an opaque origin, so its own fetch of the engine is CORS-refused.
   apiUrl: (s) => '/dev/api/v1' + (s.startsWith('/') ? s : '/' + s),
   ui:{ applyPreferences(){}, watchPreferences(){}, enhanceSelects(){}, toast(){},
-       Select:{ create:(o)=>({element:mkEl('sel'), getValue:()=>o.value, setValue(){}, setOptions(){}, destroy(){}}) } },
+       Select:{ create:(o)=>{ const sel={ element:mkEl('sel'), options:o.options, value:o.value, getValue:()=>sel.value,
+         setValue(v){ sel.value=v; }, setOptions(x){ sel.options=x; }, destroy(){} }; selects.push(sel); return sel; } } },
   priceTable:{ get: async () => JSON.parse(priceTableRaw) },
   data:{ read: async (p)=> p.includes('model-prices') || p.includes('settings.json') ? Promise.reject(Object.assign(new Error('HTTP 404'), { httpCode: 404 })) : p.includes('ui-state') ? '{}' : JSON.stringify(daily), write: async()=>({success:true}), url:(p)=> p.startsWith('system-knowhow/') ? '/dev/api/v1/data/'+p : '/dev/data/'+p },
   // The pager goes through lucidos.events.query; stubbed empty here because
@@ -76,12 +78,13 @@ const harness = src + `
 ;globalThis.__tc = {
   pushLive, render, get live(){return live;}, countedLive, get seenSeq(){return seenSeq;},
   seriesForDay, selectedDays, knownDays, localDay, costOf, longThreshold, isLongCall, rateFor, dayZoneLabel,
-  cardOn, cardsOf, overrideModels, checkFrom, servedAsSent, pricedModel,
+  cardOn, cardsOf, overrideModels, checkFrom, servedAsSent, pricedModel, rowModel, modelName, loadModelLabels,
   setDaily(d){ daily = d; }, setPricing(p){ pricing = p; },
   setGroups(g){ groups = g; expanded.clear(); }, expand(p){ expanded.add(p); }, threadMeta,
   setThreads(t){ threadsDaily = t; threadsState = t ? 'ready' : 'missing'; },
   get daily(){ return daily; },
   get metaText(){ return document.getElementById('meta').textContent; },
+  noteKeepAliveAnchor, dimLabel, producerLabel, typeParent, dims: DIMS, producerMatches, syncProducerFilter, pickDim, chooseDim, oneOfEachFamily,
   resetLive(){ live=[]; seenSeq=new Set(); liveRevision++; }, get feedRows(){ return document.getElementById('feed').children.map(c=>c.dataset.at); }, renderFeed,
 };
 `;
@@ -328,8 +331,8 @@ ok(tc.dayZoneLabel(new Date('2026-07-01T12:00:00Z')) === 'Days in Europe/Oslo (U
    'summer: '+tc.dayZoneLabel(new Date('2026-07-01T12:00:00Z')));
 ok(tc.dayZoneLabel(new Date('2026-01-15T12:00:00Z')) === 'Days in Europe/Oslo (UTC+1)',
    'winter: '+tc.dayZoneLabel(new Date('2026-01-15T12:00:00Z')));
-ok(document.getElementById('tz-note').textContent.startsWith('Days in Europe/Oslo'),
-   'render writes it next to the selector');
+ok(!html.includes('id="tz-note"'),
+   'the controls row no longer carries a day-zone note (removed 2026-10-20)');
 
 
 // --- price history ---------------------------------------------------------
@@ -494,7 +497,7 @@ const rerouted = mk(999600, today+'T10:00:00', 'auxiliary', 'gemini-3.5-flash', 
 rerouted.event.served_model = 'gemini-3.6-flash';
 tc.pushLive(rerouted, {quiet:true});
 const same = mk(999601, today+'T10:01:00', 'auxiliary', 'gemini-3.6-flash', [1e6,0,0,1e6]);
-same.event.served_model = 'gemini-3.6-flash-001';
+same.event.served_model = 'gemini-3.6-flash';
 tc.pushLive(same, {quiet:true});
 const s24 = tc.seriesForDay(today);
 ok(!s24['auxiliary|gemini-3.5-flash'], 'nothing is filed under the id that was asked for');
@@ -508,6 +511,48 @@ ok(/asked for gemini-3\.5-flash/.test(document.getElementById('tbody').children[
 tc.resetLive();
 tc.setDaily({ ...empty, days:{ [today]: { 'auxiliary|gemini-3.6-flash': { ...bucket(3, 3e6, 0), routed_from:{ 'gemini-3.5-flash':3 } } } }, hours:{} });
 ok(tc.seriesForDay(today)['auxiliary|gemini-3.6-flash'].routed_from['gemini-3.5-flash'] === 3, 'a stored routed_from count survives the merge');
+
+console.log('\n26b. a call is filed under the id the provider answered with');
+// Claude Code sends `claude-opus-5-5[1m]`, the provider answers
+// `claude-opus-5-5`. Both are one model, so they are one row, priced as now.
+ok(tc.rowModel('claude-opus-5-5[1m]', 'claude-opus-5-5') === 'claude-opus-5-5', 'a [1m] call answered as the bare id files under it');
+ok(tc.rowModel('claude-opus-5-5[1m]', 'claude-opus-5') === 'claude-opus-5', 'a reroute files under the model that ran');
+ok(tc.rowModel('claude-haiku-4-5', 'claude-haiku-4-5-20251001') === 'claude-haiku-4-5-20251001', 'a snapshot files under the id the reply names');
+ok(tc.rowModel('claude-opus-5-5[1m]', undefined) === 'claude-opus-5-5', 'a row with no served model keeps its model, less [1m]');
+ok(tc.rowModel('claude-opus-5-5[1m]', '') === 'claude-opus-5-5', 'an empty served model too');
+ok(tc.rowModel('claude-opus-5@default[1m]', undefined) === 'claude-opus-5@default', 'only the [1m] suffix goes');
+tc.setPricing(tableWith({ 'claude-opus-5-5': { uncached_in:5, cache_write:6.25, cache_read:0.5, out:25 } }));
+tc.resetLive();
+tc.setDaily({ ...empty, days:{}, hours:{} });
+const twin = mk(999650, today+'T10:00:00', 'claude_code', 'claude-opus-5-5[1m]', [1e6,0,0,1e6]);
+twin.event.served_model = 'claude-opus-5-5';
+tc.pushLive(twin, {quiet:true});
+// Other counts, or the claude_code frame collapse takes it for a re-delivery.
+const plain = mk(999651, today+'T10:01:00', 'claude_code', 'claude-opus-5-5', [2e6,0,0,1e6]);
+plain.event.served_model = 'claude-opus-5-5';
+tc.pushLive(plain, {quiet:true});
+const s26b = tc.seriesForDay(today);
+ok(!s26b['claude_code|claude-opus-5-5[1m]'], 'nothing is filed under the [1m] id');
+const b26b = s26b['claude_code|claude-opus-5-5'];
+ok(b26b && b26b.calls === 2, 'both calls share one row: '+JSON.stringify(b26b && b26b.calls));
+ok(JSON.stringify(b26b.routed_from) === '{}', 'and neither counts as a reroute');
+ok(tc.costOf('claude-opus-5-5', b26b, b26b.long, today) ===
+   tc.costOf('claude-opus-5-5[1m]', { in:1e6, cache_read:0, cache_write:0, out:1e6 }, null, today)
+   + tc.costOf('claude-opus-5-5', { in:2e6, cache_read:0, cache_write:0, out:1e6 }, null, today),
+   'the row costs what the two calls cost under their requested ids');
+tc.render();
+ok(document.getElementById('hero-cost').querySelector('.live').textContent === '$65.00', 'priced at the one card, $30 + $35');
+ok(document.getElementById('tbody').children.length === 1, 'the By model table has one row');
+
+// The registry labels an undated id; the reply can name a snapshot of it.
+const request26b = lucidos.request;
+lucidos.request = async () => [{ id:'claude-haiku-4-5', label:'Haiku 4.5' }, { id:'claude-opus-5-5', label:'Opus 5.5' }];
+await tc.loadModelLabels();
+ok(tc.modelName('claude-haiku-4-5-20251001') === 'Haiku 4.5', 'a snapshot id takes its undated label');
+ok(tc.modelName('claude-opus-5-5') === 'Opus 5.5', 'a bare id takes its own label');
+ok(tc.modelName('gemini-9') === 'gemini-9', 'an id the registry lacks prints as itself');
+lucidos.request = request26b;
+await tc.loadModelLabels();
 
 console.log('\n27. a served model with no card is unpriced, never priced as the one asked for');
 tc.setPricing(tableWith({ 'gemini-3.5-flash': { uncached_in:1.5, cache_write:0, cache_read:0.15, out:9 } }));
@@ -596,7 +641,7 @@ tc.setGroups(['type', 'model']);
 tc.render();
 let r30 = rowsOf();
 ok(r30.length === 2, 'Type then Model shows the two types, folded: '+r30.length);
-ok(/claude_code/.test(r30[0]) && /\$4\.00/.test(r30[0]), 'the dearer type leads');
+ok(/Claude Code/.test(r30[0]) && /\$4\.00/.test(r30[0]), 'the dearer type leads, under its built-in name');
 tc.expand('/type:claude_code');
 tc.render();
 r30 = rowsOf();
@@ -636,6 +681,182 @@ tc.render();
 ok(!/Parent thread/.test(rowsOf().join('')) && /no per-thread rollup/.test(document.getElementById('an-note').textContent),
    'with no thread file, Thread is left out and the note says why');
 tc.setThreads({ last_sequence:0, fields:[], days:{}, hours:{} });
+
+console.log('\n31. a cache keep-alive call is its own type');
+tc.resetLive();
+const kaAt = '2026-08-12T12:00:00Z';
+const kaEv = (seq, req, u) => { const e = mk(seq, kaAt, 'claude_code', 'claude-opus-5', u); e.event.request_event_id = req; e.thread_id = req; return e; };
+const KEEP_ALIVE_ORIGIN = { origin: { kind: 'engine', reason: { kind: 'cache_keep_alive' } } };
+tc.pushLive(kaEv(999201, 'anchor-1', [5000,4900,50,10]), {quiet:true});
+tc.pushLive(kaEv(999202, 'turn-1', [6000,5000,900,40]), {quiet:true});
+ok(tc.countedLive().every((c) => c.producer === 'claude_code'), 'before its anchor is seen, a ping reads as Claude Code');
+ok(tc.noteKeepAliveAnchor('anchor-1', KEEP_ALIVE_ORIGIN) === true, 'a keep-alive anchor is noted');
+ok(tc.noteKeepAliveAnchor('anchor-1', KEEP_ALIVE_ORIGIN) === false, 'and noted once');
+ok(tc.noteKeepAliveAnchor('turn-1', { origin: { kind: 'engine', reason: { kind: 'event_wait' } } }) === false,
+   'another engine prompt is no keep-alive anchor');
+const kaCalls = tc.countedLive();
+ok(kaCalls.find((c) => c.seq === 999201)?.producer === 'cache_keep_alive', 'an anchor seen late still relabels its call');
+ok(kaCalls.find((c) => c.seq === 999202)?.producer === 'claude_code', 'an ordinary turn stays Claude Code');
+tc.pushLive(kaEv(999203, 'anchor-1', [5000,4900,50,10]), {quiet:true});
+ok(tc.countedLive().length === 2, 'a re-delivered keep-alive frame is still collapsed');
+const kaSeries = tc.seriesForDay(tc.localDay(new Date(kaAt)));
+ok(Object.keys(kaSeries).includes('cache_keep_alive|claude-opus-5'), 'the series files it under its own type');
+ok(tc.dimLabel('type', 'cache_keep_alive') === 'Cache keep-alive',
+   'it is labelled even when the saved settings predate it');
+
+console.log('\n32. Model:effort splits a model by the thinking level it asked for');
+tc.setPricing(tableWith({ 'acme-1': { uncached_in:1, cache_write:0, cache_read:0, out:0 } }));
+tc.resetLive();
+tc.setDaily({ ...empty, days:{ [today]: {
+  'main_llm|acme-1|high': bucket(3, 3e6, 0),
+  'main_llm|acme-1|medium': bucket(1, 1e6, 0),
+  'main_llm|acme-1': bucket(2, 2e6, 0),
+}}, hours:{} });
+tc.setGroups(['model']);
+tc.render();
+ok(rowsOf().length === 1 && /\$6\.00/.test(rowsOf()[0]), 'Model alone still sums every effort into one row');
+tc.setGroups(['model_effort']);
+tc.render();
+const r32 = rowsOf();
+ok(r32.length === 3, 'Model:effort shows one row per effort: '+r32.length);
+ok(/acme-1 · high/.test(r32[0]) && /\$3\.00/.test(r32[0]), 'the dearest effort leads, named after its model');
+ok(r32.some((r) => /acme-1 · effort unknown/.test(r)), 'a row from before effort was recorded says so');
+const effAt = new Date().toISOString();
+const effEv = mk(999301, effAt, 'main_llm', 'acme-1', [1000,0,0,10]);
+effEv.event.reasoning_effort = 'low';
+tc.pushLive(effEv, {quiet:true});
+ok(Object.keys(tc.seriesForDay(tc.localDay(new Date(effAt)))).includes('main_llm|acme-1|low'),
+   'a live call is filed under its effort');
+
+console.log('\n33. every auxiliary purpose is its own producer');
+tc.setPricing({ ...tableWith({ 'acme-1': { uncached_in:1, cache_write:0, cache_read:0, out:0 } }), producers:{ main_llm:'Lucidos Agent' } });
+tc.resetLive();
+const auxEv = (seq, purpose, tokens) => { const e = mk(seq, new Date().toISOString(), 'auxiliary', 'acme-1', [tokens,0,0,0]); if (purpose !== undefined) e.event.purpose = purpose; return e; };
+tc.pushLive(auxEv(999401, 'memory', 1000), {quiet:true});
+tc.pushLive(auxEv(999402, 'summary_compaction', 2000), {quiet:true});
+tc.pushLive(auxEv(999403, undefined, 4000), {quiet:true});
+tc.pushLive(auxEv(999404, '', 8000), {quiet:true});
+tc.pushLive(auxEv(999405, 'a|b', 16000), {quiet:true});
+tc.pushLive(mk(999406, new Date().toISOString(), 'main_llm', 'acme-1', [32000,0,0,0]), {quiet:true});
+const auxLive = tc.countedLive();
+ok(auxLive.find((c) => c.seq === 999401)?.producer === 'auxiliary:memory', 'a live call is filed under auxiliary:<purpose>');
+ok(auxLive.find((c) => c.seq === 999402)?.producer === 'auxiliary:summary_compaction', 'a purpose with an underscore');
+ok(auxLive.find((c) => c.seq === 999403)?.producer === 'auxiliary', 'no purpose stays bare auxiliary');
+ok(auxLive.find((c) => c.seq === 999404)?.producer === 'auxiliary', 'an empty purpose stays bare auxiliary');
+ok(auxLive.find((c) => c.seq === 999405)?.producer === 'auxiliary:a_b', 'a pipe in a purpose cannot split the row key, as in the rollup');
+ok(auxLive.find((c) => c.seq === 999406)?.producer === 'main_llm', 'another producer keeps its id');
+const auxKeys = Object.keys(tc.seriesForDay(tc.localDay(new Date())));
+ok(auxKeys.includes('auxiliary:memory|acme-1') && auxKeys.includes('auxiliary:summary_compaction|acme-1'), 'the series keeps them apart');
+
+console.log('\n34. labels for the sub-producers');
+ok(tc.producerLabel('auxiliary:summary_compaction') === 'Compaction', 'compaction');
+ok(tc.producerLabel('auxiliary:memory') === 'Memory', 'memory');
+ok(tc.producerLabel('auxiliary:title') === 'Title', 'title');
+ok(tc.producerLabel('auxiliary:query_classification') === 'Query classification', 'query classification');
+ok(tc.producerLabel('auxiliary:command_judge') === 'Command judge', 'command judge');
+ok(tc.producerLabel('auxiliary:image_describe') === 'Image describe', 'image describe');
+ok(tc.producerLabel('auxiliary:change_summary') === 'Change summary', 'an unknown purpose reads as its name, not the raw id');
+ok(tc.producerLabel('auxiliary:voice') === 'Voice', 'voice');
+ok(tc.producerLabel('auxiliary') === 'Auxiliary', 'bare auxiliary has a name too');
+ok(tc.producerLabel('mystery') === 'mystery', 'a non-auxiliary unknown id still shows raw');
+tc.setPricing({ ...tableWith({}), producers:{ 'auxiliary:memory':'Memory calls' } });
+ok(tc.producerLabel('auxiliary:memory') === 'Memory calls', 'a workspace label beats the built-in one');
+ok(tc.producerLabel('auxiliary:title') === 'Title', 'and leaves the others on theirs');
+
+console.log('\n35. the producer filter lists each sub-producer and matches by prefix');
+ok(tc.producerMatches('all', 'auxiliary:memory') && tc.producerMatches('all', 'main_llm'), 'All matches everything');
+ok(tc.producerMatches('auxiliary:*', 'auxiliary:memory') && tc.producerMatches('auxiliary:*', 'auxiliary:title'), 'Auxiliary (all) matches every sub-producer');
+ok(tc.producerMatches('auxiliary:*', 'auxiliary'), 'and the bare auxiliary id');
+ok(!tc.producerMatches('auxiliary:*', 'main_llm') && !tc.producerMatches('auxiliary:*', 'claude_code'), 'but no typed producer');
+ok(tc.producerMatches('auxiliary:memory', 'auxiliary:memory') && !tc.producerMatches('auxiliary:memory', 'auxiliary:title'), 'one sub-producer matches only itself');
+ok(!tc.producerMatches('auxiliary:memory', 'auxiliary'), 'and not the bare id');
+ok(tc.producerMatches('main_llm', 'main_llm') && !tc.producerMatches('main_llm', 'auxiliary:memory'), 'a plain producer matches only itself');
+
+tc.setPricing({ ...tableWith({ 'acme-1': { uncached_in:1, cache_write:0, cache_read:0, out:0 } }), producers:{ main_llm:'Lucidos Agent', codex:'Codex', 'auxiliary:title':'Title' } });
+tc.setDaily({ ...empty, days:{ [today]: {
+  'main_llm|acme-1': bucket(1, 1e6, 0),
+  'auxiliary:memory|acme-1': bucket(1, 2e6, 0),
+  'auxiliary:summary_compaction|acme-1': bucket(1, 4e6, 0),
+  'auxiliary:change_summary|acme-1': bucket(1, 8e6, 0),
+  'claude_code|acme-1': bucket(1, 16e6, 0),
+  'cache_keep_alive|acme-1': bucket(1, 32e6, 0),
+  'mystery|acme-1': bucket(1, 64e6, 0),
+}}, hours:{} });
+tc.resetLive();
+tc.syncProducerFilter();
+const lastSelect = selects.find((x) => x.options.some((o) => o.label === 'All producers'));
+const opts = lastSelect.options;
+const labelOf = (v) => opts.find((o) => o.value === v)?.label;
+ok(opts[0].value === 'all', 'All producers leads');
+ok(labelOf('auxiliary:*') === 'Auxiliary (all)', 'an Auxiliary (all) option is offered');
+ok(labelOf('auxiliary:memory') === 'Memory' && labelOf('auxiliary:summary_compaction') === 'Compaction', 'each sub-producer is listed, labelled');
+ok(labelOf('auxiliary:change_summary') === 'Change summary', 'including one with no built-in label');
+ok(!opts.some((o) => o.value === 'auxiliary'), 'the bare id is not listed when no row has it');
+ok(!opts.some((o) => o.value === 'codex' || o.value === 'auxiliary:title'), 'a labelled producer with no data is not listed');
+ok(opts.length === 1 + 1 + 7, 'only All, Auxiliary (all) and the seven producers with data: '+opts.length);
+ok(opts.findIndex((o) => o.value === 'auxiliary:*') < opts.findIndex((o) => o.value === 'auxiliary:memory'), 'the group sits before its members');
+tc.setGroups(['type']);
+lastSelect.setValue('all'); tc.render();
+const r35 = rowsOf();
+ok(r35.length === 3, 'Group by Type has one row per typed producer, plus Auxiliary for the rest: '+r35.length);
+ok(/Auxiliary/.test(r35[0]) && /\$110\.00/.test(r35[0]), 'Auxiliary carries purposes, keep-alive pings and the untyped call');
+ok(/Claude Code/.test(r35[1]) && /\$16\.00/.test(r35[1]), 'Claude Code keeps only its own turns');
+// Type folds the purposes into one row and opens straight into the next chip,
+// so with Type alone the Auxiliary row has nothing under it.
+tc.expand('/type:auxiliary'); tc.render();
+ok(rowsOf().length === 3, 'Type alone does not open Auxiliary into sub-types: '+rowsOf().length);
+tc.setGroups(['type', 'model']); tc.expand('/type:main_llm'); tc.render();
+ok(rowsOf().length === 4 && /acme-1/.test(rowsOf().join('')), 'with a Model chip after it, a typed producer opens straight into models: '+rowsOf().length);
+// Type:subtype is its own chip: a flat list with one row per producer id.
+tc.setGroups(['subtype']); tc.render();
+const r35b = rowsOf();
+ok(r35b.length === 7, 'Type:subtype lists every sub-type flat: '+r35b.length);
+ok(/Compaction/.test(r35b.join('')) && /Memory/.test(r35b.join('')) && /Change summary/.test(r35b.join('')), 'purposes read capitalised, without a prefix');
+ok(!/Aux: /.test(r35b.join('')), 'no row carries the prefix');
+ok(r35b.some((r) => /Cache keep-alive/.test(r) && /\$32\.00/.test(r)), 'the keep-alive pings are a sub-type, with their own cost');
+ok(r35b.some((r) => />mystery</.test(r) && /\$64\.00/.test(r)), 'a producer with no type is a sub-type under its raw id');
+ok(r35b.some((r) => /Claude Code/.test(r) && /\$16\.00/.test(r)), 'a typed producer is its own sub-type');
+lastSelect.setValue('auxiliary:*'); tc.render();
+ok(rowsOf().length === 5 && /\$110\.00/.test(document.getElementById('an-total').innerHTML), 'Auxiliary (all) keeps the whole family: '+rowsOf().length);
+lastSelect.setValue('auxiliary:memory'); tc.render();
+ok(rowsOf().length === 1 && /\$2\.00/.test(document.getElementById('an-total').innerHTML), 'one sub-producer keeps only its own cost');
+tc.setGroups(['type']);
+lastSelect.setValue('main_llm'); tc.render();
+ok(rowsOf().length === 1 && /\$1\.00/.test(document.getElementById('an-total').innerHTML), 'a typed producer excludes every auxiliary row');
+lastSelect.setValue('cache_keep_alive'); tc.render();
+ok(/\$32\.00/.test(document.getElementById('an-total').innerHTML), 'the keep-alive filter still works on its own id');
+lastSelect.setValue('all');
+
+console.log('\n36. the type hierarchy');
+ok(tc.typeParent('auxiliary:memory') === 'auxiliary' && tc.typeParent('auxiliary') === 'auxiliary', 'every auxiliary id sits under auxiliary');
+ok(tc.typeParent('cache_keep_alive') === 'auxiliary', 'a keep-alive ping sits under auxiliary');
+ok(tc.typeParent('unknown') === 'auxiliary' && tc.typeParent('mystery') === 'auxiliary', 'so does any producer with no type');
+ok(['main_llm', 'claude_code', 'codex', 'jev_browser'].every((p) => tc.typeParent(p) === p), 'a typed producer is its own row');
+ok(tc.producerMatches('auxiliary:*', 'cache_keep_alive') && tc.producerMatches('auxiliary:*', 'mystery') && !tc.producerMatches('auxiliary:*', 'claude_code'),
+   'Auxiliary (all) matches the whole family');
+ok(tc.dimLabel('type', 'claude_code') === 'Claude Code' && tc.dimLabel('type', 'auxiliary') === 'Auxiliary', 'a top row is labelled by its family');
+ok(tc.dimLabel('subtype', 'cache_keep_alive') === 'Cache keep-alive' && tc.dimLabel('subtype', 'auxiliary:title') === 'Title', 'a sub-type by its own label');
+ok(tc.dimLabel('subtype', 'auxiliary') === 'Auxiliary (unspecified)', 'a call with no purpose says it is an auxiliary one, in the flat list');
+ok(!tc.dims.some((d) => d.id === 'producer'), 'there is no separate Producer chip');
+tc.setGroups(['type', 'model']);
+
+console.log('\n37. the chips are built once, not on every render (a rebuild flickers the hover)');
+tc.setGroups(['type']); tc.render();
+const chipsHost = document.getElementById('an-chips');
+ok((chipsHost.innerHTML.match(/<button/g) || []).length > 0, 'the chips are built on first render');
+chipsHost.innerHTML = chipsHost.innerHTML + '<!--kept-->';
+tc.setGroups(['type', 'model']); tc.render();
+ok(/<!--kept-->/.test(chipsHost.innerHTML), 'a later render leaves the same buttons in place');
+tc.setGroups(['type', 'model']);
+
+console.log('\n38. one variant per chip family: Model or Model:effort, Type or Type:subtype');
+const J = (x) => JSON.stringify(x);
+ok(J(tc.pickDim(['type', 'model'], 'model_effort')) === J(['type', 'model_effort']), 'picking Model:effort swaps out Model in its place');
+ok(J(tc.pickDim(['model', 'type'], 'subtype')) === J(['model', 'subtype']), 'picking Type:subtype swaps out Type in its place');
+ok(J(tc.pickDim(['type', 'model'], 'model')) === J(['type']), 'the face on an on chip turns it off');
+ok(J(tc.pickDim(['type'], 'model_effort')) === J(['type', 'model_effort']), 'a family not on is appended');
+ok(J(tc.chooseDim(['type', 'model'], 'model')) === J(['type', 'model']), 'a menu pick of the current variant keeps it on');
+ok(J(tc.oneOfEachFamily(['model', 'type', 'model_effort', 'subtype', 'thread'])) === J(['model', 'type', 'thread']), 'a stored pick with both variants keeps the first');
 
 console.log('\n'+pass+' passed, '+fail+' failed');
 process.exit(fail?1:0);
