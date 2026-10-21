@@ -1,0 +1,156 @@
+{
+  "_comment": "Sanitized from a Token Cost 0.4.4 artifacts/token-cost/pricing.json (the work workspace, 2026-10-15): the cards of the models 0.5.0 left unpriced, plus one the shipped table covers and one dated id. Only public price facts and their sources.",
+  "_updated": "2026-10-15",
+  "_sources": {
+    "checked": "2026-10-15",
+    "anthropic": [
+      "https://platform.claude.com/docs/en/about-claude/pricing",
+      "https://platform.claude.com/docs/en/release-notes/api"
+    ],
+    "openai": [
+      "https://developers.openai.com/api/docs/pricing",
+      "https://developers.openai.com/api/docs/changelog"
+    ],
+    "google": [
+      "https://ai.google.dev/gemini-api/docs/pricing"
+    ]
+  },
+  "currency": "USD",
+  "models": {
+    "claude-opus-5-5": [
+      {
+        "uncached_in": 4,
+        "cache_write": 5,
+        "cache_read": 0.2,
+        "out": 20,
+        "source": "https://platform.claude.com/docs/en/about-claude/pricing — 'Claude Opus 5.5 | $4 / MTok | $5 / MTok (5m cache writes) | … | $0.2 / MTok | $20 / MTok'. 1M context at standard pricing (no long tier). checked 2026-10-15"
+      }
+    ],
+    "claude-sonnet-4-5-20250929": [
+      {
+        "uncached_in": 3,
+        "cache_write": 3.75,
+        "cache_read": 0.3,
+        "out": 15,
+        "source": "https://platform.claude.com/docs/en/about-claude/pricing — 'Claude Sonnet 4.5 | $3 / MTok | $3.75 / MTok (5m cache writes) | … | $0.3 / MTok | $15 / MTok'. 1M context at standard pricing (no long tier). checked 2026-10-15"
+      }
+    ],
+    "gemini-3-flash-preview": [
+      {
+        "uncached_in": 0.5,
+        "cache_write": 0.5,
+        "cache_read": 0.05,
+        "out": 3.0,
+        "source": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 3 Flash Preview paid tier: 'Input price $0.50 (text / image / video)', 'Output price $3.00', 'Context caching price $0.05'. No cache-write charge (cache_write = input); storage $1.00/1M tokens/hour not modelled; audio input $1.00 not modelled. checked 2026-10-15"
+      }
+    ],
+    "gemini-2.5-flash-lite": [
+      {
+        "uncached_in": 0.1,
+        "cache_write": 0.1,
+        "cache_read": 0.01,
+        "out": 0.4,
+        "source": "https://ai.google.dev/gemini-api/docs/pricing — Gemini 2.5 Flash-Lite paid tier: input $0.10 (text/image/video), output $0.40, context caching $0.01. Audio input $0.30 not modelled. checked 2026-10-15"
+      }
+    ],
+    "gpt-5.5": [
+      {
+        "uncached_in": 5.0,
+        "cache_write": 5.0,
+        "cache_read": 0.5,
+        "out": 30.0,
+        "long": {
+          "threshold_tokens": 272000,
+          "uncached_in": 10.0,
+          "cache_read": 1.0,
+          "cache_write": 10.0,
+          "out": 45.0
+        },
+        "source": "https://developers.openai.com/api/docs/pricing — Standard: 'gpt-5.5 (<272K context length) | $5.00 | $0.50 | - | $30.00 | $10.00 | $1.00 | - | $45.00'. No cache-write charge (cache_write = input). checked 2026-10-15"
+      }
+    ],
+    "gpt-5.6-sol": [
+      {
+        "uncached_in": 5.0,
+        "cache_write": 6.25,
+        "cache_read": 0.5,
+        "out": 30.0,
+        "source": "https://developers.openai.com/api/docs/pricing/changelog — Aug 21, 2026: 'GPT-5.6 Sol now costs $4 per million input tokens and $20 per million output tokens, representing 20% lower input pricing and 33% lower output pricing', so $5 in / $30 out before. Cached input and cache write derived at the same 0.1x / 1.25x ratios as today; the old long tier is not published, so none. checked 2026-10-15"
+      },
+      {
+        "uncached_in": 4.0,
+        "cache_write": 5.0,
+        "cache_read": 0.4,
+        "out": 20.0,
+        "long": {
+          "threshold_tokens": 272000,
+          "uncached_in": 8.0,
+          "cache_read": 0.8,
+          "cache_write": 10.0,
+          "out": 30.0
+        },
+        "source": "https://developers.openai.com/api/docs/pricing — Standard: 'gpt-5.6-sol | $4.00 | $0.40 | $5.00 | $20.00 | $8.00 | $0.80 | $10.00 | $30.00'. Promotional: 'available at least through November 21, 2026' — recheck 2026-11-22. checked 2026-10-15",
+        "from": "2026-08-21"
+      }
+    ],
+    "gpt-image-2": [
+      {
+        "uncached_in": 5.0,
+        "cache_write": 5.0,
+        "cache_read": 1.25,
+        "out": 30.0,
+        "source": "https://developers.openai.com/api/docs/pricing — Image tokens: 'gpt-image-2 | Text | $5.00 | $1.25 | -' and 'gpt-image-2 | Image | $8.00 | $2.00 | $30.00'. Priced as text input + image output; image input ($8) not separated. checked 2026-10-15"
+      }
+    ],
+    "gpt-realtime": [
+      {
+        "uncached_in": 4.0,
+        "cache_write": 4.0,
+        "cache_read": 0.4,
+        "out": 16.0,
+        "source": "https://developers.openai.com/api/docs/pricing — Realtime: 'gpt-realtime | Text | $4.00 | $0.40 | $16.00'. Audio is $32 in / $64 out and is NOT separated here, so audio calls are under-priced. checked 2026-10-15"
+      }
+    ],
+    "haiku": [
+      {
+        "uncached_in": 1,
+        "cache_write": 1.25,
+        "cache_read": 0.1,
+        "out": 5,
+        "source": "https://platform.claude.com/docs/en/about-claude/pricing: Claude Haiku 4.5 rates. Bare `haiku` alias as logged by Claude Code (May 15 to Jun 30 2026); the resolved id is not recorded, and Claude Code logged claude-haiku-4-5-20251001 in the same period, so priced as Haiku 4.5. Inferred, added 2026-10-15"
+      }
+    ],
+    "sonnet": [
+      {
+        "uncached_in": 3,
+        "cache_write": 3.75,
+        "cache_read": 0.3,
+        "out": 15,
+        "source": "https://platform.claude.com/docs/en/about-claude/pricing: Claude Sonnet 4.5/4.6 rates (the two cost the same). Bare `sonnet` alias as logged by Claude Code; resolved id not recorded. Inferred, added 2026-10-15"
+      },
+      {
+        "from": "2026-08-25",
+        "uncached_in": 2,
+        "cache_write": 2.5,
+        "cache_read": 0.2,
+        "out": 10,
+        "source": "https://platform.claude.com/docs/en/about-claude/pricing: Claude Sonnet 5 rates. Switch date INFERRED: the first day claude-sonnet-5 appears in Claude Code's ContextCaptured events. The real date the alias moved depends on the Claude Code update and is unknown. Added 2026-10-15"
+      }
+    ]
+  },
+  "long_context_multiplier": {
+    "threshold_tokens": 200000,
+    "in_multiplier": 1.0,
+    "out_multiplier": 1.0
+  },
+  "producers": {
+    "main_llm": "Lucidos Agent",
+    "claude_code": "Claude Code",
+    "codex": "Codex",
+    "jev_browser": "Jev Browser",
+    "auxiliary": "Auxiliary"
+  },
+  "fx": {
+    "rates": {}
+  }
+}
