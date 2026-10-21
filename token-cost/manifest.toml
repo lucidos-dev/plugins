@@ -1,5 +1,5 @@
 id = "token-cost"
-version = "0.6.0"
+version = "0.6.1"
 name = "Token Cost"
 description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, a date range picker with presets, an analysis table and chart grouped by any mix of model (optionally split by reasoning effort), type (auxiliary calls split by purpose, cache keep-alive pings on their own) and thread, cache-hit share and context size, all priced from Lucidos's dated price table: each day is priced at the rate in force that day, and each call at the model that actually served it. A dead stream, a gap behind it, or a stale rollup are each detected and named in the header. Also ships the Thread cost widget: what the open thread costs, sub-threads included, with its model mix and costliest sub-threads. Ships an incremental rollup script and a per-thread snapshot script; setup offers an hourly rollup and an hourly thread snapshot."
 source = "https://github.com/lucidos-dev/plugins/tree/main/token-cost"
