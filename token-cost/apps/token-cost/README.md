@@ -73,10 +73,12 @@ and the total does not depend on the order they arrive in.
 
 ## Tests
 
-`tests/run.sh` runs the accounting, freshness, save, defaults and markup suites
-headless (it extracts the app's script block and runs it against DOM and SDK
-stubs), then the rollup suite in Python with SQLite standing in for Postgres. No browser, no build
-step, about a second. Every assertion pins a way the dashboard was actually able
+`tests/run.sh` runs the accounting, freshness, save, defaults, markup, upgrade
+and Thread cost suites headless (it extracts each page's script block and runs
+it against DOM and SDK stubs), then the rollup, price migration and snapshot
+suites in Python, with SQLite standing in for Postgres and a fake `lucidos`
+that merges prices the way the engine does. No browser, no build step, a few
+seconds. Every assertion pins a way the dashboard was actually able
 to go wrong.
 
 ```
@@ -97,6 +99,37 @@ read Lucidos's price table: the dated cards Lucidos ships, merged with the
 workspace override in `data/config/model-prices.json`. To check prices against
 the providers' own pages, Lucidos has the system knowhow `model-price-check`.
 **Keep prices current** in Settings > Intelligence runs it on a schedule.
+
+A call no card prices is counted, kept out of every total, and named: the
+dashboard says how many calls on how many models it left out, and the Thread
+cost widget says "Not included: N unpriced calls" under its total.
+
+## Prices from Token Cost 0.4
+
+Token Cost 0.4 kept its own prices in `artifacts/token-cost/pricing.json`.
+0.5.0 to 0.6.3 stopped reading that file and moved nothing over, so every
+model it priced that Lucidos does not ship a card for went unpriced.
+
+Since 0.6.4, `scripts/token-cost/migrate_prices.py` moves those cards into
+`data/config/model-prices.json`. The rollup and the Thread cost snapshot run it
+first on every run, so an update heals within the hour. It:
+
+- moves a card only when the price table does not price its model on the
+  card's first day, so a shipped or override card always wins;
+- keeps each card as it was: source, rates, dates, long-context and Flex
+  tiers, per-minute rates and any extra field;
+- holds back and reports a card the engine would refuse (a negative rate, a
+  bad date, two cards on one day), because one bad card makes Lucidos ignore
+  the whole override; converts no currency; and never edits, moves or deletes
+  the old file;
+- writes through `lucidos data write` under a lock, only when the override is
+  unchanged since it read it, then checks that Lucidos serves what it wrote
+  and puts the previous file back if not;
+- leaves out a moved card you delete from the override later.
+
+Its report is `artifacts/token-cost/price-migration.json`, and Settings shows
+it under **Model rates**, with every card that did not move and why. Run it by
+hand with `--dry-run --json` to see what it would do.
 
 ## Updating
 
