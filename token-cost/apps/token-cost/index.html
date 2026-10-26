@@ -86,6 +86,13 @@
         display: flex; align-items: baseline; gap: var(--space-sm); flex-wrap: wrap;
       }
       .hero-unpriced[hidden] { display: none; }
+      /* Calls priced with their cache write at the base rate. In the total,
+         so muted rather than yellow, and folded: the why is a click away. */
+      .hero-ttl { color: var(--text-muted); font-size: var(--font-size-sm); margin-top: var(--space-xs); }
+      .hero-ttl[hidden] { display: none; }
+      .hero-ttl summary { cursor: pointer; }
+      .hero-ttl ul { margin: var(--space-xs) 0 0; padding-left: var(--space-lg); }
+      .hero-ttl li { overflow-wrap: anywhere; }
       .unpriced-btn {
         background: none; border: 1px solid var(--accent-yellow); color: var(--accent-yellow);
         border-radius: var(--radius-sm, 0.25rem); padding: 0 var(--space-sm);
@@ -558,6 +565,10 @@
               <span id="hero-unpriced-text"></span>
               <button type="button" class="unpriced-btn" id="hero-unpriced-btn">Add rates</button>
             </div>
+            <details class="hero-ttl" id="hero-ttl" hidden>
+              <summary id="hero-ttl-text"></summary>
+              <ul id="hero-ttl-why"></ul>
+            </details>
           </div>
           <div class="stat-strip">
             <div class="stat"><div class="stat-v" id="s-calls">0</div><div class="stat-l">Calls</div></div>
@@ -1523,7 +1534,6 @@
         const normal = { cache_write: nWrite };
         for (const k of WRITE_FIELDS) normal[k] = Math.max(0, (u[k] || 0) - (L[k] || 0) - (F[k] || 0));
         const writes = [bundleWriteCost(normal, r), bundleWriteCost(L, lr), bundleWriteCost(F, fr)];
-        if (writes.some((v) => v === null)) return null;
         const per = 1e6;
         return {
           fresh: (nFresh * r.uncached_in + lFresh * lr.uncached_in + fFresh * fr.uncached_in) / per,
@@ -1759,6 +1769,41 @@
         });
       }
 
+      /** Why a call's cache lifetime is unknown, by the producer that made it.
+       *  Lucidos saves the provider's lifetime split from 0.49.0 for Claude
+       *  Code and from 0.50.0 for its own calls; Codex never sends one. */
+      function ttlWhy(producer) {
+        if (producer === 'codex') return ['Codex', 'Codex reports one cache-write total, without the lifetime split.'];
+        if (producer === 'claude_code') return ['Claude Code', 'Recorded before Lucidos 0.49.0 began saving the lifetime split.'];
+        return ['Other calls', 'Recorded before Lucidos 0.50.0 began saving the lifetime split, or the route that served them does not report it.'];
+      }
+
+      /** Rollup and live rows file a call whose write had no lifetime under a
+       *  key ending `|cache_ttl_unknown`. Their writes are in the total at the
+       *  base rate, so the note says how many and why, not that they are out. */
+      function renderTtlNote(byKey, keyUnpriced) {
+        const why = new Map();
+        for (const [key, u] of Object.entries(byKey)) {
+          if (!key.endsWith('|cache_ttl_unknown')) continue;
+          const n = u.calls - ((keyUnpriced[key] && keyUnpriced[key].calls) || 0);
+          if (n <= 0) continue;
+          const [label, reason] = ttlWhy(key.split('|')[0]);
+          const o = why.get(label) || why.set(label, { n: 0, reason }).get(label);
+          o.n += n;
+        }
+        const total = [...why.values()].reduce((a, o) => a + o.n, 0);
+        const el = document.getElementById('hero-ttl');
+        el.hidden = !total;
+        if (!total) return;
+        document.getElementById('hero-ttl-text').textContent =
+          `Includes ${fmtInt(total)} call${total === 1 ? '' : 's'} with an unknown cache lifetime, ` +
+          'so write premiums may be missing.';
+        const esc = lucidos.utils.escapeHtml;
+        document.getElementById('hero-ttl-why').innerHTML = [...why].sort((a, b) => b[1].n - a[1].n)
+          .map(([label, o]) => `<li><b>${esc(label)}</b>, ${fmtInt(o.n)} call${o.n === 1 ? '' : 's'}: ${esc(o.reason)}</li>`).join('') +
+          '<li>Their writes are priced at the base cache write rate, the lowest a write costs. 1-hour and 12-hour writes cost more.</li>';
+      }
+
       function render() {
         if (!pricing) return;
         if (renderedDay === null) renderedDay = localDay(new Date());
@@ -1835,11 +1880,10 @@
           const nModels = unpricedModels.size;
           document.getElementById('hero-unpriced-text').textContent =
             `Not included: ${fmtInt(unpricedU.calls)} call${unpricedU.calls === 1 ? '' : 's'} on ` +
-            `${nModels} model${nModels === 1 ? '' : 's'} with missing rates or cache lifetime evidence.`;
-          const missingRates = [...unpricedModels].filter((m) => days.some((d) => !rateFor(m, d)));
-          document.getElementById('hero-unpriced-btn').hidden = !missingRates.length;
-          document.getElementById('hero-unpriced-btn').dataset.addRate = missingRates.join('\n');
+            `${nModels} unpriced model${nModels === 1 ? '' : 's'}.`;
+          document.getElementById('hero-unpriced-btn').dataset.addRate = [...unpricedModels].join('\n');
         }
+        renderTtlNote(byKey, keyUnpriced);
 
         document.getElementById('s-calls').textContent = fmtInt(total.calls);
         document.getElementById('s-tok').textContent = fmtTok(total.in);
@@ -2746,12 +2790,10 @@
         // An attribute value, so the attribute escape: a model id is whatever a
         // request body or a provider reply named, and a quote in it must not
         // close the attribute.
-        const missingRates = [...new Set(n.facts.filter((f) => !rateFor(f.model, f.day)).map((f) => baseModel(f.model)))];
         const costCell = n.cost === null
-          ? missingRates.length ? `<td class="money"><button type="button" class="unpriced-btn" ` +
-            `data-add-rate="${escAttr(missingRates.join('\n'))}" data-tooltip-title="Unpriced" ` +
+          ? `<td class="money"><button type="button" class="unpriced-btn" ` +
+            `data-add-rate="${escAttr([...n.unpriced].join('\n'))}" data-tooltip-title="Unpriced" ` +
             `data-tooltip="Not in the total. Click to add a rate in Settings.">Unpriced</button></td>`
-            : '<td class="money muted" data-tooltip-title="Unknown cost" data-tooltip="Not in the total: cache lifetime evidence is missing.">Unknown</td>'
           : `<td class="money">${fmtMoney(n.cost)}</td>`;
         const w = scale.max > 0 ? ((scale.byCost ? (n.cost || 0) : n.u.calls) / scale.max) * 100 : 0;
         return `<td style="padding-left: calc(${level} * 1.25rem + var(--space-sm))"${tip}>` +
@@ -2918,9 +2960,10 @@
         }
         return { cache_write_known: parts ? cw : 0, cache_write_1h: parts?.['1h'] || 0, cache_write_12h: parts?.['12h'] || 0 };
       }
+      // Tokens with no lifetime evidence are in the base-rate part: the lowest
+      // a write costs, as the engine prices it. The hero counts those calls.
       function bundleWriteCost(b, rates) {
         const cw = b.cache_write || 0, h = b.cache_write_1h || 0, t = b.cache_write_12h || 0;
-        if ((b.cache_write_known || 0) < cw) return cacheWriteCost(rates, cw, null);
         return cacheWriteCost(rates, cw, { '5m': cw - h - t, '1h': h, '12h': t });
       }
       function cacheRates(model, day, prompt, tier) {
@@ -2934,8 +2977,7 @@
         const base = Number(rates.cache_write) || 0;
         const rate = (ttl) => Number(rates[ttl === '1h' ? 'cache_write_1h' : ttl === '12h' ? 'cache_write_12h' : 'cache_write'] ?? base);
         if (!tokens) return 0;
-        // Without TTL evidence a premium write price cannot be selected.
-        if (!parts) return rate('1h') === base && rate('12h') === base ? tokens * base / 1e6 : null;
+        if (!parts) return tokens * base / 1e6;
         return Object.entries(parts).reduce((sum, [ttl, n]) => sum + n * rate(ttl), 0) / 1e6;
       }
       function priceCacheCall(c) {

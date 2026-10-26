@@ -311,7 +311,7 @@ const hero = document.getElementById('hero-cost').querySelector('.live').textCon
 ok(hero === '$5.00', 'the hero is the priced spend only, got '+hero);
 ok(document.getElementById('hero-unpriced').hidden === false, 'the unpriced note is shown');
 const note = document.getElementById('hero-unpriced-text').textContent;
-ok(/3 calls on 1 model with missing rates or cache lifetime evidence/.test(note), 'and counts the calls left out: '+note);
+ok(/3 calls on 1 unpriced model/.test(note), 'and counts the calls left out: '+note);
 ok(document.getElementById('hero-unpriced-btn').dataset.addRate === 'acme-mystery-7b',
    'its button offers a rate for that model');
 ok(/\$2\.50 per call/.test(document.getElementById('hero-sub').textContent),
@@ -1189,7 +1189,7 @@ ok(Math.abs(tc.priceCacheCall(flexCache).write - 0.085) < 1e-9, 'Flex uses its o
 flexCache.usage.input_tokens = 250000;
 ok(Math.abs(tc.priceCacheCall(flexCache).write - 0.34) < 1e-9, 'long and Flex are exclusive, as in the existing accounting');
 ok(tc.priceCacheCall(cacheCall({ model:'no-price' })).read === null, 'unpriced cache calls remain unknown');
-ok(tc.priceCacheCall(cacheCall({ parts:null })).write === null, 'a missing TTL does not pick a guessed premium write rate');
+ok(Math.abs(tc.priceCacheCall(cacheCall({ parts:null })).write - 0.125) < 1e-9, 'a missing TTL prices at the base write rate, never a guessed premium');
 ok(Math.abs(tc.priceCacheCall(cacheCall({ parts:{'12h':50000} })).write - 0.25) < 1e-9, '12-hour writes use the price-table premium');
 
 console.log('\n47. Keep-alive savings price only evidenced token rewrites');
@@ -1250,9 +1250,10 @@ const ttlBundle = { in:ttlUsage.input_tokens, cache_read:ttlUsage.cache_read_tok
   out:ttlUsage.output_tokens, ...tc.writeBundle({ ...ttlUsage, cache_creation_1h_tokens:30000 }) };
 ok(Math.abs(tc.costOf('cache-model', ttlBundle, null, cacheDay) - cp.ping) < 1e-9,
   'existing totals agree with the cache view for mixed 5-minute and 1-hour writes');
-const legacyTTL = { ...ttlBundle }; delete legacyTTL.cache_write_known;
-ok(tc.costOf('cache-model', legacyTTL, null, cacheDay) === null,
-  'an older aggregate without lifetime evidence stays readable and visibly unpriced');
+const legacyTTL = { ...ttlBundle }; for (const k of ['cache_write_known', 'cache_write_1h', 'cache_write_12h']) delete legacyTTL[k];
+// 20,000 fresh at 2 + 30,000 read at 0.2 + 50,000 written at the base 2.5 + 1,000 out at 10.
+ok(Math.abs(tc.costOf('cache-model', legacyTTL, null, cacheDay) - 0.181) < 1e-9,
+  'an older aggregate without lifetime evidence prices its write at the base rate, never unpriced');
 tc.resetLive(); tc.setDaily({ ...empty, days:{}, hours:{} });
 const ttlEvent = mk(101, cacheDay+'T12:00:00Z', 'claude_code', 'cache-model', [100000,30000,50000,1000]);
 ttlEvent.event.usage.cache_creation_1h_tokens = 30000;
@@ -1291,10 +1292,30 @@ unknownEvent.event.producer = 'codex'; knownEvent.event.producer = 'codex';
 delete unknownEvent.event.usage.cache_creation_1h_tokens;
 tc.pushLive(knownEvent, { quiet:true }); tc.pushLive(unknownEvent, { quiet:true });
 const separated = Object.values(tc.seriesForDay(cacheDay));
-ok(separated.length === 2 && separated.filter((u) => tc.costOf('cache-model', u, u.long, cacheDay) === null).length === 1,
-  'a missing TTL stays in a separate bucket from the matching priced call');
-ok(Math.abs(separated.reduce((sum, u) => sum + (tc.costOf('cache-model', u, u.long, cacheDay) || 0), 0) - cp.ping) < 1e-9,
-  'the priced subtotal keeps the known call when another matching call is unknown');
+ok(separated.length === 2 && separated.every((u) => tc.costOf('cache-model', u, u.long, cacheDay) !== null),
+  'a missing TTL stays in a separate bucket, and both calls are priced');
+ok(Math.abs(separated.reduce((sum, u) => sum + tc.costOf('cache-model', u, u.long, cacheDay), 0) - (cp.ping + 0.181)) < 1e-9,
+  'the known call keeps its premium; the unknown one adds its base-rate floor');
+
+console.log('\n50. The hero counts calls priced at the base write rate and says why');
+tc.setGroups(['model']);
+tc.resetLive(); tc.setDaily({ ...empty, days:{ [today]:{
+  'codex|cache-model|high|cache_ttl_unknown': { calls:2, in:200000, cache_read:0, cache_write:100000, out:0 },
+  'claude_code|cache-model||cache_ttl_unknown': { calls:5, in:500000, cache_read:0, cache_write:250000, out:0 },
+  'auxiliary:memory|cache-model||cache_ttl_unknown': { calls:1, in:100000, cache_read:0, cache_write:50000, out:0 },
+  'claude_code|cache-model|high': { calls:9, in:900000, cache_read:0, cache_write:0, out:0 },
+} }, hours:{} });
+tc.render();
+const ttlNote = document.getElementById('hero-ttl');
+ok(ttlNote.hidden === false, 'the lifetime note shows when the range holds such calls');
+ok(/Includes 8 calls with an unknown cache lifetime/.test(document.getElementById('hero-ttl-text').textContent),
+  'it counts only the lifetime-unknown calls: ' + document.getElementById('hero-ttl-text').textContent);
+const why = document.getElementById('hero-ttl-why').innerHTML;
+ok(/<b>Claude Code<\/b>, 5 calls: Recorded before Lucidos 0\.49\.0/.test(why), 'Claude Code calls name the release that began saving the split: ' + why);
+ok(/<b>Codex<\/b>, 2 calls: Codex reports one cache-write total, without the lifetime split/.test(why), 'Codex calls say Codex sends no split');
+ok(/<b>Other calls<\/b>, 1 call: Recorded before Lucidos 0\.50\.0/.test(why), 'other calls name 0.50.0 or a route without the split');
+ok(/base cache write rate/.test(why), 'and the note says what rate their writes got');
+ok(document.getElementById('hero-unpriced').hidden === true, 'none of them is unpriced');
 
 console.log('\n'+pass+' passed, '+fail+' failed');
 process.exit(fail?1:0);

@@ -119,7 +119,7 @@ console.log('\n1. updated, not yet migrated: the gap is named, not hidden');
   t.tc.pushLive(gemini(1));
   t.tc.render();
   ok(t.el('hero-unpriced').hidden === false, 'the hero says some spend is not included');
-  ok(/1 call on 1 model with missing rates or cache lifetime evidence/.test(t.el('hero-unpriced-text').textContent), 'and names it: ' + t.el('hero-unpriced-text').textContent);
+  ok(/1 call on 1 unpriced model/.test(t.el('hero-unpriced-text').textContent), 'and names it: ' + t.el('hero-unpriced-text').textContent);
   const note = t.el('migration-note');
   ok(note.hidden === false, 'Settings shows a migration note');
   ok(/pricing\.json/.test(note.innerHTML) && /next rollup/.test(note.innerHTML), 'it says the 0.4 prices move on the next rollup');
