@@ -30,14 +30,3 @@ All data stays in your workspace: usage under `artifacts/token-cost/`, and your 
 
 - Source: https://github.com/lucidos-dev/plugins/tree/main/token-cost
 - Lucidos: https://lucidos.dev
-
-## Screenshots awaiting recapture
-
-All four existing screenshots are stale; the parent release thread will recapture them with demo data. No screenshots were changed in this release preparation.
-
-- `dashboard.png`: removed Refresh button, chart/donut changes, first-paint catch-up styling and phone range picker.
-- `analysis.png`: share donut, weekly bars for long ranges, session rows with spans and keep-alive lines, Handoffs view and removed Refresh button.
-- `thread-cost-widget.png`: scope controls, session rows and revised call-count layout.
-- `settings.png`: shared header no longer has Refresh; the settings gear position changed on phones.
-
-Add a Handoffs screenshot when capturing the new views.
