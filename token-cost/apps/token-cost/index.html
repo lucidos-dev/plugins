@@ -686,17 +686,17 @@
         <p class="sec-note" id="cache-note" role="status"></p>
         <section aria-labelledby="cache-keep-title">
           <h3 class="sec" id="cache-keep-title">Keep-alive cost vs savings</h3>
-          <p class="sec-note">Ping spend includes cache reads, writes, fresh input and output. Avoided rewrite spend requires an ended run with an engine-confirmed saving, a known TTL and a matching context. Unknown runs have no estimated saving. Pings are dated when billed; savings are dated when the wait ends.</p>
+          <p class="sec-note">Ping spend includes cache reads, writes, fresh input and output. Avoided rewrite spend needs an ended run the engine confirmed: its wake read the warm cache in the same session and model, and the session's last write had a known lifetime. It is the run's context written afresh at that lifetime. Other runs have no estimated saving. Pings are dated when billed; savings are dated when the wait ends.</p>
           <div class="card" id="cache-keep"></div>
         </section>
         <section aria-labelledby="cache-spend-title">
           <h3 class="sec" id="cache-spend-title">Cache write vs read spend</h3>
-          <p class="sec-note">Daily spend on cache writes, cache reads and uncached input, including the reported lifetime price. Output is excluded here.</p>
+          <p class="sec-note">Daily spend on cache writes, cache reads and uncached input, at each write's reported lifetime price. A write with no lifetime evidence is priced at the base write rate and counted. Output is excluded here.</p>
           <div class="card" id="cache-spend"></div>
         </section>
         <section aria-labelledby="cache-cause-title">
           <h3 class="sec" id="cache-cause-title">Cache rewrites by cause</h3>
-          <p class="sec-note">Counts calls that wrote cache. A cold write after a recorded handoff, model switch or evidenced TTL expiry gets that cause only when it is unambiguous. First writes, partial writes and missing or conflicting evidence count as unknown.</p>
+          <p class="sec-note">A rewrite is a call that wrote cache and read none, after its context had been cached before. It gets a cause only when one recorded handoff, model switch or evidenced TTL expiry explains it; missing or conflicting evidence counts as cause unknown. First writes of a new context and appends after a cache read are not rewrites, and are counted apart.</p>
           <div class="card" id="cache-causes"></div>
         </section>
       </details>
@@ -2937,8 +2937,10 @@
         cacheState = 'loading';
         try {
           const doc = JSON.parse(await lucidos.data.read(CACHE_STATS));
-          if (doc.version !== 1 || !Array.isArray(doc.calls) || !Array.isArray(doc.savings)) throw new Error('Unsupported cache evidence');
-          cacheDoc = doc;
+          if (doc.version !== 2 || !Array.isArray(doc.fields) || !Array.isArray(doc.calls) || !Array.isArray(doc.savings)) throw new Error('Unsupported cache evidence');
+          // One summed row per day, thread, producer, model, effort, tier and
+          // evidence class, as arrays in `fields` order.
+          cacheDoc = { ...doc, calls: doc.calls.map((r) => Object.fromEntries(doc.fields.map((f, i) => [f, r[i]]))) };
           cacheState = 'ready';
         } catch (e) { cacheDoc = null; cacheState = 'missing'; }
         render();
@@ -2966,11 +2968,10 @@
         const cw = b.cache_write || 0, h = b.cache_write_1h || 0, t = b.cache_write_12h || 0;
         return cacheWriteCost(rates, cw, { '5m': cw - h - t, '1h': h, '12h': t });
       }
-      function cacheRates(model, day, prompt, tier) {
+      function cacheRates(model, day, long, tier) {
         const card = rateFor(model, day);
         if (!card || card.per_minute) return null;
-        return isLongCall(model, prompt, day) && card.long ? card.long
-          : tier === 'flex' && card.flex ? card.flex : card;
+        return long && card.long ? card.long : tier === 'flex' && card.flex ? card.flex : card;
       }
       function cacheWriteCost(rates, tokens, parts) {
         if (!rates) return null;
@@ -2980,18 +2981,22 @@
         if (!parts) return tokens * base / 1e6;
         return Object.entries(parts).reduce((sum, [ttl, n]) => sum + n * rate(ttl), 0) / 1e6;
       }
+      /** A summed row's spend. The rollup marked it long against the card in
+       *  force that day; a write with no lifetime is in the base-rate part. */
       function priceCacheCall(c) {
-        const u = c.usage;
-        const rates = cacheRates(c.model, c.day, u.input_tokens || 0, u.service_tier);
+        const rates = cacheRates(c.model, c.day, c.long, c.tier);
         if (!rates) return { write: null, read: null, fresh: null, ping: null };
-        const write = cacheWriteCost(rates, u.cache_creation_tokens || 0, c.parts);
-        const read = (u.cache_read_tokens || 0) * (Number(rates.cache_read) || 0) / 1e6;
-        const fresh = Math.max(0, (u.input_tokens || 0) - (u.cache_read_tokens || 0) - (u.cache_creation_tokens || 0)) * (Number(rates.uncached_in) || 0) / 1e6;
-        return { write, read, fresh, ping: write === null ? null : write + read + fresh + (u.output_tokens || 0) * (Number(rates.out) || 0) / 1e6 };
+        const h = c.cache_write_1h || 0, t = c.cache_write_12h || 0;
+        const write = cacheWriteCost(rates, c.cache_write, { '5m': c.cache_write - h - t, '1h': h, '12h': t });
+        const read = c.cache_read * (Number(rates.cache_read) || 0) / 1e6;
+        const fresh = Math.max(0, c.in - c.cache_read - c.cache_write) * (Number(rates.uncached_in) || 0) / 1e6;
+        return { write, read, fresh, ping: write + read + fresh + c.out * (Number(rates.out) || 0) / 1e6 };
       }
+      /** The engine's reread price: the run's context written afresh at the
+       *  lifetime of the session's last write, its size picking the tier. */
       function priceCacheSaving(s) {
         if (s.tokens == null || !s.ttl) return null;
-        return cacheWriteCost(cacheRates(s.model, s.day, s.prompt, s.tier), s.tokens, { [s.ttl]: s.tokens });
+        return cacheWriteCost(cacheRates(s.model, s.day, isLongCall(s.model, s.tokens, s.day), ''), s.tokens, { [s.ttl]: s.tokens });
       }
 
       function cacheRows(doc, days, pf) {
@@ -3000,17 +3005,18 @@
         const row = (c) => {
           const labels = dims.map((d) => [d, dimOf(d, c)]);
           const id = JSON.stringify([c.day, labels]);
-          if (!by.has(id)) by.set(id, { day: c.day, labels, money: {}, unknown: {}, pings: 0, runs: 0,
-            causes: { ttl_expiry: 0, handoff: 0, model_switch: 0, unknown: 0 } });
+          if (!by.has(id)) by.set(id, { day: c.day, labels, money: {}, unknown: {}, pings: 0, runs: 0, ttlUnknown: 0,
+            causes: { ttl_expiry: 0, handoff: 0, model_switch: 0, unknown: 0, first: 0, partial: 0 } });
           return by.get(id);
         };
-        const add = (r, k, v) => { if (v === null) r.unknown[k] = (r.unknown[k] || 0) + 1; else r.money[k] = (r.money[k] || 0) + v; };
+        const add = (r, k, v, n = 1) => { if (v === null) r.unknown[k] = (r.unknown[k] || 0) + n; else r.money[k] = (r.money[k] || 0) + v; };
         for (const c of doc.calls) {
           if (!picked.has(c.day) || !producerMatches(pf, c.producer)) continue;
           const r = row(c), p = priceCacheCall(c);
-          for (const k of ['write', 'read', 'fresh']) add(r, k, p[k]);
-          if (c.ping) { r.pings++; add(r, 'ping', p.ping); }
-          if (c.cause) r.causes[c.cause in r.causes ? c.cause : 'unknown']++;
+          for (const k of ['write', 'read', 'fresh']) add(r, k, p[k], c.calls);
+          if (!c.ttl_known && p.write !== null) r.ttlUnknown += c.calls;
+          if (c.ping) { r.pings += c.calls; add(r, 'ping', p.ping, c.calls); }
+          if (c.cause) r.causes[c.cause in r.causes ? c.cause : 'unknown'] += c.calls;
         }
         for (const s of doc.savings) {
           if (!picked.has(s.day) || !producerMatches(pf, s.producer)) continue;
@@ -3045,11 +3051,14 @@
         fill('cache-keep', rows.filter((r) => r.pings || r.runs), (r) => [
           ['Ping spend', money(r, 'ping')], ['Avoided rewrite spend', money(r, 'saved', !r.runs)],
           ['Pings / runs observed', `${fmtInt(r.pings)} / ${fmtInt(r.runs)}`]]);
+        const writes = (r) => money(r, 'write') +
+          (r.ttlUnknown ? ` · ${fmtInt(r.ttlUnknown)} call${r.ttlUnknown === 1 ? '' : 's'} at the base rate, lifetime unknown` : '');
         fill('cache-spend', rows.filter((r) => ['write', 'read', 'fresh'].some((k) => k in r.money || k in r.unknown)), (r) => [
-          ['Cache writes', money(r, 'write')], ['Cache reads', money(r, 'read')], ['Uncached input', money(r, 'fresh')]]);
+          ['Cache writes', writes(r)], ['Cache reads', money(r, 'read')], ['Uncached input', money(r, 'fresh')]]);
         fill('cache-causes', rows.filter((r) => Object.values(r.causes).some(Boolean)), (r) => [
           ['TTL expiry', fmtInt(r.causes.ttl_expiry)], ['Handoff', fmtInt(r.causes.handoff)],
-          ['Model switch', fmtInt(r.causes.model_switch)], ['Unknown', fmtInt(r.causes.unknown)]]);
+          ['Model switch', fmtInt(r.causes.model_switch)], ['Cause unknown', fmtInt(r.causes.unknown)],
+          ['First writes', fmtInt(r.causes.first)], ['Appends after a read', fmtInt(r.causes.partial)]]);
       }
       document.getElementById('cache-block').addEventListener('toggle', () => render());
 

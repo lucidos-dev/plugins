@@ -117,7 +117,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
-from cache_stats import build_cache
+from cache_stats import VERSION as CACHE_VERSION, build_cache
 from cache_usage import WRITE_FIELDS, write_bundle, write_sql
 
 WS = pathlib.Path(os.environ.get("LUCIDOS_WORKSPACE", "."))
@@ -1390,8 +1390,18 @@ def handoffs_payload(long_cut: str, max_seq: int) -> dict:
 # A separate, prompt-free evidence file leaves all older rollups and the
 # Thread cost snapshot readable. A full ordered read retains TTL and session
 # evidence across the range boundary. Prices stay in the app's price table.
-CACHE_SQL = """
+# Keep-alive statuses are few and read whole first; every other event streams
+# one JSON row per line, so millions of calls never sit in memory at once.
+CACHE_STATUS_SQL = """
 SELECT coalesce(json_agg(row_to_json(t) ORDER BY t.seq), '[]'::json) FROM (
+  SELECT thread_id::text AS thread, sequence AS seq,
+         to_char(created AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at,
+         payload->'status' AS status
+    FROM events WHERE event_type = 'CacheKeepAliveStatusChanged'
+) t;
+"""
+CACHE_SQL = """
+SELECT row_to_json(t) FROM (
   SELECT id::text AS id, thread_id::text AS thread, sequence AS seq,
          event_type AS type,
          to_char(""" + LOCAL_DAY + """, 'YYYY-MM-DD') AS day,
@@ -1399,28 +1409,64 @@ SELECT coalesce(json_agg(row_to_json(t) ORDER BY t.seq), '[]'::json) FROM (
          """ + ROW_MODEL + """ AS model,
          payload->>'producer' AS producer, payload->>'purpose' AS purpose,
          payload->>'session' AS session, payload->>'parent_tool_use_id' AS parent,
-         payload->>'api_call_id' AS call_id, payload->>'request_event_id' AS anchor,
+         payload->>'request_event_id' AS anchor,
          payload->>'reasoning_effort' AS effort,
          (payload->>'duration_ms')::float8 AS duration_ms,
-         payload->'usage' AS usage, payload->'status' AS status,
+         payload->'usage' AS usage,
+         (payload->'usage'->>'input_tokens')::bigint > """ + LONG_CUT_MARK + """ AS long,
          payload->'origin'->'reason'->>'kind' = 'cache_keep_alive' AS keep_alive,
          payload->'continuity'->>'kind' AS continuity,
          payload->>'successor_thread_id' AS successor
     FROM events
-   WHERE event_type IN ('ContextCaptured', 'PromptInjected', 'SessionStarted',
-                        'SuccessorThreadSpawned', 'CacheKeepAliveStatusChanged')
+   WHERE (event_type = 'ContextCaptured' AND payload->'usage' IS NOT NULL)
+      OR (event_type = 'PromptInjected' AND payload->'origin'->'reason'->>'kind' = 'cache_keep_alive')
+      OR event_type IN ('SessionStarted', 'SuccessorThreadSpawned')
+   ORDER BY sequence
 ) t;
 """
 
 
-def write_cache_stats():
-    payload = build_cache(json.loads(psql(CACHE_SQL) or "[]"), TZ)
+CACHE_HEAD_SQL = (
+    "SELECT coalesce(max(sequence), 0) FROM events WHERE event_type IN "
+    "('ContextCaptured', 'PromptInjected', 'SessionStarted', 'SuccessorThreadSpawned', "
+    "'CacheKeepAliveStatusChanged');"
+)
+
+
+def psql_rows(sql: str):
+    """Each row of a one-column query, parsed as JSON, as psql streams it.
+    FETCH_COUNT makes psql read through a cursor instead of buffering all."""
+    proc = subprocess.Popen(
+        ["psql", os.environ["LUCIDOS_DATABASE_URL"], "-A", "-t", "-v", "FETCH_COUNT=5000", "-c", sql],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    for line in proc.stdout:
+        if line.strip():
+            yield json.loads(line)
+    err = proc.stderr.read()
+    if proc.wait():
+        sys.exit(f"psql failed: {err.strip()}")
+
+
+def write_cache_stats(long_cut: str, split: str) -> None:
+    """Rebuild cache.json from every event, unless no event it reads, and no
+    long-context cut, changed since the file was built."""
+    head = psql(CACHE_HEAD_SQL)
+    try:
+        old = json.loads((WS / "data" / "artifacts" / "token-cost" / "cache.json").read_text())
+    except (OSError, ValueError):
+        old = None
+    if (isinstance(old, dict) and old.get("version") == CACHE_VERSION and old.get("split") == split
+            and old.get("last_sequence") == int(head or 0)):
+        return
     summaries = json.loads(psql(ORIGIN_SQL) or "{}")
     if not isinstance(summaries, dict):
         sys.exit("not rolling up cache stats: thread_summaries did not read as an object")
     origins = classify_origins(summaries)
-    for call in payload["calls"]:
-        call["producer"] = agent_producer(call["producer"], call["thread"], origins)
+    statuses = json.loads(psql(CACHE_STATUS_SQL) or "[]")
+    payload = build_cache(psql_rows(CACHE_SQL.replace(LONG_CUT_MARK, long_cut)), TZ, statuses,
+                          lambda producer, tid: agent_producer(producer, tid, origins))
+    payload["split"] = split
     result = subprocess.run(
         ["lucidos", "data", "write", "artifacts/token-cost/cache.json", "--from", "-"],
         input=json.dumps(payload, separators=(",", ":")), capture_output=True, text=True)
@@ -1526,7 +1572,7 @@ def main() -> None:
     if not touched:
         # Status-only changes and upgrades without new calls still refresh
         # the cache views. Failed queries/writes stop loudly.
-        write_cache_stats()
+        write_cache_stats(long_cut, split)
         print(f"no new ContextCaptured rows above sequence {since}")
         return
 
@@ -1787,7 +1833,7 @@ def main() -> None:
         )
         if w.returncode != 0:
             sys.exit(f"lucidos data write failed for {rel}: {w.stderr.strip()[:400]}")
-    write_cache_stats()
+    write_cache_stats(long_cut, split)
     print(
         f"rolled up {len(touched)} day(s) {touched[0]}..{touched[-1]}, "
         f"seq {since} -> {max_seq}, kept {kept} of {raw_rows} rows "

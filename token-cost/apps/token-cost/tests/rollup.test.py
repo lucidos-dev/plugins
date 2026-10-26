@@ -329,13 +329,15 @@ check("before any proxied row, every event counts",
 # 15. Every query stops at the cursor the run writes. The app counts each row
 # above the cursor live, so a row that landed while the rollup ran (a minute on
 # a rebuild) was in the stored day AND the live tail: counted twice.
-def run_main(head):
+def run_main(head, ws=None, cache_head="0"):
     asked, written = [], []
 
     def fake_psql(sql):
         asked.append(sql)
         if "max(sequence)" in sql and "string_agg" in sql:
             return head
+        if sql == rollup.CACHE_HEAD_SQL:
+            return cache_head
         if sql.startswith("SELECT count(*)"):
             return "0"
         if sql == rollup.PROXY_CUTOVER_SQL:
@@ -351,14 +353,18 @@ def run_main(head):
         written.append(json.loads(kw["input"]))
         return Done()
 
-    real = rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS
-    tmp = pathlib.Path(tempfile.mkdtemp())
-    rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS = (
-        fake_psql, fake_run, tmp / "daily.json", tmp / "threads-daily.json", tmp)
+    def fake_rows(sql):
+        asked.append(sql)
+        return iter(())
+
+    real = rollup.psql, rollup.psql_rows, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS
+    tmp = ws or pathlib.Path(tempfile.mkdtemp())
+    rollup.psql, rollup.psql_rows, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS = (
+        fake_psql, fake_rows, fake_run, tmp / "daily.json", tmp / "threads-daily.json", tmp)
     try:
         rollup.main()
     finally:
-        rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS = real
+        rollup.psql, rollup.psql_rows, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS = real
     return asked, written
 
 
@@ -375,12 +381,30 @@ check("the handoff file carries the window, the fields and the thread titles",
       (written[2].get("window"), written[2].get("fields") == list(rollup.THREAD_FIELDS), "threads" in written[2]),
       (rollup.HANDOFF_WINDOW, True, True))
 check("the handoff reads stop at the cursor too",
-      [q for q in asked if "parent_tool_use_id" in q and q != rollup.CACHE_SQL] != []
-      and all("sequence <= 4242" in q for q in asked if "parent_tool_use_id" in q and q != rollup.CACHE_SQL), True)
-asked_idle, written_idle = run_main("0|")
+      [q for q in asked if "parent_tool_use_id" in q and "row_to_json(t) FROM" not in q] != []
+      and all("sequence <= 4242" in q for q in asked if "parent_tool_use_id" in q and "row_to_json(t) FROM" not in q), True)
+idle_ws = pathlib.Path(tempfile.mkdtemp())
+asked_idle, written_idle = run_main("0|", idle_ws, cache_head="77")
 check("a rollup without new calls still rebuilds cache evidence", len(written_idle), 1)
-check("old snapshots gain a versioned cache file without a rebuild", written_idle[0].get("version"), 1)
-check("cache query still runs on status-only updates", rollup.CACHE_SQL in asked_idle, True)
+check("old snapshots gain a versioned cache file without a rebuild", written_idle[0].get("version"), 2)
+streamed = [q for q in asked_idle if q.lstrip().startswith("SELECT row_to_json(t) FROM")]
+check("the cache events stream, one row per line, in sequence order",
+      len(streamed) == 1 and "ORDER BY sequence" in streamed[0] and "json_agg" not in streamed[0], True)
+check("their long-context cut is filled in", rollup.LONG_CUT_MARK in streamed[0], False)
+check("keep-alive statuses are read first, whole", rollup.CACHE_STATUS_SQL in asked_idle, True)
+# The engine writes the file the rollup asked for; stand it in place.
+cache_file = idle_ws / "data" / "artifacts" / "token-cost" / "cache.json"
+cache_file.parent.mkdir(parents=True, exist_ok=True)
+cache_file.write_text(json.dumps(written_idle[0]))
+check("the file records the events it covers", written_idle[0].get("last_sequence"), 0)
+cache_file.write_text(json.dumps({**written_idle[0], "last_sequence": 77}))
+asked_again, written_again = run_main("0|", idle_ws, cache_head="77")
+check("an unchanged event log skips the full cache scan", (len(written_again), any(q in asked_again for q in streamed)), (0, False))
+asked_again, written_again = run_main("0|", idle_ws, cache_head="78")
+check("one new event rebuilds it", len(written_again), 1)
+cache_file.write_text(json.dumps({**written_idle[0], "last_sequence": 77, "split": "older"}))
+asked_again, written_again = run_main("0|", idle_ws, cache_head="77")
+check("a changed long-context cut rebuilds it", len(written_again), 1)
 
 # 16. A Flex call is summed apart, never also as a long call, and a file
 # from before the Flex bucket is rebuilt once.

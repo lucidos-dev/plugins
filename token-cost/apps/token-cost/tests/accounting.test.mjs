@@ -83,7 +83,7 @@ const harness = src + `
   setHandoffs(d){ handoffsDoc = d; handoffsState = d ? 'ready' : 'missing'; }, measureHandoff, handoffOpen,
   priceCacheCall, priceCacheSaving, cacheRows, renderCacheStats, loadCacheStats,
   writeBundle, costParts, foldCall, rowToU,
-  setCache(d){ cacheDoc = d; cacheState = d ? 'ready' : 'missing'; },
+  setCache(d){ cacheDoc = d; cacheState = d ? 'ready' : 'missing'; }, get cacheDoc(){ return cacheDoc; },
   get daily(){ return daily; },
   get metaText(){ return document.getElementById('meta').textContent; },
   noteKeepAliveAnchor, dimLabel, producerLabel, typeParent, dims: DIMS, producerMatches, syncProducerFilter, pickDim, chooseDim, oneOfEachFamily,
@@ -1174,27 +1174,29 @@ const cacheCard = { uncached_in:2, cache_read:0.2, cache_write:2.5, cache_write_
   long:{ threshold_tokens:200000, uncached_in:4, cache_read:0.4, cache_write:5, cache_write_1h:8, cache_write_12h:10, out:20 },
   flex:{ uncached_in:1, cache_read:0.1, cache_write:1.25, cache_write_1h:2, cache_write_12h:2.5, out:5 } };
 tc.setPricing(tableWith({ 'cache-model': [{ ...cacheCard }, { ...cacheCard, from:cacheNext, cache_write_1h:6 }] }));
-const cacheCall = (o={}) => ({ day:cacheDay, model:'cache-model', producer:'claude_code', thread:'cache-thread', session:'1', effort:'high',
-  usage:{ input_tokens:100000, cache_read_tokens:30000, cache_creation_tokens:50000, output_tokens:1000 },
-  parts:{'5m':20000,'1h':30000}, ping:false, cause:'unknown', ...o });
+// A cache.json version 2 row, summed over `calls`: 20,000 of the write at 5 minutes, 30,000 at 1 hour.
+const cacheCall = (o={}) => ({ day:cacheDay, model:'cache-model', producer:'claude_code', thread:'cache-thread', effort:'high',
+  tier:'', long:false, ping:false, cause:'unknown', ttl_known:true, calls:1,
+  in:100000, cache_read:30000, cache_write:50000, out:1000, cache_write_1h:30000, cache_write_12h:0, ...o });
+const ttlUsage = { input_tokens:100000, cache_read_tokens:30000, cache_creation_tokens:50000, output_tokens:1000 };
 const cp = tc.priceCacheCall(cacheCall());
 ok(Math.abs(cp.write - 0.17) < 1e-9 && Math.abs(cp.read - 0.006) < 1e-9 && Math.abs(cp.fresh - 0.04) < 1e-9,
   'writes split by lifetime; uncached input subtracts both cache classes');
 ok(Math.abs(cp.ping - 0.226) < 1e-9, 'ping spend includes output as well as all input components');
 ok(Math.abs(tc.priceCacheCall(cacheCall({ day:cacheNext })).write - 0.23) < 1e-9, 'the card in force on each call day prices that day');
-const longCache = cacheCall(); longCache.usage.input_tokens = 250000;
+const longCache = cacheCall({ long:true });
 ok(Math.abs(tc.priceCacheCall(longCache).write - 0.34) < 1e-9, 'long-context cache write uses long lifetime rates');
-const flexCache = cacheCall(); flexCache.usage.service_tier = 'flex';
+const flexCache = cacheCall({ tier:'flex' });
 ok(Math.abs(tc.priceCacheCall(flexCache).write - 0.085) < 1e-9, 'Flex uses its own lifetime rates');
-flexCache.usage.input_tokens = 250000;
+flexCache.long = true;
 ok(Math.abs(tc.priceCacheCall(flexCache).write - 0.34) < 1e-9, 'long and Flex are exclusive, as in the existing accounting');
 ok(tc.priceCacheCall(cacheCall({ model:'no-price' })).read === null, 'unpriced cache calls remain unknown');
-ok(Math.abs(tc.priceCacheCall(cacheCall({ parts:null })).write - 0.125) < 1e-9, 'a missing TTL prices at the base write rate, never a guessed premium');
-ok(Math.abs(tc.priceCacheCall(cacheCall({ parts:{'12h':50000} })).write - 0.25) < 1e-9, '12-hour writes use the price-table premium');
+ok(Math.abs(tc.priceCacheCall(cacheCall({ ttl_known:false, cache_write_1h:0 })).write - 0.125) < 1e-9, 'a missing TTL prices at the base write rate, never a guessed premium');
+ok(Math.abs(tc.priceCacheCall(cacheCall({ cache_write_1h:0, cache_write_12h:50000 })).write - 0.25) < 1e-9, '12-hour writes use the price-table premium');
 
 console.log('\n47. Keep-alive savings price only evidenced token rewrites');
 const cacheSaving = (o={}) => ({ day:cacheDay, model:'cache-model', producer:'cache_keep_alive', thread:'cache-thread', effort:'high',
-  tokens:100000, ttl:'1h', prompt:100000, ...o });
+  tokens:100000, ttl:'1h', ...o });
 ok(Math.abs(tc.priceCacheSaving(cacheSaving()) - 0.4) < 1e-9, 'avoided rewrite spend comes from tokens and the current price table');
 ok(Math.abs(tc.priceCacheSaving(cacheSaving({ day:cacheNext })) - 0.6) < 1e-9, 'avoided rewrites respect dated price cards');
 ok(tc.priceCacheSaving(cacheSaving({ tokens:null })) === null && tc.priceCacheSaving(cacheSaving({ ttl:null })) === null,
@@ -1204,14 +1206,19 @@ ok(tc.priceCacheSaving(cacheSaving({ model:'no-price' })) === null, 'an unpriced
 console.log('\n48. Cache views share range, groups and type filter without losing unknowns');
 const cacheDoc = { version:1, generated:'2026-10-20T10:00:00Z', calls:[
   cacheCall(), cacheCall({ cause:'ttl_expiry' }), cacheCall({ cause:'handoff' }), cacheCall({ cause:'model_switch' }),
+  cacheCall({ cause:'first' }), cacheCall({ cause:'partial', calls:3, cache_write:150000, cache_write_1h:90000, in:300000, cache_read:90000, out:3000 }),
+  cacheCall({ cause:'unknown', ttl_known:false, cache_write_1h:0 }),
   cacheCall({ ping:true, producer:'cache_keep_alive', cause:null }),
   cacheCall({ day:cacheNext }), cacheCall({ model:'no-price', cause:'unknown' }),
 ], savings:[cacheSaving(), cacheSaving({ tokens:null, ttl:null })] };
 tc.setGroups(['model']);
 let cr = tc.cacheRows(cacheDoc, [cacheDay], 'all');
 const pricedCacheRow = cr.find((r) => r.labels[0][1] === 'cache-model');
-ok(cr.length === 2 && Math.abs(pricedCacheRow.money.write - 0.85) < 1e-9, 'range excludes later calls; spend sums per call');
-ok(Object.values(pricedCacheRow.causes).every((n) => n === 1), 'the four cause buckets count evidence, including unknown');
+// Ten priced calls at 0.17 written each, one of them at the base 0.125.
+ok(cr.length === 2 && Math.abs(pricedCacheRow.money.write - (9 * 0.17 + 0.125)) < 1e-9, 'range excludes later calls; spend sums per call');
+ok(JSON.stringify(pricedCacheRow.causes) === JSON.stringify({ ttl_expiry:1, handoff:1, model_switch:1, unknown:2, first:1, partial:3 }),
+  'causes count calls, a summed row by its calls; first writes and appends apart: ' + JSON.stringify(pricedCacheRow.causes));
+ok(pricedCacheRow.ttlUnknown === 1, 'a lifetime-unknown write is priced at the base rate and counted');
 ok(pricedCacheRow.pings === 1 && pricedCacheRow.runs === 2 && pricedCacheRow.unknown.saved === 1,
   'known savings and unknown runs are both retained');
 ok(cr.find((r) => r.labels[0][1] === 'no-price').unknown.write === 1, 'unpriced spend carries an unknown count');
@@ -1230,8 +1237,12 @@ document.getElementById('cache-block').open = true;
 tc.renderCacheStats([cacheDay], 'all');
 ok(/unknown/.test(document.getElementById('cache-keep').innerHTML) && /unknown/.test(document.getElementById('cache-spend').innerHTML),
   'rendered savings and spend expose unknown amounts');
-ok(/TTL expiry/.test(document.getElementById('cache-causes').innerHTML) && /Model switch/.test(document.getElementById('cache-causes').innerHTML),
-  'rendered cause view names the evidence buckets');
+const causesHtml = document.getElementById('cache-causes').innerHTML;
+ok(/TTL expiry/.test(causesHtml) && /Model switch/.test(causesHtml) && /Cause unknown/.test(causesHtml)
+  && /First writes/.test(causesHtml) && /Appends after a read/.test(causesHtml),
+  'rendered cause view names the evidence buckets and the two non-rewrites');
+ok(/1 call at the base rate, lifetime unknown/.test(document.getElementById('cache-spend').innerHTML),
+  'rendered spend says how many writes are at the base rate');
 ok(/next rollup/.test(document.getElementById('cache-note').textContent), 'cache view states its freshness separately from live totals');
 tc.setCache(null);
 tc.renderCacheStats([cacheDay], 'all');
@@ -1241,11 +1252,21 @@ const oldReadCache = lucidos.data.read;
 lucidos.data.read = async () => JSON.stringify({ generated:'old', days:{} });
 await tc.loadCacheStats();
 ok(/unavailable/.test(document.getElementById('cache-note').textContent), 'an older or unsupported cache file is rejected visibly');
+// 0.7.0's first cut wrote one row per call, about 500 MB in a real workspace.
+lucidos.data.read = async () => JSON.stringify({ version:1, generated:'old', calls:[], savings:[] });
+await tc.loadCacheStats();
+ok(/unavailable/.test(document.getElementById('cache-note').textContent), 'a version 1 per-call file waits for the next rollup');
+lucidos.data.read = async () => JSON.stringify({ version:2, generated:'2026-10-20T10:00:00Z',
+  fields:['day','thread','producer','model','effort','tier','long','ping','cause','ttl_known','calls','in','cache_read','cache_write','out','cache_write_1h','cache_write_12h'],
+  calls:[[cacheDay,'cache-thread','claude_code','cache-model','high','',false,false,'partial',true,2,200000,60000,100000,2000,60000,0]], savings:[] });
+await tc.loadCacheStats();
+const loadedRows = tc.cacheRows(tc.cacheDoc, [cacheDay], 'all');
+ok(loadedRows.length === 1 && loadedRows[0].causes.partial === 2 && Math.abs(loadedRows[0].money.write - 0.34) < 1e-9,
+  'a version 2 file reads its compact rows by field name');
 lucidos.data.read = oldReadCache;
 document.getElementById('cache-block').open = false;
 
 console.log('\n49. Existing totals keep TTL evidence through live, rollup, tier and compact-row paths');
-const ttlUsage = cacheCall().usage;
 const ttlBundle = { in:ttlUsage.input_tokens, cache_read:ttlUsage.cache_read_tokens, cache_write:ttlUsage.cache_creation_tokens,
   out:ttlUsage.output_tokens, ...tc.writeBundle({ ...ttlUsage, cache_creation_1h_tokens:30000 }) };
 ok(Math.abs(tc.costOf('cache-model', ttlBundle, null, cacheDay) - cp.ping) < 1e-9,
@@ -1276,7 +1297,7 @@ let expectedTTL = 0;
 for (const [i, flex] of [[100000,false],[250000,false],[100000,true]]) {
   const c = { ...ttlBundle, in:i, flex, model:'cache-model', producer:'claude_code', at:cacheDay+'T12:00:00Z' };
   tc.foldCall(mixedTTL, c);
-  expectedTTL += tc.priceCacheCall(cacheCall({ usage:{ ...ttlUsage, input_tokens:i, ...(flex ? {service_tier:'flex'} : {}) } })).ping;
+  expectedTTL += tc.priceCacheCall(cacheCall({ in:i, long:i > 200000, tier:flex ? 'flex' : '' })).ping;
 }
 const mix = Object.values(mixedTTL)[0];
 ok(Math.abs(tc.costOf('cache-model', mix, mix.long, cacheDay) - expectedTTL) < 1e-9,
