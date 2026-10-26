@@ -1,13 +1,15 @@
 """The Thread cost snapshot, scripts/token-cost/thread_costs.py.
 
 The script runs whole, with a fake `psql` serving canned rows and the fake
-`lucidos` from fake_lucidos.py. These pin two things:
+`lucidos` from fake_lucidos.py. These pin three things:
 
 - it runs the 0.4.x price migration first, so a model priced only in the
   legacy pricing.json is priced in the same run, not an hour later;
 - a call it cannot price is never folded in silently as $0. Each thread and
   the whole snapshot carry how many calls are left out, so the widget can
-  say its total is incomplete.
+  say its total is incomplete;
+- the frame dedupe in its SQL never compares a call with the last call of
+  the session before it (run in sqlite, see FAKE_PSQL).
 """
 import datetime
 import json
@@ -45,18 +47,34 @@ ROWS = [
     row("t2", "mystery-model-1", 1, 10, 10),                     # priced nowhere
 ]
 
-FAKE_PSQL = f'''#!{sys.executable} -I
-import sys
+# With a psql.events file beside it, the fake runs the script's own per-call
+# query in sqlite over those events, so the dedupe in its SQL is what the test
+# sees. sqlite reads Postgres's ->, ->>, FILTER, LAG and IS NOT DISTINCT FROM
+# as they are; only the casts and the time-zone day need rewriting.
+FAKE_PSQL = f"#!{sys.executable} -I\n" + r'''
+import json, os, re, sqlite3, sys
 sql = sys.argv[-1]
+events = sys.argv[0] + ".events"
 if "max(sequence)" in sql: print("100")
+elif "json_agg(t)" in sql and os.path.exists(events):
+    q = sql.replace("SELECT coalesce(json_agg(t),'[]') FROM (", "SELECT * FROM (", 1)
+    q = re.sub(r"\(\(created AT TIME ZONE '[^']*'\)::date\)::text", "date(created)", q)
+    q = re.sub(r"::(bigint|int|text|date)\b", "", q)
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE events (sequence INTEGER, thread_id TEXT, created TEXT, event_type TEXT, payload TEXT)")
+    db.executemany("INSERT INTO events VALUES (?, ?, ?, 'ContextCaptured', ?)",
+                   [(e["seq"], e["tid"], e["created"], json.dumps(e["payload"])) for e in json.load(open(events))])
+    cur = db.execute(q)
+    names = [d[0] for d in cur.description]
+    print(json.dumps([dict(zip(names, r)) for r in cur]))
 elif "json_agg(t)" in sql: print(open(sys.argv[0] + ".rows").read())
 elif "parent_thread_id IS NOT NULL" in sql: print("")
-elif "thread_summaries" in sql: print('{{"t1": "Thread one", "t2": "Thread two"}}')
-else: print("{{}}")
+elif "thread_summaries" in sql: print('{"t1": "Thread one", "t2": "Thread two"}')
+else: print("{}")
 '''
 
 
-def snapshot(with_legacy, rows=ROWS):
+def snapshot(with_legacy, rows=ROWS, events=None):
     root = pathlib.Path(tempfile.mkdtemp(prefix="tc-snapshot-"))
     (root / "data" / "artifacts" / "token-cost").mkdir(parents=True)
     (root / ".lucidos" / "tmp").mkdir(parents=True)
@@ -68,6 +86,8 @@ def snapshot(with_legacy, rows=ROWS):
     (bin_dir / "lucidos").write_text(f'#!/bin/sh\nexec "{sys.executable}" -I "{HERE / "fake_lucidos.py"}" "$@"\n')
     (bin_dir / "psql").write_text(FAKE_PSQL)
     (bin_dir / "psql.rows").write_text(json.dumps(rows))
+    if events is not None:
+        (bin_dir / "psql.events").write_text(json.dumps(events))
     for f in ("lucidos", "psql"):
         (bin_dir / f).chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "LUCIDOS_WORKSPACE": str(root),
@@ -133,6 +153,35 @@ check("4 compact rows reserve the unpriced slot", c[6], 0)
 check("4 compact rows keep sessions after that slot", c[7], [[1, 4.0, "claude-opus-5-5", "auxiliary:memory"]])
 check("4 idle rows outside the top lists stay out of the head", "old-400" in p.head["rest"], False)
 check("4 the head declares completeness only for included roots", "old-400" in p.head["closed"], False)
+
+# 5. The frame dedupe runs per thread AND session, in the script's own SQL.
+# Claude Code re-delivers a frame as an identical row right after it, and the
+# snapshot drops that copy. The first call of a successor session is a new
+# context: identical usage to the last call of the session before is chance,
+# so it is kept, as the rollup, the dashboard and the widget keep it.
+U = {"input_tokens": 1_000_000, "cache_read_tokens": 0, "cache_creation_tokens": 0, "output_tokens": 0}
+
+
+def ev(seq, tid, session):
+    payload = {"producer": "claude_code", "model": "claude-opus-5-5", "usage": U}
+    if session is not None:
+        payload["session"] = session
+    return {"seq": seq, "tid": tid, "created": TODAY + "T10:00:00", "payload": payload}
+
+
+p, out = snapshot(with_legacy=False, events=[
+    ev(1, "t1", None), ev(2, "t1", None),  # before the stamp: a re-delivered frame
+    ev(3, "t1", 1), ev(4, "t1", 1),        # session 1 opens, then a re-delivered frame
+    ev(5, "t1", 2),                        # session 2 opens with the same usage
+    ev(6, "t2", 2),                        # another thread, same usage
+])
+check("5 the script succeeds", p.returncode, 0)
+t1 = thread(out, "t1")
+check("5 a re-delivered frame is dropped only inside its own session", t1["calls"], 3)
+check("5 each session keeps its opening call", [(s[0], s[1]) for s in t1.get("sessions") or []],
+      [(0, 4.0), (1, 4.0), (2, 4.0)])
+check("5 the sessions sum to the thread's total", t1["all"], 12.0)
+check("5 another thread is never compared", thread(out, "t2")["calls"], 1)
 
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
