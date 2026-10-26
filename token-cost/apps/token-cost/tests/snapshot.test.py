@@ -66,7 +66,9 @@ elif "json_agg(t)" in sql and os.path.exists(events):
                    [(e["seq"], e["tid"], e["created"], json.dumps(e["payload"])) for e in json.load(open(events))])
     cur = db.execute(q)
     names = [d[0] for d in cur.description]
-    print(json.dumps([dict(zip(names, r)) for r in cur]))
+    rows = [dict(zip(names, r)) for r in cur]
+    open(sys.argv[0] + ".count", "w").write(str(len(rows)))
+    print(json.dumps(rows))
 elif "json_agg(t)" in sql: print(open(sys.argv[0] + ".rows").read())
 elif "parent_thread_id IS NOT NULL" in sql: print("")
 elif "thread_summaries" in sql: print('{"t1": "Thread one", "t2": "Thread two"}')
@@ -102,6 +104,8 @@ def snapshot(with_legacy, rows=ROWS, events=None, table=None):
         print(p.stdout, p.stderr)
     out = json.loads((root / "data" / "artifacts" / "token-cost" / "threads-cost.json").read_text())
     p.head = json.loads((root / "data" / "artifacts" / "token-cost" / "threads-cost-head.json").read_text())
+    count = bin_dir / "psql.count"
+    p.rows = int(count.read_text()) if count.exists() else None
     return p, out
 
 
@@ -206,12 +210,35 @@ for seq, extra in enumerate(({}, {"input_tokens": 250000}, {"service_tier": "fle
                          "payload": {"producer": "main_llm", "model": "asked", "served_model": "cache-model", "session": 1, "usage": u}})
 p, out = snapshot(False, events=cache_events, table={"models": {"cache-model": [CACHE_CARD]}})
 check("6 TTL snapshot succeeds", p.returncode, 0)
-check("6 known write costs survive a matching unknown write", thread(out, "t1")["all"], 1.7)
-check("6 only the missing-TTL call is left out", thread(out, "t1").get("unpriced"), 1)
-check("6 session cost uses all dated tier and lifetime rates", thread(out, "t1")["sessions"][0][1], 1.697)
+# The fifth call's write has no lifetime: 20,000 fresh at 2, 30,000 read at
+# 0.2, 50,000 written at the base 2.5 and 1,000 out at 10 make $0.181.
+check("6 an unknown-lifetime write prices at the base rate beside the known ones", thread(out, "t1")["all"], 1.88)
+check("6 so no call is left out", thread(out, "t1").get("unpriced"), None)
+check("6 session cost uses all dated tier and lifetime rates", thread(out, "t1")["sessions"][0][1], 1.878)
+check("6 the floor-priced call is counted per thread and producer", out.get("ttl_unknown"), {"t1": {"main_llm": 1}})
+check("6 and the head carries the count for the threads it holds", p.head.get("ttl_unknown"), {"t1": {"main_llm": 1}})
 check("6 snapshots declare their lifetime pricing contract", (out.get("ttl_pricing"), p.head.get("ttl_pricing")), (1, 1))
 check("6 snapshot rates retain lifetime prices", (out["rates"]["cache-model"]["cw1h"], out["rates"]["cache-model"]["cw12h"]), (4, 5))
 check("6 snapshot Flex rates retain lifetime prices", out["rates"]["cache-model"]["flex"]["cw12h"], 2.5)
+
+# 7. Rows group on the prompt's band between the cards' long cuts, never on its
+# own size: 0.7.0's first cut grouped per prompt and read 1.2M rows where 24k do.
+# Each row still prices at its own card's cut, inclusive or not.
+CUT_CARD = lambda cut, inclusive=False: {"uncached_in": 1, "cache_read": 0, "cache_write": 0, "out": 0,
+    "long": {"threshold_tokens": cut, "uncached_in": 10, "out": 0, **({"inclusive": True} if inclusive else {})}}
+band_events = [{"seq": n, "tid": "t1", "created": TODAY + "T12:00:00",
+                "payload": {"producer": "main_llm", "model": model, "session": 1,
+                            "usage": {"input_tokens": prompt, "cache_read_tokens": 0, "cache_creation_tokens": 0, "output_tokens": 0}}}
+               for n, (model, prompt) in enumerate((("model-a", 1000), ("model-a", 2000), ("model-a", 3000),
+                                                     ("model-a", 250000), ("model-b", 250000), ("model-c", 200000)), 1)]
+p, out = snapshot(False, events=band_events, table={"models": {
+    "model-a": [CUT_CARD(272000)], "model-b": [CUT_CARD(200000)], "model-c": [CUT_CARD(200000, True)]}})
+check("7 band snapshot succeeds", p.returncode, 0)
+check("7 three short prompts on one model share a row", p.rows, 4)
+models = thread(out, "t1")["models"]
+check("7 under model-a's 272k cut, 256k prompts price standard", models["model-a"]["all"], round((6000 + 250000) / 1e6, 4))
+check("7 over model-b's 200k cut, the same prompt prices long", models["model-b"]["all"], 2.5)
+check("7 an inclusive cut prices a prompt of exactly the cut long", models["model-c"]["all"], 2.0)
 
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

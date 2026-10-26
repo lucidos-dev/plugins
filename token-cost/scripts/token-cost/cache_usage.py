@@ -33,13 +33,14 @@ def write_bundle(u):
 
 
 def write_cost(cw, known, hour, twelve, rates):
+    """A write with no lifetime evidence prices at the base write rate, the
+    lowest any write costs, as the engine's own ApiUsage::usd_on does. That is
+    a floor, never a guessed TTL: callers count those calls beside the total."""
     base = rates.get("cache_write") or 0
     h = rates.get("cache_write_1h")
     t = rates.get("cache_write_12h")
     h = base if h is None else h
     t = base if t is None else t
-    if known < cw and (h != base or t != base):
-        return None
     return ((cw - hour - twelve) * base + hour * h + twelve * t) / 1e6
 
 

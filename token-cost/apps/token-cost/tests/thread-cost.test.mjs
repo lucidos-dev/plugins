@@ -91,11 +91,11 @@ console.log('\n1. the snapshot says how many calls its total leaves out');
   const w = await boot(shippedTable, snapshot({ unpriced: 3 }));
   ok(getEl('total').textContent === '$4.00', 'the total is the priced spend: ' + getEl('total').textContent);
   ok(getEl('unpriced').hidden === false, 'the unpriced line shows');
-  ok(getEl('unpriced').textContent === 'Not included: 3 unpriced calls (missing rates or cache lifetime evidence)', getEl('unpriced').textContent);
+  ok(getEl('unpriced').textContent === 'Not included: 3 unpriced calls', getEl('unpriced').textContent);
   w.fold(101, 't1', gemini);
   w.render();
   ok(getEl('total').textContent === '$4.00', 'an unpriced live call adds nothing to the total');
-  ok(getEl('unpriced').textContent === 'Not included: 4 unpriced calls (missing rates or cache lifetime evidence)', 'but adds to the count: ' + getEl('unpriced').textContent);
+  ok(getEl('unpriced').textContent === 'Not included: 4 unpriced calls', 'but adds to the count: ' + getEl('unpriced').textContent);
   ok(w.threadCost('t1').calls === 6, 'and to the calls, as the snapshot counts them');
 }
 
@@ -112,13 +112,13 @@ console.log('\n2. after the migration, the same live call is priced at the 0.4.4
 console.log('\n3. a thread from the compact list carries its count too');
 {
   await boot(shippedTable, snapshot({ restUnpriced: 2 }), 't9');
-  ok(getEl('unpriced').textContent === 'Not included: 2 unpriced calls (missing rates or cache lifetime evidence)', getEl('unpriced').textContent);
+  ok(getEl('unpriced').textContent === 'Not included: 2 unpriced calls', getEl('unpriced').textContent);
 }
 
 console.log('\n4. one unpriced call reads in the singular');
 {
   await boot(shippedTable, snapshot({ unpriced: 1 }));
-  ok(getEl('unpriced').textContent === 'Not included: 1 unpriced call (missing rates or cache lifetime evidence)', getEl('unpriced').textContent);
+  ok(getEl('unpriced').textContent === 'Not included: 1 unpriced call', getEl('unpriced').textContent);
 }
 
 console.log('\n5. compact rows retain unpriced counts beside sessions');
@@ -197,9 +197,19 @@ console.log('\n9. Widget live pricing uses evidenced write lifetimes, tiers and 
   const twelve = structuredClone(p); delete twelve.usage.cache_creation_1h_tokens; twelve.usage.cache_creation_requested_ttl='12h';
   ok(Math.abs(w.priceCall(twelve).cost - 0.306) < 1e-9, 'widget prices requested 12-hour writes');
   const missing = structuredClone(p); delete missing.usage.cache_creation_1h_tokens;
-  ok(w.priceCall(missing) === null, 'widget leaves a premium write with no lifetime unknown');
-  w.fold(101,'t1',missing); w.render();
-  ok(w.threadCost('t1').unpriced === 1 && /cache lifetime/.test(getEl('unpriced').textContent), 'unknown TTL calls are counted beside the total');
+  // 20,000 fresh at 2 + 30,000 read at 0.2 + 50,000 written at the base 2.5 + 1,000 out at 10.
+  const floor = w.priceCall(missing);
+  ok(Math.abs(floor.cost - 0.181) < 1e-9 && floor.ttlUnknown === true,
+     'a write with no lifetime evidence prices at the base write rate, flagged: ' + floor.cost);
+  w.fold(101,'t1',{ ...missing, producer: 'codex' }); w.render();
+  ok(w.threadCost('t1').unpriced === 0, 'a lifetime-unknown call is not unpriced: its input, reads and output are known');
+  ok(getEl('total').textContent === '$4.18', 'it is in the total at the floor: ' + getEl('total').textContent);
+  ok(getEl('unpriced').textContent === '1 call at the base cache write rate, lifetime unknown (Codex reports no lifetime split)',
+     'and the widget says how many and why: ' + getEl('unpriced').textContent);
+  const known = await boot({models:{'cache-model':[card]}}, { ...snapshot(), ttl_unknown: { t1: { claude_code: 2, 'auxiliary:memory': 1 } } });
+  known.render();
+  ok(getEl('unpriced').textContent === '3 calls at the base cache write rate, lifetime unknown (Claude Code before Lucidos 0.49.0; calls before Lucidos 0.50.0 or on routes without the split)',
+     'snapshot counts carry their reasons: ' + getEl('unpriced').textContent);
   const old = snapshot(); delete old.ttl_pricing;
   const legacy = await boot(undefined, { ...old, rates:{'cache-model':{in:2,cr:0.2,cw:2.5,out:10}} });
   ok(/predates cache lifetime pricing/.test(getEl('unpriced').textContent), 'an old snapshot visibly marks its historic totals until refreshed');

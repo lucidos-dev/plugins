@@ -210,11 +210,13 @@ function sessionRows(base, e, all) {
 function threadCost(tid) {
   const base = find(tid);
   const r = { id: tid, title: (base && base.title) || titles.get(tid) || 'Untitled', all: base ? base.all : 0, today: base ? base.today : 0,
-    calls: base ? base.calls : 0, unpriced: (base && base.unpriced) || 0, models: {} };
+    calls: base ? base.calls : 0, unpriced: (base && base.unpriced) || 0, models: {},
+    ttl: { ...((data.ttl_unknown && data.ttl_unknown[tid]) || {}) } };
   for (const [k, v] of Object.entries((base && base.models) || {})) r.models[k] = { ...v };
   const e = live.get(tid);
   if (e) {
     r.all += e.cost; r.today += e.cost; r.calls += e.calls; r.unpriced += e.unpriced;
+    for (const [k, n] of Object.entries(e.ttl || {})) r.ttl[k] = (r.ttl[k] || 0) + n;
     for (const [k, v] of Object.entries(e.models)) {
       const o = r.models[k] || { all: 0, today: 0, calls: 0 };
       r.models[k] = { all: o.all + v.cost, today: o.today + v.cost, calls: o.calls + v.calls };
@@ -280,10 +282,14 @@ function render() {
   $('total').textContent = usd(total);
   // Never dropped by fit(): without it the total reads as complete.
   const warnings = [];
-  if (unpriced) warnings.push(`Not included: ${unpriced.toLocaleString()} unpriced call${unpriced === 1 ? '' : 's'} (missing rates or cache lifetime evidence)`);
+  if (unpriced) warnings.push(`Not included: ${unpriced.toLocaleString()} unpriced call${unpriced === 1 ? '' : 's'}`);
+  const ttl = {};
+  for (const r of tree) for (const [k, n] of Object.entries(r.ttl)) { const why = ttlReason(k); ttl[why] = (ttl[why] || 0) + n; }
+  const ttlCalls = Object.values(ttl).reduce((a, b) => a + b, 0);
+  if (ttlCalls) warnings.push(`${ttlCalls.toLocaleString()} call${ttlCalls === 1 ? '' : 's'} at the base cache write rate, lifetime unknown (${Object.keys(ttl).join('; ')})`);
   if (data?.ttl_pricing !== 1) warnings.push('Snapshot predates cache lifetime pricing; totals may omit write premiums until its next refresh.');
   $('unpriced').hidden = !warnings.length;
-  $('unpriced').textContent = warnings.join(' ');
+  $('unpriced').textContent = warnings.join(' · ');
   $('today').innerHTML = calls ? `<b>${usd(today)}</b> today<br>${calls.toLocaleString()} calls` : 'No calls yet';
 
   // Mix: up to four models by name. Fold only when two or more remain,
@@ -471,11 +477,19 @@ function priceCall(p) {
   // An old snapshot has no lifetime prices for its live tail. Wait for the
   // price table or its next refresh instead of using a missing premium as 0.
   if (cw && tableRates === null && data?.ttl_pricing !== 1) return null;
+  // A write with no lifetime evidence prices at the base write rate, the
+  // lowest a write costs, and is counted so the total can say so.
   const w = writeBundle(u), h = w.cache_write_1h, t = w.cache_write_12h;
   const hour = r.cw1h ?? r.cw, twelve = r.cw12h ?? r.cw;
-  if (w.cache_write_known < cw && (hour !== r.cw || twelve !== r.cw)) return null;
   const write = (cw - h - t) * r.cw + h * hour + t * twelve;
-  return { model: k, cost: (Math.max(0, i - cr - cw) * r.in + cr * r.cr + write + o * r.out) / 1e6 };
+  return { model: k, cost: (Math.max(0, i - cr - cw) * r.in + cr * r.cr + write + o * r.out) / 1e6,
+           ttlUnknown: w.cache_write_known < cw };
+}
+// Why a call's cache lifetime is unknown, by the producer that made it.
+function ttlReason(producer) {
+  if (producer === 'codex') return 'Codex reports no lifetime split';
+  if (producer === 'claude_code') return 'Claude Code before Lucidos 0.49.0';
+  return 'calls before Lucidos 0.50.0 or on routes without the split';
 }
 const tracked = tid => tid === focus || subIds.has(tid);
 function fold(seq, tid, p) {
@@ -488,11 +502,12 @@ function fold(seq, tid, p) {
     lastUsage.set(slot, sig);
   }
   const c = priceCall(p);
-  const e = live.get(tid) || { cost: 0, calls: 0, unpriced: 0, models: {} };
+  const e = live.get(tid) || { cost: 0, calls: 0, unpriced: 0, ttl: {}, models: {} };
   live.set(tid, e);
   e.calls += 1;
   if (!c) { e.unpriced += 1; if (tracked(tid)) dirty = true; return; }
   e.cost += c.cost;
+  if (c.ttlUnknown) e.ttl[p.producer || ''] = (e.ttl[p.producer || ''] || 0) + 1;
   const m = e.models[c.model] || (e.models[c.model] = { cost: 0, calls: 0 });
   m.cost += c.cost; m.calls += 1;
   if (p.session != null) {

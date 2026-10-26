@@ -12,7 +12,9 @@ today's rate cards, so the widget prices calls after the cursor live. A thread
 whose captures name their agent session (`session`, stamped by the engine) also
 carries one row per session; spend from before the stamp is the row `0`.
 
-A call no card prices is kept out of every total and counted, per thread.
+A call no card prices is kept out of every total and counted, per thread. A
+cache write with no lifetime evidence prices at the base write rate, and its
+calls are counted per thread and producer in `ttl_unknown`.
 It first migrates 0.4.x prices with migrate_prices.py.
 """
 import os, sys, json, re, subprocess, datetime, pathlib
@@ -41,11 +43,26 @@ def psql(sql):
     if r.returncode: raise SystemExit(r.stderr)
     return r.stdout
 TZ=local_tz()
+def price_table():
+    if TABLE_FILE: return json.load(open(TABLE_FILE))
+    line=migrate_prices.run_quietly(WS)
+    if line: print(line)
+    r=subprocess.run(['lucidos','model-prices'],capture_output=True,text=True)
+    if r.returncode: raise SystemExit('lucidos model-prices failed: '+(r.stderr or r.stdout)[:400])
+    return json.loads(r.stdout)
+P=price_table()['models']
+# Every long-context cut any card names, weakest first: `>= t` before `> t`.
+# A prompt meets a prefix of them, so a row groups on how many it meets (its
+# band) instead of on its own prompt size, and still prices at its own card's cut.
+CUTS=sorted({(lg['threshold_tokens'],lg.get('inclusive') is True) for cards in P.values() for c in cards
+             for lg in [c.get('long')] if isinstance(lg,dict) and isinstance(lg.get('threshold_tokens'),(int,float))},
+            key=lambda x:(x[0],not x[1]))
+BAND='+'.join(f"(CASE WHEN i{'>=' if inc else '>'}{int(t)} THEN 1 ELSE 0 END)" for t,inc in CUTS) or '0'
 sql=f"""SELECT coalesce(json_agg(t),'[]') FROM (
 SELECT thread_id::text AS tid, dy, mdl, producer, sess, count(*) AS calls,
- sum(i) AS i, sum(cr) AS cr, sum(cw) AS cw, sum(o) AS o, max(i) AS prompt, tier,
+ sum(i) AS i, sum(cr) AS cr, sum(cw) AS cw, sum(o) AS o, band, tier, unknown_ttl,
  sum(wk) AS cache_write_known, sum(wh) AS cache_write_1h, sum(wt) AS cache_write_12h
-FROM (SELECT thread_id, ((created AT TIME ZONE '{TZ}')::date)::text AS dy,
+FROM (SELECT *, {BAND} AS band, wk < cw AS unknown_ttl FROM (SELECT thread_id, ((created AT TIME ZONE '{TZ}')::date)::text AS dy,
   lower(coalesce(nullif(payload->>'served_model',''), payload->>'model')) AS mdl, payload->>'producer' AS producer,
   coalesce((payload->>'session')::int, 0) AS sess,
   (payload->'usage'->>'input_tokens')::bigint AS i,
@@ -56,19 +73,11 @@ FROM (SELECT thread_id, ((created AT TIME ZONE '{TZ}')::date)::text AS dy,
   {', '.join(expr + ' AS ' + alias for expr, alias in zip(write_sql().values(), ('wk', 'wh', 'wt')))},
   ((payload->'usage') IS NOT DISTINCT FROM LAG(payload->'usage') OVER (PARTITION BY thread_id, payload->>'session' ORDER BY sequence)
     AND payload->>'producer'='claude_code') AS dup
- FROM events WHERE event_type='ContextCaptured' AND payload->'usage' IS NOT NULL) s
-WHERE NOT dup GROUP BY 1,2,3,4,5,s.i,tier,(wk < cw)) t"""
+ FROM events WHERE event_type='ContextCaptured' AND payload->'usage' IS NOT NULL) s0) s
+WHERE NOT dup GROUP BY 1,2,3,4,5,band,tier,unknown_ttl) t"""
 max_seq=int(psql("SELECT coalesce(max(sequence),0) FROM events WHERE event_type='ContextCaptured'").strip())
 sql=sql.replace("WHERE event_type='ContextCaptured' AND",f"WHERE event_type='ContextCaptured' AND sequence<={max_seq} AND")
 rows=json.loads(psql(sql))
-def price_table():
-    if TABLE_FILE: return json.load(open(TABLE_FILE))
-    line=migrate_prices.run_quietly(WS)
-    if line: print(line)
-    r=subprocess.run(['lucidos','model-prices'],capture_output=True,text=True)
-    if r.returncode: raise SystemExit('lucidos model-prices failed: '+(r.stderr or r.stdout)[:400])
-    return json.loads(r.stdout)
-P=price_table()['models']
 def key(m):
     m=re.sub(r'@[^\[]*','',m); m=m.replace('[1m]','')
     if m in P: return m
@@ -83,11 +92,13 @@ def card(k,day):
     for c in P[k]:
         if c.get('from','0000')<=day: best=c
     return best
-unpriced={}; per={}
+unpriced={}; per={}; ttl_unknown={}
 def price(r, cc):
     write = write_cost(r['cw'], r.get('cache_write_known', 0), r.get('cache_write_1h', 0), r.get('cache_write_12h', 0), cc)
-    if write is None: return None
-    return (max(0,r['i']-r['cr']-r['cw'])*cc['uncached_in']+r['cr']*(cc.get('cache_read') or 0)+r['o']*cc['out'])/1e6 + write
+    return (max(0,r['i']-r['cr']-r['cw'])*cc.get('uncached_in',0)+r['cr']*(cc.get('cache_read') or 0)+r['o']*cc.get('out',0))/1e6 + write
+def is_long(r, lg):
+    cut=(lg['threshold_tokens'],lg.get('inclusive') is True)
+    return cut in CUTS and r.get('band',0) > CUTS.index(cut)
 for r in rows:
     m=r['mdl'] or ''
     k=key(m); c=card(k,r['dy']) if k else None
@@ -95,16 +106,17 @@ for r in rows:
     cost=None
     if priced:
         lg=c.get('long')
-        prompt=r.get('prompt', 0)
-        if lg and (prompt >= lg['threshold_tokens'] if lg.get('inclusive') else prompt > lg['threshold_tokens']):
-            rates=lg
-        elif r.get('tier') == 'flex' and c.get('flex'): rates=c['flex']
+        # A long card's blank rate falls back to the standard one.
+        if isinstance(lg,dict) and lg.get('threshold_tokens') and is_long(r,lg): rates={**c,**lg}
+        elif r.get('tier') == 'flex' and isinstance(c.get('flex'),dict): rates=c['flex']
         else: rates=c
         cost=price(r,rates)
-    priced=cost is not None
     if not priced:
         unpriced[m]=unpriced.get(m,0)+r['calls']; cost=0
     t=per.setdefault(r['tid'],{'cost':0,'calls':0,'models':{},'first':r['dy'],'last':r['dy'],'producers':set(),'today':0,'sessions':{},'unpriced':0})
+    # Priced with the write at the base rate: counted, so the widget can say why.
+    if priced and r.get('unknown_ttl') and r['cw']:
+        u=ttl_unknown.setdefault(r['tid'],{}); u[r['producer'] or '']=u.get(r['producer'] or '',0)+r['calls']
     ss=t['sessions'].setdefault(r.get('sess',0),{'cost':0,'calls':0,'models':{},'producers':set()})
     ss['cost']+=cost; ss['calls']+=r['calls']; ss['producers'].add(r['producer'])
     ss['models'][k or m]=ss['models'].get(k or m,0)+cost
@@ -177,6 +189,9 @@ rest={x['thread_id']:[x['title'],x['cost_usd'],x['today_usd'],x['calls'],lastts.
 out={'ttl_pricing':1,'generated':datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds'),'day':day,'last_sequence':max_seq,
  'total_all':round(total,2),'total_today':round(today,2),'threads':len(lst),'rates':rates,
  'unpriced_calls':sum(unpriced.values()),'unpriced_models':unpriced,
+ # Per thread and producer, the priced calls whose cache write had no lifetime
+ # evidence: their writes are in the totals at the base write rate.
+ 'ttl_unknown':ttl_unknown,
  'top_all':top_all,'top_today':top_today,'rest':rest}
 def write(path,doc):
     w=subprocess.run(['lucidos','data','write',path,'--from','-'],input=json.dumps(doc),capture_output=True,text=True)
@@ -196,7 +211,8 @@ kept=set(closed); stack=list(closed)
 while stack:
     for child in kids.get(stack.pop(),()):
         if child not in kept: kept.add(child); stack.append(child)
-head={**out,'closed':sorted(closed),'rest':{tid:row for tid,row in rest.items() if tid in kept}}
+head={**out,'closed':sorted(closed),'rest':{tid:row for tid,row in rest.items() if tid in kept},
+      'ttl_unknown':{tid:v for tid,v in ttl_unknown.items() if tid in kept}}
 write('artifacts/token-cost/threads-cost-head.json',head)
 write('artifacts/token-cost/threads-cost.json',out)
 print('wrote snapshot, cursor',max_seq,'head rest rows',len(head['rest']),'of',len(rest))
