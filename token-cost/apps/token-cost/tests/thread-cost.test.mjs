@@ -31,8 +31,9 @@ function mkEl(id) {
     set innerHTML(v) { this._html = String(v); }, get innerHTML() { return this._html; },
     get firstElementChild() { return this._first || (this._first = mkEl(id + '>span')); },
     get lastElementChild() { return this.children[this.children.length - 1] || null; },
-    appendChild(c) { this.children.push(c); }, addEventListener() {}, setAttribute() {}, removeAttribute() {},
-    querySelectorAll() { return []; }, getClientRects() { return [1]; }, remove() {},
+    appendChild(c) { c._parent = this; this.children.push(c); }, addEventListener() {}, setAttribute() {}, removeAttribute() {},
+    querySelectorAll() { return []; }, getClientRects() { return [1]; },
+    remove() { if (this._parent) this._parent.children.splice(this._parent.children.indexOf(this), 1); },
   };
   return e;
 }
@@ -73,8 +74,8 @@ async function boot(table, snap, focus = 't1', read = async () => JSON.stringify
     threads: { list: async () => [] },
     data: { read },
     priceTable: { get: async () => JSON.parse(JSON.stringify(table)) },
-    events: { query: async () => [] },
-    sse: { connect() {}, on() {} },
+    events: { query: async () => globalThis.__events || [] },
+    sse: { connect() {}, on(name, fn) { (globalThis.__sse ||= {})[name] = fn; } },
     params: () => ({}),
   };
   new Function(src + ';globalThis.__w = { fold, render, threadCost, find, sessionRows };')();
@@ -159,6 +160,25 @@ console.log('\n7. a head that omits the focus waits for the full snapshot');
   await settle();
   ok(getEl('total').textContent === '$4.00', 'the full snapshot paints its actual total');
   ok(reads.some(p => p.endsWith('-head.json')) && reads.some(p => p.endsWith('threads-cost.json')), 'both snapshot paths were read');
+}
+
+console.log('\n8. a reload keeps the live calls its snapshot does not hold');
+{
+  // The snapshot script reads its cursor first and writes some seconds later,
+  // so a call can land after the cursor and before the reload. The widget
+  // already folded it live; the reload must fold it again, not drop it.
+  const snap = snapshot();
+  const w = await boot(migratedTable, snap);
+  const call = { ...gemini, producer: 'claude_code', session: 1 };
+  w.fold(101, 't1', call);
+  w.render();
+  ok(getEl('total').textContent === '$4.80', 'the live call is in the total: ' + getEl('total').textContent);
+  globalThis.__events = [{ sequence: 101, thread_id: 't1', payload: call }];
+  globalThis.__sse.ArtifactUpdated({ artifact_path: 'token-cost/threads-cost.json' });
+  await settle();
+  ok(getEl('total').textContent === '$4.80', 'and still in it after the reload: ' + getEl('total').textContent);
+  ok(w.threadCost('t1').calls === 3, 'counted once, not twice');
+  globalThis.__events = [];
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

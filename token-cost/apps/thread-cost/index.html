@@ -516,7 +516,10 @@ async function load() {
   try {
     data = JSON.parse(await lucidos.data.read(PATH));
     headOnly = false;
-    live = new Map(); seen = new Set([...seen].filter(s => s > (data.last_sequence || 0)));
+    // The live tally starts over, so `seen` and the frame dedupe start over
+    // with it: the catch-up must fold again every call after the new cursor,
+    // including those the old tally already held.
+    live = new Map(); seen = new Set(); lastUsage = new Map();
     if (first) render();
   } catch (e) {
     if (!data) document.getElementById('total').textContent = 'No data yet';
