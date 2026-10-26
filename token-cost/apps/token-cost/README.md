@@ -14,7 +14,11 @@ makes: chat turns, trigger fires, and coding-agent sessions alike.
   auxiliary call into one row; Type:subtype lists each auxiliary purpose
   (memory, titles, compaction...) and the cache keep-alive pings on their own.
   Sub-threads fold into their root thread, and the thread you have open in
-  Lucidos is marked. Click a legend entry to filter the chart and table to it.
+  Lucidos is marked. Each recorded agent session has its own row, time span,
+  peak context and keep-alive line. Click a legend entry or donut slice to filter
+  the chart and table; ranges over 31 days use weekly bars.
+- **Handoffs**, grouped by checkpoint: narrative cost, calls before and after,
+  warm or cold openings, and whether the recorded verdict held.
 - **Context size per call**, the histogram that tells you where a long-context
   premium is actually biting.
 - **Live calls**, streamed over SSE as they land, including calls from other
@@ -23,17 +27,24 @@ makes: chat turns, trigger fires, and coding-agent sessions alike.
 ## How it works
 
 Every real model call the engine makes emits a `ContextCaptured` event carrying
-the provider's own `usage` block. Two halves read it:
+the provider's own `usage` block. These parts read it:
 
 - `scripts/rollup.py` folds those events into a per-day, per-model rollup at
   `artifacts/token-cost/daily.json`. It is incremental: it resumes from the
   `last_sequence` recorded in the file and only reads rows above it, then
   recomputes each touched day in full so a rerun is idempotent. The same pass
-  writes the per-thread rows to `artifacts/token-cost/threads-daily.json`.
+  writes per-session thread rows and spans to `artifacts/token-cost/threads-daily.json`
+  and checkpoint comparisons to `artifacts/token-cost/handoffs.json`.
 - The app reads that rollup, then folds anything that has arrived over SSE since
-  on top of it, so today's number is live rather than an hour stale.
+  on top of it, so today's number is live rather than an hour stale. A capped
+  first paint marks its total as catching up until that tail finishes.
+  There is no Refresh button: the app reconciles automatically.
+- `scripts/token-cost/thread_costs.py` writes the full widget snapshot and
+  `artifacts/token-cost/threads-cost-head.json` for faster first paint. The
+  widget offers thread-only or inclusive scope and per-session spend.
 
-Cost is computed in the browser from Lucidos's price table, never stored. A call
+Dashboard cost is computed in the browser from Lucidos's price table;
+the widget snapshot stores priced totals for its first paint. A call
 is priced as the model that served it, which can differ from the model asked
 for when a provider reroutes a retired model; the dashboard marks those calls.
 Adding a dated card changes prices from its day on and leaves the past alone.
@@ -87,7 +98,8 @@ apps/token-cost/tests/run.sh
 
 ## Requirements
 
-A Lucidos engine with the price table: it serves `GET /api/v1/model-prices`,
+Lucidos 0.51.0 or later, for stamped agent sessions and same-thread handoff
+continuity. It also needs the price table: it serves `GET /api/v1/model-prices`,
 `lucidos.priceTable.get()` and the `lucidos model-prices` command. On an older
 engine the app shows every model as unpriced and the rollup stops with a clear
 message.

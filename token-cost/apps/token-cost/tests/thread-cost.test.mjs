@@ -65,13 +65,13 @@ function snapshot({ unpriced = 0, restUnpriced = 0 } = {}) {
   };
 }
 
-async function boot(table, snap, focus = 't1') {
+async function boot(table, snap, focus = 't1', read = async () => JSON.stringify(snap)) {
   els = new Map();
   global.lucidos = {
     ui: { applyPreferences() {}, watchPreferences() {}, navigate() {}, ready() {},
           focusedThread: async () => focus, onFocusedThreadChange() {} },
     threads: { list: async () => [] },
-    data: { read: async () => JSON.stringify(snap) },
+    data: { read },
     priceTable: { get: async () => JSON.parse(JSON.stringify(table)) },
     events: { query: async () => [] },
     sse: { connect() {}, on() {} },
@@ -142,6 +142,23 @@ console.log('\n6. session boundaries keep identical first calls');
   ok(t.calls === 4, 'a repeated frame is dropped only inside its own session');
   ok(t.sessions.filter(s => s.n > 0).length === 2, 'each named session keeps its spend');
   ok(Math.abs(t.all - 5.6) < 1e-9, 'both session opening calls are priced');
+}
+
+console.log('\n7. a head that omits the focus waits for the full snapshot');
+{
+  const snap = snapshot();
+  let finish;
+  const full = new Promise(resolve => { finish = resolve; });
+  const reads = [];
+  await boot(shippedTable, snap, 't1', async path => {
+    reads.push(path);
+    return path.endsWith('-head.json') ? JSON.stringify({ ...snap, closed: [], top_all: [], rest: {} }) : full;
+  });
+  ok(getEl('total').textContent !== '$0.00', 'an uncovered thread never paints as zero');
+  finish(JSON.stringify(snap));
+  await settle();
+  ok(getEl('total').textContent === '$4.00', 'the full snapshot paints its actual total');
+  ok(reads.some(p => p.endsWith('-head.json')) && reads.some(p => p.endsWith('threads-cost.json')), 'both snapshot paths were read');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

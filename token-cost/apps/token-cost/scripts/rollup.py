@@ -105,8 +105,7 @@ thread_summaries after the usage query, or bare `main_llm` when the origin
 cannot be read. See classify_origins(). daily.json also lists recent threads'
 origins under `thread_origins`, which is how the app files a live call.
 
-State path is anchored on LUCIDOS_WORKSPACE, never on __file__ (see
-knowhow/script-state-paths.md).
+State path is anchored on LUCIDOS_WORKSPACE, never on __file__.
 """
 
 import hashlib

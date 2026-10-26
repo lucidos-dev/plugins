@@ -38,7 +38,10 @@ Object.defineProperty(globalThis,'navigator',{value:{platform:'MacIntel',userAge
 global.performance = { now:()=>Date.now() };
 global.localStorage = { getItem:()=>null, setItem(){}, };
 global.setInterval = ()=>0;
-global.setTimeout = (f)=>{ return 0; };
+let firstPaintTimer;
+global.setTimeout = (f, ms)=>{ if (ms === 2500) firstPaintTimer = f; return 0; };
+let finishInitialQuery;
+let initialQuery = new Promise(resolve => { finishInitialQuery = resolve; });
 global.clearTimeout = ()=>{};
 globalThis.__store = [];         // newest-first rows the fake event store returns
 globalThis.__queryFail = false;  // when set, lucidos.events.query throws
@@ -77,6 +80,7 @@ global.lucidos = {
     // engine's /events/query: newest-first, filtered by `since` and the
     // exclusive `before_event_id` cursor, clamped to `limit`.
     query: async ({ since, limit, before_event_id } = {}) => {
+      if (initialQuery) await initialQuery;
       globalThis.__queryCalls++;
       if (globalThis.__queryFail) throw new Error('offline');
       const from = new Date(since).getTime();
@@ -115,6 +119,19 @@ await new Promise(r=>setImmediate(r));
 
 let pass=0, fail=0;
 const ok=(c,m)=>{ if(c){pass++;console.log('  ok  '+m);} else {fail++;console.log('  FAIL '+m);} };
+
+console.log('\n10. a capped first paint names its incomplete total');
+ok(typeof firstPaintTimer === 'function', 'the initial tail is still loading');
+firstPaintTimer();
+await new Promise(r => setImmediate(r));
+ok(getEl('hero-cost').classList.contains('stale'), 'the rollup-only hero looks stale');
+ok(/catching up/.test(getEl('hero-sub').textContent), 'the hero explains newer calls are loading');
+initialQuery = null;
+finishInitialQuery();
+await new Promise(r => setImmediate(r));
+await new Promise(r => setImmediate(r));
+ok(!getEl('hero-cost').classList.contains('stale'), 'the completed tail clears the stale style');
+ok(!/catching up/.test(getEl('hero-sub').textContent), 'and clears its loading note');
 
 const empty = {generated:new Date().toISOString(), last_sequence:0,
   bucket_edges:[0,32000,64000,128000,200000,400000], days:{}, hours:{}};

@@ -77,6 +77,7 @@ def snapshot(with_legacy, rows=ROWS):
     if p.returncode:
         print(p.stdout, p.stderr)
     out = json.loads((root / "data" / "artifacts" / "token-cost" / "threads-cost.json").read_text())
+    p.head = json.loads((root / "data" / "artifacts" / "token-cost" / "threads-cost-head.json").read_text())
     return p, out
 
 
@@ -118,6 +119,20 @@ check("3 sessions sum to the thread's priced total",
       round(sum(s[1] for s in thread(out, "t1")["sessions"]), 2), thread(out, "t1")["all"])
 check("3 each session keeps its ordinal", [s[0] for s in thread(out, "t1")["sessions"]], [1, 2])
 check("3 unpriced session keeps its warning", thread(out, "t2").get("unpriced"), 1)
+
+check("3 the head shares the full snapshot cursor", p.head["last_sequence"], out["last_sequence"])
+check("3 head rows keep session and unpriced data", thread(p.head, "t2"), thread(out, "t2"))
+
+# Force a priced, idle thread outside both top lists into the compact format.
+old_day = (datetime.date.today() - datetime.timedelta(days=30)).isoformat()
+rows = [{**row(f"old-{n}", "claude-opus-5-5", 1, 1_000_000, 0), "dy": old_day, "sess": 1}
+        for n in range(401)]
+p, out = snapshot(with_legacy=False, rows=rows)
+c = out["rest"]["old-400"]
+check("4 compact rows reserve the unpriced slot", c[6], 0)
+check("4 compact rows keep sessions after that slot", c[7], [[1, 4.0, "claude-opus-5-5", "auxiliary:memory"]])
+check("4 idle rows outside the top lists stay out of the head", "old-400" in p.head["rest"], False)
+check("4 the head declares completeness only for included roots", "old-400" in p.head["closed"], False)
 
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

@@ -1,6 +1,6 @@
 {
   "name": "Thread cost",
-  "description": "What the thread you have open costs, sub-threads always included: total, today, model mix and the costliest sub-threads. Live on top of the hourly snapshot. Tap opens Token Cost.",
+  "description": "What the open thread costs: total, today, model mix, session rows and costliest sub-threads. Include sub-threads or view the thread alone. Live on top of the hourly snapshot, with a lightweight first paint. Tap opens Token Cost.",
   "icon": "assets/icon.svg",
   "reveal": "on-ready",
   "kind": "widget",

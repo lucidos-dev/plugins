@@ -153,7 +153,7 @@ top_all=[slim(x) for x in lst[:300]]
 top_today=[slim(x) for x in sorted(lst,key=lambda x:-x['today_usd'])[:400] if x['today_usd']>0]
 listed={r['id'] for r in top_all+top_today}
 # Every other thread, compact: [title, all, today, calls, last, {model: [all, today, calls]}, unpriced, sessions],
-# the unpriced call count only when there are any.
+# Trailing fields are omitted when empty; sessions always follow an unpriced count.
 # The widget looks a thread up here when it is in neither list, so it never reads $0.
 rest={x['thread_id']:[x['title'],x['cost_usd'],x['today_usd'],x['calls'],lastts.get(x['thread_id']),{mk:[v['all'],v['today'],v['calls']] for mk,v in x['models'].items()}]
       +([x['unpriced'],x['sessions']] if x['sessions'] else ([x['unpriced']] if x['unpriced'] else []))

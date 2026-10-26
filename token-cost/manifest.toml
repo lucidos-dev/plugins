@@ -1,9 +1,9 @@
 id = "token-cost"
-version = "0.6.4"
+version = "0.7.0"
 name = "Token Cost"
-description = "Real-time token usage and running cost across every model call the workspace makes. Live totals that tick as agents stream over SSE, a date range picker with presets, an analysis table and chart grouped by any mix of model (optionally split by reasoning effort), type (auxiliary calls split by purpose, cache keep-alive pings on their own) and thread, cache-hit share and context size, all priced from Lucidos's dated price table: each day is priced at the rate in force that day, and each call at the model that actually served it. A dead stream, a gap behind it, or a stale rollup are each detected and named in the header. A call no card prices is counted and named, never shown as $0. Also ships the Thread cost widget: what the open thread costs, sub-threads included, with its model mix and costliest sub-threads. On an update from 0.4.x, the prices it kept in its own file move into Lucidos's price table. Ships an incremental rollup script and a per-thread snapshot script; setup offers an hourly rollup and an hourly thread snapshot."
+description = "Live token usage and cost across every workspace model call. Pick any date range, group analysis by model, reasoning effort, type or thread, and explore share donuts and daily or weekly bars. Thread drill-downs show each agent session, its time span and keep-alive spend; Handoffs compares narrative cost and calls before and after each checkpoint. A rollup-only first paint is marked while newer calls load, and the page stays live without a Refresh button. Dated Lucidos price cards price each call at its served model; unpriced calls are counted and named. Includes the Thread cost widget with scope controls, session rows and a lightweight snapshot for fast first paint. Keeps the 0.4.x price migration. Setup offers hourly rollup and snapshot schedules."
 source = "https://github.com/lucidos-dev/plugins/tree/main/token-cost"
-engine = ">=0.50.0"
+engine = ">=0.51.0"
 categories = ["developer-tools", "data"]
 icon = "media/icon.svg"
 screenshots = ["media/dashboard.png", "media/analysis.png", "media/thread-cost-widget.png", "media/settings.png"]

@@ -4,14 +4,15 @@ See what your workspace spends on AI, live. Every model call the workspace makes
 
 ## What you get
 
-- **The Token Cost app.** A dashboard with the running spend for the range you pick (presets from today to all time, or any two dates on a calendar), calls, tokens in and out, and the share served from cache. An analysis table and chart group the cost by any mix of model, type and thread. Split a model by reasoning effort, or a type into its parts: each auxiliary purpose (memory, titles, compaction...) and the cache keep-alive pings get a row of their own. Click a legend entry to filter to it. Below it you find a live list of calls as they arrive, a cost per day chart, and how large each prompt was.
+- **The Token Cost app.** A dashboard with the running spend for the range you pick (presets from today to all time, or any two dates on a calendar), calls, tokens in and out, and the share served from cache. An analysis table, share donut and daily or weekly bars group the cost by any mix of model, type and thread. Thread drill-downs show each agent session, its time span, peak context and a separate keep-alive spend line. The phone date picker fits the screen. Split a model by reasoning effort, or a type into its parts: each auxiliary purpose (memory, titles, compaction...) and the cache keep-alive pings get a row of their own. Click a legend entry to filter to it. Below it you find a live list of calls as they arrive, a cost per day chart, and how large each prompt was.
 - **Honest prices.** Each model has a price history. Each day is priced at the rate in force that day, and each call at the model that actually served it. A price change never reprices the past. Prices come from Lucidos's own price table, and any rate you edit in Settings is saved as your workspace override.
-- **The Thread cost widget.** A small live card for the thread you have open. It shows what that thread costs, sub-threads always included: the total, today's share, the model mix and the costliest sub-threads. It fits a small, medium or large dashboard tile. One tap opens Token Cost.
-- **Health in the header.** If the live stream drops, a gap opens behind it, or the rollup gets stale, the header says so.
+- **The Thread cost widget.** A small live card for the thread you have open. It shows what that thread costs, including sub-threads by default: the total, today's share, the model mix and the costliest sub-threads. Choose the thread alone or include sub-threads, and see per-session spend. A lightweight snapshot speeds first paint; threads it omits wait for the full snapshot. It fits a small, medium or large dashboard tile. One tap opens Token Cost.
+- **Handoffs.** Compare each checkpoint: the narrative turn’s cost, cost per call before and after, warm and cold openings, and whether the checkpoint’s verdict held. Older successor-thread handoffs are shown too.
+- **Health in the header.** If the live stream drops, a gap opens behind it, or the rollup gets stale, the header says so. If the first paint has only the rollup, the total is marked as catching up until newer calls load. The page updates automatically; there is no Refresh button.
 
 ## What it needs
 
-- Lucidos 0.50.0 or later, with the price table.
+- Lucidos 0.51.0 or later, with agent-session telemetry and same-thread handoffs.
 - No API key and no account. The scripts read the workspace event store on your own machine.
 - Two schedules, which setup offers to create for you: an hourly rollup for the dashboard, and an hourly snapshot for the widget.
 - Prices come from Lucidos. The plugin ships none of its own. To keep them current, turn on **Keep prices current** in Settings > Intelligence.
@@ -29,3 +30,14 @@ All data stays in your workspace: usage under `artifacts/token-cost/`, and your 
 
 - Source: https://github.com/lucidos-dev/plugins/tree/main/token-cost
 - Lucidos: https://lucidos.dev
+
+## Screenshots awaiting recapture
+
+All four existing screenshots are stale; the parent release thread will recapture them with demo data. No screenshots were changed in this release preparation.
+
+- `dashboard.png`: removed Refresh button, chart/donut changes, first-paint catch-up styling and phone range picker.
+- `analysis.png`: share donut, weekly bars for long ranges, session rows with spans and keep-alive lines, Handoffs view and removed Refresh button.
+- `thread-cost-widget.png`: scope controls, session rows and revised call-count layout.
+- `settings.png`: shared header no longer has Refresh; the settings gear position changed on phones.
+
+Add a Handoffs screenshot when capturing the new views.
