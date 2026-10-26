@@ -118,6 +118,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from cache_stats import build_cache
+from cache_usage import WRITE_FIELDS, write_bundle, write_sql
 
 WS = pathlib.Path(os.environ.get("LUCIDOS_WORKSPACE", "."))
 OUT = WS / "data" / "artifacts" / "token-cost" / "daily.json"
@@ -197,9 +198,9 @@ COPY (
 
 def blank_bucket() -> dict:
     return {
-        "calls": 0, "in": 0, "cache_read": 0, "cache_write": 0,
+        "calls": 0, "in": 0, "cache_read": 0, "cache_write": 0, **dict.fromkeys(WRITE_FIELDS, 0),
         "out": 0, "seconds": 0, "buckets": [0] * 6,
-        "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0},
+        "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, **dict.fromkeys(WRITE_FIELDS, 0)},
         "max_in": 0,
         # Jev calls carry no cache counts, so none of them read the cache.
         "cached_calls": 0,
@@ -717,6 +718,7 @@ COPY (
       effort,
       thread_id::text AS thread,
       session,
+      wk < cw AS cache_unknown,
       count(*) AS calls,
       count(*) FILTER (WHERE cr > 0) AS cached_calls,
       sum(in_tok) AS total_in,
@@ -790,11 +792,27 @@ COPY (
     ) s
     WHERE NOT dup
       AND local_day = ANY (%(days)s)
-    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
   ) t
 ) TO STDOUT;
 """
 )
+
+
+WRITE_ALIASES = dict(zip(WRITE_FIELDS, ("wk", "wh", "wt")))
+ROLLUP_SQL = ROLLUP_SQL.replace(
+    "sum(cw) AS cache_write,", "sum(cw) AS cache_write, " +
+    ", ".join(f"sum({alias}) AS {field}" for field, alias in WRITE_ALIASES.items()) + ",")
+for tier, condition in (("long", "in_tok > long_cut"), ("flex", "flex AND in_tok <= long_cut")):
+    # Whitespace differs between the two existing lines.
+    pattern = rf"sum\(cw\)\s+FILTER \(WHERE {re.escape(condition)}\) AS {tier}_cw,"
+    ROLLUP_SQL = re.sub(pattern, lambda m: m[0] + " " + ", ".join(
+        f"sum({alias}) FILTER (WHERE {condition}) AS {tier}_{field}"
+        for field, alias in WRITE_ALIASES.items()) + ",", ROLLUP_SQL)
+ROLLUP_SQL = ROLLUP_SQL.replace(
+    "(payload->'usage'->>'output_tokens')::bigint AS out_tok,",
+    ", ".join(f"{expr} AS {WRITE_ALIASES[field]}" for field, expr in write_sql().items()) +
+    ", (payload->'usage'->>'output_tokens')::bigint AS out_tok,")
 
 
 def psql(sql: str) -> str:
@@ -906,7 +924,9 @@ COPY (
 #  14  2026-10-23: the thread file splits each thread by agent session
 #      (`<thread>@<session>`), the frame dedupe compares calls only within one
 #      session, and a thread's meta names the thread it succeeded
-ROLLUP_VERSION = 14
+#  15  evidenced 1-hour/12-hour write counts, per tier; unknown-lifetime
+#      calls stay separate so they cannot hide other calls' priced spend
+ROLLUP_VERSION = 15
 
 
 # A thread row is a flat list in this order, trailing zeros dropped. Most
@@ -916,13 +936,16 @@ THREAD_FIELDS = (
     "calls", "cached_calls", "in", "cache_read", "cache_write", "out", "seconds", "max_in",
     "long.in", "long.cache_read", "long.cache_write", "long.out",
     "flex.in", "flex.cache_read", "flex.cache_write", "flex.out",
+    *(prefix + field for prefix in ("", "long.", "flex.") for field in WRITE_FIELDS),
 )
 
 
-def row_key(producer: str, model: str, effort: str | None = None) -> str:
+def row_key(producer: str, model: str, effort: str | None = None, cache_unknown=False) -> str:
     """A bucket's key: producer|model, plus |effort when the call named one.
     A reader that splits on `|` and takes the first two parts still gets the
     producer and the model."""
+    if cache_unknown:
+        return f"{producer}|{model}|{effort or ''}|cache_ttl_unknown"
     return f"{producer}|{model}|{effort}" if effort else f"{producer}|{model}"
 
 
@@ -1191,6 +1214,7 @@ SELECT coalesce(json_agg(row_to_json(t) ORDER BY t.seq), '[]'::json) FROM (
          (c.payload->'usage'->>'input_tokens')::bigint AS in_tok,
          coalesce((c.payload->'usage'->>'cache_read_tokens')::bigint, 0) AS cr,
          coalesce((c.payload->'usage'->>'cache_creation_tokens')::bigint, 0) AS cw,
+         c.payload->'usage' AS usage,
          (c.payload->'usage'->>'output_tokens')::bigint AS out_tok,
          coalesce(c.payload->'usage'->>'service_tier', '') = 'flex' AS flex,
          (c.payload->'usage'->>'input_tokens')::bigint > """
@@ -1218,21 +1242,25 @@ def call_bundles(calls: list) -> dict:
     the app prices. A Flex call over the long cut stays in `long` only."""
     out: dict = {}
     for c in calls:
-        b = out.setdefault(row_key(c["producer"], c["model"], c.get("effort")), {
+        usage = c.get("usage") or {}
+        ttl = write_bundle(usage)
+        unknown = ttl["cache_write_known"] < int(c["cw"] or 0)
+        b = out.setdefault(row_key(c["producer"], c["model"], c.get("effort"), unknown), {
             "calls": 0, "cached_calls": 0, "in": 0, "cache_read": 0, "cache_write": 0, "out": 0,
-            "max_in": 0, "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0},
-            "flex": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0}})
+            "max_in": 0, "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, **dict.fromkeys(WRITE_FIELDS, 0)},
+            "flex": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, **dict.fromkeys(WRITE_FIELDS, 0)}})
         tokens = {"in": int(c["in_tok"] or 0), "cache_read": int(c["cr"] or 0),
                   "cache_write": int(c["cw"] or 0), "out": int(c["out_tok"] or 0)}
+        tokens.update(ttl)
         b["calls"] += 1
         b["cached_calls"] += tokens["cache_read"] > 0
         for k, v in tokens.items():
-            b[k] += v
+            b[k] = b.get(k, 0) + v
         b["max_in"] = max(b["max_in"], tokens["in"])
         part = "long" if c.get("long") else "flex" if c.get("flex") else None
         if part:
             for k, v in tokens.items():
-                b[part][k] += v
+                b[part][k] = b[part].get(k, 0) + v
     return {k: thread_row(b) for k, b in out.items()}
 
 
@@ -1536,11 +1564,12 @@ def main() -> None:
             "in": 0,
             "cache_read": 0,
             "cache_write": 0,
+            **dict.fromkeys(WRITE_FIELDS, 0),
             "out": 0,
             "seconds": 0,
             "buckets": [0] * 6,
-            "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0},
-            "flex": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0},
+            "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, **dict.fromkeys(WRITE_FIELDS, 0)},
+            "flex": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, **dict.fromkeys(WRITE_FIELDS, 0)},
             "max_in": 0,
             "cached_calls": 0,
         }
@@ -1551,6 +1580,9 @@ def main() -> None:
         dst["in"] += int(x["total_in"])
         dst["cache_read"] += int(x["cache_read"])
         dst["cache_write"] += int(x["cache_write"])
+        for prefix, dest in (("", dst), ("long_", dst["long"]), ("flex_", dst["flex"])):
+            for field in WRITE_FIELDS:
+                dest[field] = dest.get(field, 0) + int(x.get(prefix + field) or 0)
         dst["out"] += int(x["out_tok"])
         dst.setdefault("seconds", 0)
         for i in range(6):
@@ -1561,7 +1593,7 @@ def main() -> None:
         dst["long"]["cache_write"] += int(x["long_cw"] or 0)
         # A Flex call over the long cut stays in `long`, so no token is priced
         # twice. Compactor calls, the ones that ask for Flex, are never long.
-        flex = dst.setdefault("flex", {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0})
+        flex = dst.setdefault("flex", {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, **dict.fromkeys(WRITE_FIELDS, 0)})
         flex["in"] += int(x.get("flex_in") or 0)
         flex["out"] += int(x.get("flex_out") or 0)
         flex["cache_read"] += int(x.get("flex_cr") or 0)
@@ -1592,7 +1624,7 @@ def main() -> None:
         kept += int(x["calls"])
         tid = x.get("thread") or ""
         slot = thread_slot(tid, x.get("session"))
-        key = row_key(agent_producer(x["producer"], tid, origins), x["model"], x.get("effort"))
+        key = row_key(agent_producer(x["producer"], tid, origins), x["model"], x.get("effort"), x.get("cache_unknown", False))
         hr = str(int(x["hour"]))
         fold(days[x["day"]].setdefault(key, blank()), x)
         fold(hours[x["day"]].setdefault(hr, {}).setdefault(key, blank()), x)
@@ -1666,6 +1698,10 @@ def main() -> None:
         "timezone": TZ,
         "hours_days": HOURS_DAYS,
         "note": (
+            "cache_write_known is the write subset with evidenced lifetimes; "
+            "cache_write_1h and cache_write_12h are its premium subsets, per tier. "
+            "Unknown-lifetime calls use a separate fourth key component "
+            "cache_ttl_unknown so a missing price cannot hide other calls' spend. "
             "'in' is TOTAL prompt size (uncached + cache_read + cache_write). "
             "uncached = in - cache_read - cache_write. 'long' is the subset of rows "
             "whose prompt went over the model's own long-context threshold (or "

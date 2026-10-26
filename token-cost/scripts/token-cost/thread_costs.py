@@ -18,6 +18,7 @@ It first migrates 0.4.x prices with migrate_prices.py.
 import os, sys, json, re, subprocess, datetime, pathlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import migrate_prices
+from cache_usage import write_sql, write_cost
 # Resolved before the chdir below, so a relative path means the caller's.
 TABLE_FILE=os.path.abspath(os.environ['TOKEN_COST_PRICE_TABLE']) if os.environ.get('TOKEN_COST_PRICE_TABLE') else None
 WS = os.environ.get('LUCIDOS_WORKSPACE')
@@ -41,8 +42,9 @@ def psql(sql):
     return r.stdout
 TZ=local_tz()
 sql=f"""SELECT coalesce(json_agg(t),'[]') FROM (
-SELECT thread_id::text AS tid, dy, mdl, producer, sess, count(*) AS calls, sum(i) AS i, sum(cr) AS cr, sum(cw) AS cw, sum(o) AS o,
- coalesce(sum(i) FILTER (WHERE i>272000),0) AS li, coalesce(sum(cr) FILTER (WHERE i>272000),0) AS lcr, coalesce(sum(cw) FILTER (WHERE i>272000),0) AS lcw, coalesce(sum(o) FILTER (WHERE i>272000),0) AS lo
+SELECT thread_id::text AS tid, dy, mdl, producer, sess, count(*) AS calls,
+ sum(i) AS i, sum(cr) AS cr, sum(cw) AS cw, sum(o) AS o, max(i) AS prompt, tier,
+ sum(wk) AS cache_write_known, sum(wh) AS cache_write_1h, sum(wt) AS cache_write_12h
 FROM (SELECT thread_id, ((created AT TIME ZONE '{TZ}')::date)::text AS dy,
   lower(coalesce(nullif(payload->>'served_model',''), payload->>'model')) AS mdl, payload->>'producer' AS producer,
   coalesce((payload->>'session')::int, 0) AS sess,
@@ -50,10 +52,12 @@ FROM (SELECT thread_id, ((created AT TIME ZONE '{TZ}')::date)::text AS dy,
   coalesce((payload->'usage'->>'cache_read_tokens')::bigint,0) AS cr,
   coalesce((payload->'usage'->>'cache_creation_tokens')::bigint,0) AS cw,
   (payload->'usage'->>'output_tokens')::bigint AS o,
+  coalesce(payload->'usage'->>'service_tier', '') AS tier,
+  {', '.join(expr + ' AS ' + alias for expr, alias in zip(write_sql().values(), ('wk', 'wh', 'wt')))},
   ((payload->'usage') IS NOT DISTINCT FROM LAG(payload->'usage') OVER (PARTITION BY thread_id, payload->>'session' ORDER BY sequence)
     AND payload->>'producer'='claude_code') AS dup
  FROM events WHERE event_type='ContextCaptured' AND payload->'usage' IS NOT NULL) s
-WHERE NOT dup GROUP BY 1,2,3,4,5) t"""
+WHERE NOT dup GROUP BY 1,2,3,4,5,s.i,tier,(wk < cw)) t"""
 max_seq=int(psql("SELECT coalesce(max(sequence),0) FROM events WHERE event_type='ContextCaptured'").strip())
 sql=sql.replace("WHERE event_type='ContextCaptured' AND",f"WHERE event_type='ContextCaptured' AND sequence<={max_seq} AND")
 rows=json.loads(psql(sql))
@@ -80,19 +84,26 @@ def card(k,day):
         if c.get('from','0000')<=day: best=c
     return best
 unpriced={}; per={}
-def price(i,cr,cw,o,cc):
-    return ((i-cr-cw)*cc['uncached_in']+cr*(cc.get('cache_read') or 0)+cw*(cc.get('cache_write') or 0)+o*cc['out'])/1e6
+def price(r, cc):
+    write = write_cost(r['cw'], r.get('cache_write_known', 0), r.get('cache_write_1h', 0), r.get('cache_write_12h', 0), cc)
+    if write is None: return None
+    return (max(0,r['i']-r['cr']-r['cw'])*cc['uncached_in']+r['cr']*(cc.get('cache_read') or 0)+r['o']*cc['out'])/1e6 + write
 for r in rows:
     m=r['mdl'] or ''
     k=key(m); c=card(k,r['dy']) if k else None
     priced=bool(c and isinstance(c.get('uncached_in'),(int,float)) and isinstance(c.get('out'),(int,float)))
+    cost=None
+    if priced:
+        lg=c.get('long')
+        prompt=r.get('prompt', 0)
+        if lg and (prompt >= lg['threshold_tokens'] if lg.get('inclusive') else prompt > lg['threshold_tokens']):
+            rates=lg
+        elif r.get('tier') == 'flex' and c.get('flex'): rates=c['flex']
+        else: rates=c
+        cost=price(r,rates)
+    priced=cost is not None
     if not priced:
         unpriced[m]=unpriced.get(m,0)+r['calls']; cost=0
-    else:
-        lg=c.get('long')
-        if lg and r['li'] and lg.get('threshold_tokens')==272000:
-            cost=price(r['i']-r['li'],r['cr']-r['lcr'],r['cw']-r['lcw'],r['o']-r['lo'],c)+price(r['li'],r['lcr'],r['lcw'],r['lo'],{**c,**lg})
-        else: cost=price(r['i'],r['cr'],r['cw'],r['o'],c)
     t=per.setdefault(r['tid'],{'cost':0,'calls':0,'models':{},'first':r['dy'],'last':r['dy'],'producers':set(),'today':0,'sessions':{},'unpriced':0})
     ss=t['sessions'].setdefault(r.get('sess',0),{'cost':0,'calls':0,'models':{},'producers':set()})
     ss['cost']+=cost; ss['calls']+=r['calls']; ss['producers'].add(r['producer'])
@@ -144,10 +155,15 @@ rates={}
 for k in P:
     c=card(k,day)
     if c and isinstance(c.get('uncached_in'),(int,float)) and isinstance(c.get('out'),(int,float)):
-        e={'in':c['uncached_in'],'cr':c.get('cache_read') or 0,'cw':c.get('cache_write') or 0,'out':c['out']}
+        e={'in':c['uncached_in'],'cr':c.get('cache_read') or 0,'cw':c.get('cache_write') or 0,'out':c['out'],
+           'cw1h':c.get('cache_write_1h',c.get('cache_write') or 0), 'cw12h':c.get('cache_write_12h',c.get('cache_write') or 0)}
         lg=c.get('long')
         if isinstance(lg,dict) and lg.get('threshold_tokens'):
-            e['long']={'t':lg['threshold_tokens'],'inclusive':lg.get('inclusive') is True,'in':lg.get('uncached_in',e['in']),'cr':lg.get('cache_read',e['cr']) or 0,'cw':lg.get('cache_write',e['cw']) or 0,'out':lg.get('out',e['out'])}
+            e['long']={'t':lg['threshold_tokens'],'inclusive':lg.get('inclusive') is True,'in':lg.get('uncached_in',e['in']),'cr':lg.get('cache_read',e['cr']) or 0,'cw':lg.get('cache_write',e['cw']) or 0,'out':lg.get('out',e['out']),
+                       'cw1h':lg.get('cache_write_1h',lg.get('cache_write',e['cw']) or 0), 'cw12h':lg.get('cache_write_12h',lg.get('cache_write',e['cw']) or 0)}
+        if c.get('flex'):
+            f=c['flex']; e['flex']={'in':f.get('uncached_in',0),'cr':f.get('cache_read') or 0,'cw':f.get('cache_write') or 0,'out':f.get('out',0),
+                                   'cw1h':f.get('cache_write_1h',f.get('cache_write') or 0),'cw12h':f.get('cache_write_12h',f.get('cache_write') or 0)}
         rates[k]=e
 top_all=[slim(x) for x in lst[:300]]
 top_today=[slim(x) for x in sorted(lst,key=lambda x:-x['today_usd'])[:400] if x['today_usd']>0]
@@ -158,7 +174,7 @@ listed={r['id'] for r in top_all+top_today}
 rest={x['thread_id']:[x['title'],x['cost_usd'],x['today_usd'],x['calls'],lastts.get(x['thread_id']),{mk:[v['all'],v['today'],v['calls']] for mk,v in x['models'].items()}]
       +([x['unpriced'],x['sessions']] if x['sessions'] else ([x['unpriced']] if x['unpriced'] else []))
       for x in lst if x['thread_id'] not in listed}
-out={'generated':datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds'),'day':day,'last_sequence':max_seq,
+out={'ttl_pricing':1,'generated':datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds'),'day':day,'last_sequence':max_seq,
  'total_all':round(total,2),'total_today':round(today,2),'threads':len(lst),'rates':rates,
  'unpriced_calls':sum(unpriced.values()),'unpriced_models':unpriced,
  'top_all':top_all,'top_today':top_today,'rest':rest}

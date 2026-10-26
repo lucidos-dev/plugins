@@ -10,6 +10,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
 from cache_stats import build_cache, write_parts
 import rollup
+from cache_usage import write_bundle, write_sql, WRITE_FIELDS
 
 
 def call(seq, minute=0, *, write=0, read=0, ttl="5m", **kw):
@@ -37,6 +38,45 @@ def warm_run():
 
 
 class CacheEvidence(unittest.TestCase):
+    def test_sql_and_python_preserve_the_same_lifetime_counts(self):
+        db = sqlite3.connect(":memory:")
+        expressions = ", ".join(write_sql().values()).replace("::bigint", "")
+        for u in ({"cache_creation_tokens": 1000},
+                  {"cache_creation_tokens": 1000, "cache_creation_requested_ttl": "12h"},
+                  {"cache_creation_tokens": 1000, "cache_creation_1h_tokens": 400},
+                  {"cache_creation_tokens": 1000, "cache_creation_1h_tokens": 0},
+                  {"cache_creation_tokens": 1000, "cache_creation_1h_tokens": 2000},
+                  {"cache_creation_tokens": 1000, "cache_creation_30m_tokens": 400},
+                  {"cache_creation_tokens": 1000, "cache_creation_30m_tokens": 400, "cache_creation_12h_tokens": 600}):
+            row = db.execute(f"SELECT {expressions} FROM (SELECT ? AS payload)", (json.dumps({"usage": u}),)).fetchone()
+            self.assertEqual(dict(zip(WRITE_FIELDS, row)), write_bundle(u))
+
+    def test_rollup_sql_keeps_unknown_writes_separate_and_preserves_tiers(self):
+        sql = rollup.ROLLUP_SQL
+        sql = sql[sql.index("SELECT\n      to_char(local_day"):sql.rindex("\n  ) t")]
+        sql = sql.replace(rollup.KEEP_ALIVE, "0").replace(rollup.ASKED, "NULL")
+        sql = sql.replace(rollup._USAGE_TUPLE, "json_array(" + rollup._USAGE_TUPLE.strip()[1:-1] + ")")
+        sql = sql.replace(rollup.LOCAL_DAY, "date(created)").replace(rollup.LOCAL_HOUR, "cast(strftime('%H', created) AS INTEGER)")
+        sql = sql.replace("= ANY (%(days)s)", "IN ('2026-10-20')").replace("%(max_seq)s", "100").replace(rollup.LONG_CUT_MARK, "200000")
+        sql = re.sub(r"::(?:bigint|int|text|uuid|date)\b", "", sql)
+        db = sqlite3.connect(":memory:"); db.row_factory = sqlite3.Row
+        db.create_function("to_char", 2, lambda value, fmt: value)
+        db.create_function("regexp_replace", 3, lambda value, pattern, repl: re.sub(pattern, repl, value) if value else value)
+        db.create_function("regexp_replace", 4, lambda value, pattern, repl, flags: re.sub(pattern, repl, value) if value else value)
+        db.execute("CREATE TABLE events(id, thread_id, sequence, event_type, created, payload)")
+        for seq, extra in enumerate(({}, {"input_tokens": 250000}, {"service_tier": "flex"}, {"cache_creation_1h_tokens": None}), 1):
+            u = {"input_tokens": 100000, "cache_read_tokens": 30000, "cache_creation_tokens": 50000, "output_tokens": 1000,
+                 "cache_creation_1h_tokens": 30000, **extra}
+            p = {"model": "cache-model", "producer": "main_llm", "session": 1, "usage": u}
+            db.execute("INSERT INTO events VALUES (?,?,?,?,?,?)", (str(seq), "thread", seq, "ContextCaptured", "2026-10-20T12:00:00Z", json.dumps(p)))
+        rows = [dict(r) for r in db.execute(sql)]
+        self.assertEqual(len(rows), 2)
+        known = next(r for r in rows if not r["cache_unknown"])
+        unknown = next(r for r in rows if r["cache_unknown"])
+        self.assertEqual((known["calls"], unknown["calls"]), (3, 1))
+        self.assertEqual((known["cache_write_1h"], known["long_cache_write_1h"], known["flex_cache_write_1h"]), (90000, 30000, 30000))
+        self.assertEqual(unknown["cache_write_known"], 0)
+
     def test_ttl_is_never_a_provider_default(self):
         self.assertIsNone(write_parts({"cache_creation_tokens": 1000}))
         self.assertIsNone(write_parts({"cache_creation_tokens": 1000, "cache_creation_requested_ttl": "24h"}))
@@ -62,12 +102,28 @@ class CacheEvidence(unittest.TestCase):
     def test_reads_refresh_ttl_and_partial_writes_are_unknown(self):
         events = [call(1, write=1000), call(2, 4, read=1000), call(3, 8, write=1000)]
         self.assertEqual(build_cache(events)["calls"][-1]["cause"], "unknown")
+
+    def test_auxiliary_copy_beat_refreshes_the_shared_prefix(self):
+        beat = call(2, 4, read=1000, purpose="cache_keep_alive")
+        beat["producer"] = "auxiliary"; beat["session"] = None
+        events = [call(1, write=1000), beat, call(3, 8, write=1000)]
+        self.assertEqual(build_cache(events)["calls"][-1]["cause"], "unknown")
         events[-1] = call(3, 15, write=500, read=500)
         self.assertEqual(build_cache(events)["calls"][-1]["cause"], "unknown")
 
     def test_mixed_ttl_requires_every_part_expired(self):
         first = call(1, write=1000, usage={"cache_creation_1h_tokens": 400})
         self.assertEqual(build_cache([first, call(2, 10, write=1000)])["calls"][-1]["cause"], "unknown")
+
+    def test_partial_write_does_not_replace_the_prefix_lifetime(self):
+        events = [call(1, write=1000, ttl="1h"), call(2, 2, write=100, read=900), call(3, 10, write=1000)]
+        self.assertEqual(build_cache(events)["calls"][-1]["cause"], "unknown")
+
+    def test_unstamped_sessions_do_not_prove_expiry(self):
+        events = [call(1, write=1000), call(2, 10, write=1000)]
+        for e in events:
+            e["session"] = None
+        self.assertEqual(build_cache(events)["calls"][-1]["cause"], "unknown")
 
     def test_handoff_and_model_switch_require_evidence(self):
         boundary = dict(id="boundary", seq=2, type="SessionStarted", thread="thread", continuity="handoff")
@@ -104,6 +160,8 @@ class CacheEvidence(unittest.TestCase):
         self.assertEqual((s["tokens"], s["ttl"], s["model"]), (1000, "5m", "model"))
         self.assertNotIn("saved_usd", s)
         self.assertEqual(s["day"], "2026-10-20")
+        es = warm_run(); es[-1]["status"]["saved_usd"] = 0
+        self.assertEqual(build_cache(es)["savings"][0]["tokens"], 1000)
 
     def test_missing_saving_or_ttl_stays_unknown(self):
         for change in (lambda es: es[-1]["status"].pop("saved_usd"),
@@ -119,6 +177,11 @@ class CacheEvidence(unittest.TestCase):
         es = warm_run()
         es.insert(2, call(2.5, 5, write=1000, ttl=None))
         self.assertIsNone(build_cache(es)["savings"][0]["tokens"])
+
+    def test_partial_context_cannot_claim_a_full_saved_rewrite(self):
+        for target, field in ((0, "cache_creation_tokens"), (2, "cache_read_tokens")):
+            es = warm_run(); es[target]["usage"][field] = 100
+            self.assertIsNone(build_cache(es)["savings"][0]["tokens"])
 
     def test_repeated_status_and_frame_do_not_duplicate(self):
         es = warm_run()

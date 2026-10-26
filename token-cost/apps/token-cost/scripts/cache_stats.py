@@ -7,34 +7,14 @@ The app prices these token records against its dated price table.
 from datetime import datetime, timezone
 import re
 from zoneinfo import ZoneInfo
-
-
-TTLS = {"5m": 300, "30m": 1800, "1h": 3600, "12h": 43200}
+import pathlib
+import sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts" / "token-cost"))
+from cache_usage import TTLS, write_parts
 
 
 def stamp(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-
-
-def write_parts(u):
-    """Reported splits win over a requested TTL. None means no evidence."""
-    total = u.get("cache_creation_tokens", 0) or 0
-    fields = {"30m": "cache_creation_30m_tokens", "1h": "cache_creation_1h_tokens",
-              "12h": "cache_creation_12h_tokens"}
-    parts = {k: u[f] for k, f in fields.items() if u.get(f) is not None}
-    if not total:
-        return None
-    if not parts:
-        ttl = u.get("cache_creation_requested_ttl")
-        return {ttl: total} if ttl in TTLS else None
-    rest = total - sum(parts.values())
-    if rest < 0 or any(n < 0 for n in parts.values()):
-        return None
-    if rest:
-        if "1h" not in parts:
-            return None
-        parts["5m"] = rest
-    return {k: n for k, n in parts.items() if n > 0}
 
 
 def build_cache(events, tz="UTC"):
@@ -47,7 +27,7 @@ def build_cache(events, tz="UTC"):
     """
     events = sorted(events, key=lambda e: e["seq"])
     anchors = {e["id"] for e in events if e["type"] == "PromptInjected" and e.get("keep_alive")}
-    prior, frames, boundaries, runs, predecessors = {}, {}, {}, {}, {}
+    prior, contexts, frames, boundaries, runs, predecessors = {}, {}, {}, {}, {}, {}
     calls, savings = [], []
     for e in events:
         tid, kind = e["thread"], e["type"]
@@ -86,13 +66,13 @@ def build_cache(events, tz="UTC"):
         parts = write_parts(u)
         started = stamp(e["at"]) - (e.get("duration_ms") or 0) / 1000
         cause = "unknown"
-        if signature[2] > 0 and signature[1] == 0 and old:
+        if main and signature[2] > 0 and signature[1] == 0 and old:
             reasons = []
             if main and boundaries.get(tid) == "handoff":
                 reasons.append("handoff")
             if old["model"] != e["model"]:
                 reasons.append("model_switch")
-            if (own_context and old["session"] == e.get("session") and old["model"] == e["model"]
+            if (own_context and old["session"] is not None and old["session"] == e.get("session") and old["model"] == e["model"]
                     and old["ttl"] and started - old["refresh"] > old["ttl"]):
                 reasons.append("ttl_expiry")
             if len(reasons) == 1:
@@ -102,12 +82,23 @@ def build_cache(events, tz="UTC"):
         # All parts must have expired before a full cold write can be named
         # TTL expiry. The engine uses the shortest for scheduling its beats.
         ttl = max((TTLS[t] for t in parts), default=None) if parts else None
+        if signature[1] and signature[2]:
+            ttl = None  # The retained prefix and appended write can have different lifetimes.
         same = old and old["session"] == e.get("session") and old["model"] == e["model"]
         if not signature[2] and same:
             ttl = old["ttl"]
         if main or signature[2] or signature[1]:
             prior[stream] = {"model": e["model"], "session": e.get("session"),
                              "ttl": ttl, "refresh": started}
+            contexts.setdefault(tid, {})[stream] = prior[stream]
+        # Copy/prefill beats have an auxiliary producer and may omit the
+        # session stamp, but their purpose explicitly names the shared prefix.
+        # They must prevent an expiry being inferred from the last real turn.
+        if ping and not e.get("parent") and (signature[1] or signature[2]):
+            for key, context in contexts.get(tid, {}).items():
+                if (key[0] == tid and key[2] is None and key[3] is None
+                        and context["model"] == e["model"]):
+                    context["refresh"] = max(context["refresh"], started)
         row = {"day": e["day"], "thread": tid, "session": e.get("session") or "",
                "producer": "cache_keep_alive" if ping else
                    "auxiliary:" + re.sub(r"[^A-Za-z0-9_.-]", "_", e["purpose"])
@@ -130,15 +121,17 @@ def build_cache(events, tz="UTC"):
         first = min((c[2] for c in pings), default=None)
         wake = next((c for c in own if c[3] and not c[4]
                      and first is not None and first < c[2] <= end), None)
-        writes = [c for c in own if (c[3] or c[4]) and wake
+        writes = [c for c in own if c[3] and wake
                   and c[0]["seq"] < wake[0]["seq"] and c[1]["usage"].get("cache_creation_tokens")]
         write = writes[-1] if writes else None
         # A mixed-lifetime context has no single proven rewrite price.
         known = (s.get("state") == "ended" and s.get("saved_usd") is not None
-                 and s["saved_usd"] > 0 and s.get("context_tokens") and wake and write
-                 and wake[1]["usage"].get("cache_read_tokens", 0) > 0
+                 and s["saved_usd"] >= 0 and s.get("context_tokens") and wake and write
+                 and wake[1]["usage"].get("cache_read_tokens", 0) >= s["context_tokens"]
+                 and write[1]["usage"].get("cache_creation_tokens", 0) >= s["context_tokens"]
+                 and not write[1]["usage"].get("cache_read_tokens", 0)
                  and wake[1]["model"] == write[1]["model"]
-                 and wake[1]["session"] == write[1]["session"]
+                 and wake[1]["session"] and wake[1]["session"] == write[1]["session"]
                  and write[1]["parts"] and len(write[1]["parts"]) == 1)
         model_row = wake[1] if wake else (pings[-1][1] if pings else None)
         savings.append({"day": datetime.fromtimestamp(end, ZoneInfo(tz)).date().isoformat(), "thread": tid,

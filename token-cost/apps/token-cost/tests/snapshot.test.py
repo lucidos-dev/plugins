@@ -74,7 +74,7 @@ else: print("{}")
 '''
 
 
-def snapshot(with_legacy, rows=ROWS, events=None):
+def snapshot(with_legacy, rows=ROWS, events=None, table=None):
     root = pathlib.Path(tempfile.mkdtemp(prefix="tc-snapshot-"))
     (root / "data" / "artifacts" / "token-cost").mkdir(parents=True)
     (root / ".lucidos" / "tmp").mkdir(parents=True)
@@ -93,6 +93,10 @@ def snapshot(with_legacy, rows=ROWS, events=None):
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "LUCIDOS_WORKSPACE": str(root),
            "LUCIDOS_DATABASE_URL": "postgres://fake", "FAKE_SHIPPED": str(FIX / "shipped-prices.json")}
     env.pop("TOKEN_COST_PRICE_TABLE", None)
+    if table is not None:
+        table_file = root / "table.json"
+        table_file.write_text(json.dumps(table))
+        env["TOKEN_COST_PRICE_TABLE"] = str(table_file)
     p = subprocess.run([sys.executable, "-I", str(SCRIPT)], env=env, capture_output=True, text=True)
     if p.returncode:
         print(p.stdout, p.stderr)
@@ -182,6 +186,32 @@ check("5 each session keeps its opening call", [(s[0], s[1]) for s in t1.get("se
       [(0, 4.0), (1, 4.0), (2, 4.0)])
 check("5 the sessions sum to the thread's total", t1["all"], 12.0)
 check("5 another thread is never compared", thread(out, "t2")["calls"], 1)
+
+# Real projected events go through the shipped SQL, including its TTL columns,
+# and through snapshot pricing. An unknown write must not swallow priced calls
+# with the same model, session and prompt size.
+CACHE_CARD = {"uncached_in": 2, "cache_read": 0.2, "cache_write": 2.5, "cache_write_1h": 4,
+              "cache_write_12h": 5, "out": 10,
+              "long": {"threshold_tokens": 200000, "uncached_in": 4, "cache_read": 0.4,
+                       "cache_write": 5, "cache_write_1h": 8, "cache_write_12h": 10, "out": 20},
+              "flex": {"uncached_in": 1, "cache_read": 0.1, "cache_write": 1.25,
+                       "cache_write_1h": 2, "cache_write_12h": 2.5, "out": 5}}
+cache_events = []
+for seq, extra in enumerate(({}, {"input_tokens": 250000}, {"service_tier": "flex"},
+                             {"cache_creation_1h_tokens": None, "cache_creation_requested_ttl": "12h"},
+                             {"cache_creation_1h_tokens": None}), 1):
+    u = {"input_tokens": 100000, "cache_read_tokens": 30000, "cache_creation_tokens": 50000,
+         "cache_creation_1h_tokens": 30000, "output_tokens": 1000, **extra}
+    cache_events.append({"seq": seq, "tid": "t1", "created": TODAY + "T12:00:00",
+                         "payload": {"producer": "main_llm", "model": "asked", "served_model": "cache-model", "session": 1, "usage": u}})
+p, out = snapshot(False, events=cache_events, table={"models": {"cache-model": [CACHE_CARD]}})
+check("6 TTL snapshot succeeds", p.returncode, 0)
+check("6 known write costs survive a matching unknown write", thread(out, "t1")["all"], 1.7)
+check("6 only the missing-TTL call is left out", thread(out, "t1").get("unpriced"), 1)
+check("6 session cost uses all dated tier and lifetime rates", thread(out, "t1")["sessions"][0][1], 1.697)
+check("6 snapshots declare their lifetime pricing contract", (out.get("ttl_pricing"), p.head.get("ttl_pricing")), (1, 1))
+check("6 snapshot rates retain lifetime prices", (out["rates"]["cache-model"]["cw1h"], out["rates"]["cache-model"]["cw12h"]), (4, 5))
+check("6 snapshot Flex rates retain lifetime prices", out["rates"]["cache-model"]["flex"]["cw12h"], 2.5)
 
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
