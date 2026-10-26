@@ -279,8 +279,11 @@ function render() {
   $('label').textContent = n ? (small ? `This thread +${n}` : `This thread + ${n} sub-thread${n === 1 ? '' : 's'}`) : 'This thread';
   $('total').textContent = usd(total);
   // Never dropped by fit(): without it the total reads as complete.
-  $('unpriced').hidden = !unpriced;
-  $('unpriced').textContent = unpriced ? `Not included: ${unpriced.toLocaleString()} unpriced call${unpriced === 1 ? '' : 's'}` : '';
+  const warnings = [];
+  if (unpriced) warnings.push(`Not included: ${unpriced.toLocaleString()} unpriced call${unpriced === 1 ? '' : 's'} (missing rates or cache lifetime evidence)`);
+  if (data?.ttl_pricing !== 1) warnings.push('Snapshot predates cache lifetime pricing; totals may omit write premiums until its next refresh.');
+  $('unpriced').hidden = !warnings.length;
+  $('unpriced').textContent = warnings.join(' ');
   $('today').innerHTML = calls ? `<b>${usd(today)}</b> today<br>${calls.toLocaleString()} calls` : 'No calls yet';
 
   // Mix: up to four models by name. Fold only when two or more remain,
@@ -398,12 +401,16 @@ function ratesFromTable(table) {
     let c = null;
     for (const card of cards || []) if (!card.from || card.from <= day) c = card;
     if (!c || typeof c.uncached_in !== 'number' || typeof c.out !== 'number') continue;
-    const e = { in: c.uncached_in, cr: c.cache_read || 0, cw: c.cache_write || 0, out: c.out };
+    const e = { in: c.uncached_in, cr: c.cache_read || 0, cw: c.cache_write || 0, out: c.out,
+                cw1h: c.cache_write_1h ?? c.cache_write ?? 0, cw12h: c.cache_write_12h ?? c.cache_write ?? 0 };
     const lg = c.long;
     if (lg && lg.threshold_tokens) {
       e.long = { t: lg.threshold_tokens, inclusive: lg.inclusive === true, in: lg.uncached_in ?? e.in,
-                 cr: lg.cache_read ?? e.cr, cw: lg.cache_write ?? e.cw, out: lg.out ?? e.out };
+                 cr: lg.cache_read ?? e.cr, cw: lg.cache_write ?? e.cw, out: lg.out ?? e.out,
+                 cw1h: lg.cache_write_1h ?? lg.cache_write ?? e.cw, cw12h: lg.cache_write_12h ?? lg.cache_write ?? e.cw };
     }
+    if (c.flex) { const f = c.flex; e.flex = { in:f.uncached_in || 0, cr:f.cache_read || 0, cw:f.cache_write || 0, out:f.out || 0,
+      cw1h:f.cache_write_1h ?? f.cache_write ?? 0, cw12h:f.cache_write_12h ?? f.cache_write ?? 0 }; }
     out[id] = e;
   }
   return out;
@@ -435,6 +442,23 @@ function rateKey(m) {
   if (!R[m]) m = undated(m);
   return R[m] ? m : null;
 }
+function writeBundle(u) {
+  const cw = u.cache_creation_tokens || 0;
+  const names = [['30m', 'cache_creation_30m_tokens'], ['1h', 'cache_creation_1h_tokens'], ['12h', 'cache_creation_12h_tokens']];
+  const reported = names.filter(([, k]) => u[k] != null);
+  let parts = null;
+  if (cw > 0 && !reported.length && ['5m','30m','1h','12h'].includes(u.cache_creation_requested_ttl)) {
+    parts = { [u.cache_creation_requested_ttl]: cw };
+  } else if (cw > 0 && reported.length) {
+    const total = reported.reduce((n, [, k]) => n + u[k], 0);
+    if (reported.every(([, k]) => u[k] >= 0) && total <= cw && (total === cw || u.cache_creation_1h_tokens != null)) {
+      parts = Object.fromEntries(reported.map(([ttl, k]) => [ttl, u[k]]));
+      if (total < cw) parts['5m'] = cw - total;
+    }
+  }
+  return { cache_write_known: parts ? cw : 0, cache_write_1h: parts?.['1h'] || 0, cache_write_12h: parts?.['12h'] || 0 };
+}
+
 function priceCall(p) {
   const asked = p.model || '';
   const model = p.served_model && !servedAsSent(asked, p.served_model) ? p.served_model : asked;
@@ -443,7 +467,15 @@ function priceCall(p) {
   let r = currentRates()[k];
   const u = p.usage, i = u.input_tokens || 0, cr = u.cache_read_tokens || 0, cw = u.cache_creation_tokens || 0, o = u.output_tokens || 0;
   if (r.long && (r.long.inclusive ? i >= r.long.t : i > r.long.t)) r = r.long;
-  return { model: k, cost: (Math.max(0, i - cr - cw) * r.in + cr * r.cr + cw * r.cw + o * r.out) / 1e6 };
+  else if (u.service_tier === 'flex' && r.flex) r = r.flex;
+  // An old snapshot has no lifetime prices for its live tail. Wait for the
+  // price table or its next refresh instead of using a missing premium as 0.
+  if (cw && tableRates === null && data?.ttl_pricing !== 1) return null;
+  const w = writeBundle(u), h = w.cache_write_1h, t = w.cache_write_12h;
+  const hour = r.cw1h ?? r.cw, twelve = r.cw12h ?? r.cw;
+  if (w.cache_write_known < cw && (hour !== r.cw || twelve !== r.cw)) return null;
+  const write = (cw - h - t) * r.cw + h * hour + t * twelve;
+  return { model: k, cost: (Math.max(0, i - cr - cw) * r.in + cr * r.cr + write + o * r.out) / 1e6 };
 }
 const tracked = tid => tid === focus || subIds.has(tid);
 function fold(seq, tid, p) {

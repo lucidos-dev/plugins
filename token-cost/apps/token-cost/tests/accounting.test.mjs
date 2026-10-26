@@ -81,6 +81,9 @@ const harness = src + `
   setGroups(g){ groups = g; expanded.clear(); }, expand(p){ expanded.add(p); }, threadMeta,
   setThreads(t){ threadsDaily = t; threadsState = t ? 'ready' : 'missing'; },
   setHandoffs(d){ handoffsDoc = d; handoffsState = d ? 'ready' : 'missing'; }, measureHandoff, handoffOpen,
+  priceCacheCall, priceCacheSaving, cacheRows, renderCacheStats, loadCacheStats,
+  writeBundle, costParts, foldCall, rowToU,
+  setCache(d){ cacheDoc = d; cacheState = d ? 'ready' : 'missing'; },
   get daily(){ return daily; },
   get metaText(){ return document.getElementById('meta').textContent; },
   noteKeepAliveAnchor, dimLabel, producerLabel, typeParent, dims: DIMS, producerMatches, syncProducerFilter, pickDim, chooseDim, oneOfEachFamily,
@@ -102,7 +105,7 @@ const ok=(c,m)=>{ if(c){pass++;console.log('  ok  '+m);} else {fail++;console.lo
 
 const cursor = tc.daily.last_sequence;
 const mk=(seq,at,producer,model,u)=>({ seq, created:at, thread_id:'t1',
-  event:{type:'ContextCaptured',model,producer,usage:{input_tokens:u[0],cache_read_tokens:u[1],cache_creation_tokens:u[2],output_tokens:u[3]}}});
+  event:{type:'ContextCaptured',model,producer,usage:{input_tokens:u[0],cache_read_tokens:u[1],cache_creation_tokens:u[2],cache_creation_1h_tokens:0,output_tokens:u[3]}}});
 
 console.log('\n1. SSE and catch-up racing over the same call');
 tc.pushLive(mk(cursor+10,'2026-08-13T14:10:00Z','main_llm','claude-opus-5',[1000,500,100,200]));
@@ -308,7 +311,7 @@ const hero = document.getElementById('hero-cost').querySelector('.live').textCon
 ok(hero === '$5.00', 'the hero is the priced spend only, got '+hero);
 ok(document.getElementById('hero-unpriced').hidden === false, 'the unpriced note is shown');
 const note = document.getElementById('hero-unpriced-text').textContent;
-ok(/3 calls on 1 unpriced model/.test(note), 'and counts the calls left out: '+note);
+ok(/3 calls on 1 model with missing rates or cache lifetime evidence/.test(note), 'and counts the calls left out: '+note);
 ok(document.getElementById('hero-unpriced-btn').dataset.addRate === 'acme-mystery-7b',
    'its button offers a rate for that model');
 ok(/\$2\.50 per call/.test(document.getElementById('hero-sub').textContent),
@@ -1164,6 +1167,134 @@ ok(/cold/.test(body45()) && /pays · missed/.test(body45()), 'the cold handoff g
 block45.open = false;
 tc.handoffOpen.clear();
 tc.setHandoffs(null);
+
+console.log('\n46. Cache spend uses reported lifetime prices and dated, served-model cards');
+const cacheDay = '2026-10-20', cacheNext = '2026-10-21';
+const cacheCard = { uncached_in:2, cache_read:0.2, cache_write:2.5, cache_write_1h:4, cache_write_12h:5, out:10,
+  long:{ threshold_tokens:200000, uncached_in:4, cache_read:0.4, cache_write:5, cache_write_1h:8, cache_write_12h:10, out:20 },
+  flex:{ uncached_in:1, cache_read:0.1, cache_write:1.25, cache_write_1h:2, cache_write_12h:2.5, out:5 } };
+tc.setPricing(tableWith({ 'cache-model': [{ ...cacheCard }, { ...cacheCard, from:cacheNext, cache_write_1h:6 }] }));
+const cacheCall = (o={}) => ({ day:cacheDay, model:'cache-model', producer:'claude_code', thread:'cache-thread', session:'1', effort:'high',
+  usage:{ input_tokens:100000, cache_read_tokens:30000, cache_creation_tokens:50000, output_tokens:1000 },
+  parts:{'5m':20000,'1h':30000}, ping:false, cause:'unknown', ...o });
+const cp = tc.priceCacheCall(cacheCall());
+ok(Math.abs(cp.write - 0.17) < 1e-9 && Math.abs(cp.read - 0.006) < 1e-9 && Math.abs(cp.fresh - 0.04) < 1e-9,
+  'writes split by lifetime; uncached input subtracts both cache classes');
+ok(Math.abs(cp.ping - 0.226) < 1e-9, 'ping spend includes output as well as all input components');
+ok(Math.abs(tc.priceCacheCall(cacheCall({ day:cacheNext })).write - 0.23) < 1e-9, 'the card in force on each call day prices that day');
+const longCache = cacheCall(); longCache.usage.input_tokens = 250000;
+ok(Math.abs(tc.priceCacheCall(longCache).write - 0.34) < 1e-9, 'long-context cache write uses long lifetime rates');
+const flexCache = cacheCall(); flexCache.usage.service_tier = 'flex';
+ok(Math.abs(tc.priceCacheCall(flexCache).write - 0.085) < 1e-9, 'Flex uses its own lifetime rates');
+flexCache.usage.input_tokens = 250000;
+ok(Math.abs(tc.priceCacheCall(flexCache).write - 0.34) < 1e-9, 'long and Flex are exclusive, as in the existing accounting');
+ok(tc.priceCacheCall(cacheCall({ model:'no-price' })).read === null, 'unpriced cache calls remain unknown');
+ok(tc.priceCacheCall(cacheCall({ parts:null })).write === null, 'a missing TTL does not pick a guessed premium write rate');
+ok(Math.abs(tc.priceCacheCall(cacheCall({ parts:{'12h':50000} })).write - 0.25) < 1e-9, '12-hour writes use the price-table premium');
+
+console.log('\n47. Keep-alive savings price only evidenced token rewrites');
+const cacheSaving = (o={}) => ({ day:cacheDay, model:'cache-model', producer:'cache_keep_alive', thread:'cache-thread', effort:'high',
+  tokens:100000, ttl:'1h', prompt:100000, ...o });
+ok(Math.abs(tc.priceCacheSaving(cacheSaving()) - 0.4) < 1e-9, 'avoided rewrite spend comes from tokens and the current price table');
+ok(Math.abs(tc.priceCacheSaving(cacheSaving({ day:cacheNext })) - 0.6) < 1e-9, 'avoided rewrites respect dated price cards');
+ok(tc.priceCacheSaving(cacheSaving({ tokens:null })) === null && tc.priceCacheSaving(cacheSaving({ ttl:null })) === null,
+  'missing saving or TTL stays unknown');
+ok(tc.priceCacheSaving(cacheSaving({ model:'no-price' })) === null, 'an unpriced saved rewrite is unknown');
+
+console.log('\n48. Cache views share range, groups and type filter without losing unknowns');
+const cacheDoc = { version:1, generated:'2026-10-20T10:00:00Z', calls:[
+  cacheCall(), cacheCall({ cause:'ttl_expiry' }), cacheCall({ cause:'handoff' }), cacheCall({ cause:'model_switch' }),
+  cacheCall({ ping:true, producer:'cache_keep_alive', cause:null }),
+  cacheCall({ day:cacheNext }), cacheCall({ model:'no-price', cause:'unknown' }),
+], savings:[cacheSaving(), cacheSaving({ tokens:null, ttl:null })] };
+tc.setGroups(['model']);
+let cr = tc.cacheRows(cacheDoc, [cacheDay], 'all');
+const pricedCacheRow = cr.find((r) => r.labels[0][1] === 'cache-model');
+ok(cr.length === 2 && Math.abs(pricedCacheRow.money.write - 0.85) < 1e-9, 'range excludes later calls; spend sums per call');
+ok(Object.values(pricedCacheRow.causes).every((n) => n === 1), 'the four cause buckets count evidence, including unknown');
+ok(pricedCacheRow.pings === 1 && pricedCacheRow.runs === 2 && pricedCacheRow.unknown.saved === 1,
+  'known savings and unknown runs are both retained');
+ok(cr.find((r) => r.labels[0][1] === 'no-price').unknown.write === 1, 'unpriced spend carries an unknown count');
+cr = tc.cacheRows(cacheDoc, [cacheDay], 'cache_keep_alive');
+ok(cr.length === 1 && cr[0].pings === 1 && cr[0].runs === 2 && Object.values(cr[0].causes).every((n) => n === 0),
+  'the keep-alive type filter includes pings and savings only');
+tc.setGroups(['thread', 'type']);
+cr = tc.cacheRows(cacheDoc, [cacheDay], 'all');
+ok(cr.every((r) => r.labels.map(([d]) => d).join(',') === 'thread,type,model'), 'model stays visible alongside the chosen grouping');
+tc.setGroups(['model_effort']);
+cr = tc.cacheRows(cacheDoc, [cacheDay], 'all');
+ok(cr[0].labels.length === 1 && cr[0].labels[0][1].includes('|high'), 'model:effort grouping keeps its effort without a duplicate model');
+tc.setGroups(['model']);
+tc.setCache(cacheDoc);
+document.getElementById('cache-block').open = true;
+tc.renderCacheStats([cacheDay], 'all');
+ok(/unknown/.test(document.getElementById('cache-keep').innerHTML) && /unknown/.test(document.getElementById('cache-spend').innerHTML),
+  'rendered savings and spend expose unknown amounts');
+ok(/TTL expiry/.test(document.getElementById('cache-causes').innerHTML) && /Model switch/.test(document.getElementById('cache-causes').innerHTML),
+  'rendered cause view names the evidence buckets');
+ok(/next rollup/.test(document.getElementById('cache-note').textContent), 'cache view states its freshness separately from live totals');
+tc.setCache(null);
+tc.renderCacheStats([cacheDay], 'all');
+ok(/unavailable/.test(document.getElementById('cache-note').textContent) && document.getElementById('cache-spend').innerHTML === '',
+  'older snapshots without cache evidence show a missing state, never stale numbers');
+const oldReadCache = lucidos.data.read;
+lucidos.data.read = async () => JSON.stringify({ generated:'old', days:{} });
+await tc.loadCacheStats();
+ok(/unavailable/.test(document.getElementById('cache-note').textContent), 'an older or unsupported cache file is rejected visibly');
+lucidos.data.read = oldReadCache;
+document.getElementById('cache-block').open = false;
+
+console.log('\n49. Existing totals keep TTL evidence through live, rollup, tier and compact-row paths');
+const ttlUsage = cacheCall().usage;
+const ttlBundle = { in:ttlUsage.input_tokens, cache_read:ttlUsage.cache_read_tokens, cache_write:ttlUsage.cache_creation_tokens,
+  out:ttlUsage.output_tokens, ...tc.writeBundle({ ...ttlUsage, cache_creation_1h_tokens:30000 }) };
+ok(Math.abs(tc.costOf('cache-model', ttlBundle, null, cacheDay) - cp.ping) < 1e-9,
+  'existing totals agree with the cache view for mixed 5-minute and 1-hour writes');
+const legacyTTL = { ...ttlBundle }; delete legacyTTL.cache_write_known;
+ok(tc.costOf('cache-model', legacyTTL, null, cacheDay) === null,
+  'an older aggregate without lifetime evidence stays readable and visibly unpriced');
+tc.resetLive(); tc.setDaily({ ...empty, days:{}, hours:{} });
+const ttlEvent = mk(101, cacheDay+'T12:00:00Z', 'claude_code', 'cache-model', [100000,30000,50000,1000]);
+ttlEvent.event.usage.cache_creation_1h_tokens = 30000;
+tc.pushLive(ttlEvent, { quiet:true });
+const liveTTL = Object.values(tc.seriesForDay(cacheDay))[0];
+ok(liveTTL.cache_write_known === 50000 && liveTTL.cache_write_1h === 30000
+  && Math.abs(tc.costOf('cache-model', liveTTL, liveTTL.long, cacheDay) - cp.ping) < 1e-9,
+  'SSE preserves write evidence while folding a live call');
+tc.setDaily({ ...empty, last_sequence:101, days:{ [cacheDay]:{ 'claude_code|cache-model':liveTTL } }, hours:{} });
+tc.resetLive();
+const rolledTTL = Object.values(tc.seriesForDay(cacheDay))[0];
+ok(Math.abs(tc.costOf('cache-model', rolledTTL, rolledTTL.long, cacheDay) - cp.ping) < 1e-9,
+  'the rolled-up form preserves that same cost');
+const compactTTL = tc.rowToU([100000,30000,50000,1000,50000,30000,0],
+  ['in','cache_read','cache_write','out','cache_write_known','cache_write_1h','cache_write_12h']);
+ok(Math.abs(tc.costOf('cache-model', compactTTL, compactTTL.long, cacheDay) - cp.ping) < 1e-9,
+  'compact thread and handoff rows preserve the appended optional fields');
+const mixedTTL = {};
+let expectedTTL = 0;
+for (const [i, flex] of [[100000,false],[250000,false],[100000,true]]) {
+  const c = { ...ttlBundle, in:i, flex, model:'cache-model', producer:'claude_code', at:cacheDay+'T12:00:00Z' };
+  tc.foldCall(mixedTTL, c);
+  expectedTTL += tc.priceCacheCall(cacheCall({ usage:{ ...ttlUsage, input_tokens:i, ...(flex ? {service_tier:'flex'} : {}) } })).ping;
+}
+const mix = Object.values(mixedTTL)[0];
+ok(Math.abs(tc.costOf('cache-model', mix, mix.long, cacheDay) - expectedTTL) < 1e-9,
+  'normal, long and Flex write premiums remain exclusive when aggregated together');
+ok(tc.writeBundle({cache_creation_tokens:100,cache_creation_requested_ttl:'12h'}).cache_write_12h === 100,
+  'requested 12-hour evidence is retained by live accounting');
+ok(tc.writeBundle({cache_creation_tokens:100,cache_creation_30m_tokens:10}).cache_write_known === 0,
+  'an incomplete OpenAI split cannot establish the rest of the lifetime');
+tc.resetLive(); tc.setDaily({ ...empty, days:{}, hours:{} });
+const knownEvent = structuredClone(ttlEvent), unknownEvent = structuredClone(ttlEvent);
+knownEvent.seq = 201; unknownEvent.seq = 202;
+unknownEvent.event.producer = 'codex'; knownEvent.event.producer = 'codex';
+delete unknownEvent.event.usage.cache_creation_1h_tokens;
+tc.pushLive(knownEvent, { quiet:true }); tc.pushLive(unknownEvent, { quiet:true });
+const separated = Object.values(tc.seriesForDay(cacheDay));
+ok(separated.length === 2 && separated.filter((u) => tc.costOf('cache-model', u, u.long, cacheDay) === null).length === 1,
+  'a missing TTL stays in a separate bucket from the matching priced call');
+ok(Math.abs(separated.reduce((sum, u) => sum + (tc.costOf('cache-model', u, u.long, cacheDay) || 0), 0) - cp.ping) < 1e-9,
+  'the priced subtotal keeps the known call when another matching call is unknown');
 
 console.log('\n'+pass+' passed, '+fail+' failed');
 process.exit(fail?1:0);

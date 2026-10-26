@@ -13,6 +13,11 @@
       html { scrollbar-gutter: stable; }
       body { margin: 0; padding: var(--space-xl); }
       .wrap { max-width: 68rem; margin: 0 auto; }
+      .cache-row { padding: var(--space-md); border-bottom: 1px solid var(--border-color); }
+      .cache-label { overflow-wrap: anywhere; color: var(--text-muted); font-size: var(--font-size-xs); }
+      .cache-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: var(--space-sm); margin: var(--space-sm) 0 0; }
+      .cache-values dt { color: var(--text-muted); font-size: var(--font-size-xs); }
+      .cache-values dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 
       /* The header is a title block on the left and a control cluster on the
          right. `align-items: baseline` used to sit the buttons on the TITLE's
@@ -663,6 +668,27 @@
           </div>
         </div>
       </section>
+
+      <details class="block live-block" id="cache-block">
+        <summary><h2 class="sec">Cache and keep-alive</h2></summary>
+        <p class="sec-note">Uses the range, type filter and Group by chips above. Rows always include the day and model. Cache evidence updates with the hourly rollup.</p>
+        <p class="sec-note" id="cache-note" role="status"></p>
+        <section aria-labelledby="cache-keep-title">
+          <h3 class="sec" id="cache-keep-title">Keep-alive cost vs savings</h3>
+          <p class="sec-note">Ping spend includes cache reads, writes, fresh input and output. Avoided rewrite spend requires an ended run with an engine-confirmed saving, a known TTL and a matching context. Unknown runs have no estimated saving. Pings are dated when billed; savings are dated when the wait ends.</p>
+          <div class="card" id="cache-keep"></div>
+        </section>
+        <section aria-labelledby="cache-spend-title">
+          <h3 class="sec" id="cache-spend-title">Cache write vs read spend</h3>
+          <p class="sec-note">Daily spend on cache writes, cache reads and uncached input, including the reported lifetime price. Output is excluded here.</p>
+          <div class="card" id="cache-spend"></div>
+        </section>
+        <section aria-labelledby="cache-cause-title">
+          <h3 class="sec" id="cache-cause-title">Cache rewrites by cause</h3>
+          <p class="sec-note">Counts calls that wrote cache. A cold write after a recorded handoff, model switch or evidenced TTL expiry gets that cause only when it is unambiguous. First writes, partial writes and missing or conflicting evidence count as unknown.</p>
+          <div class="card" id="cache-causes"></div>
+        </section>
+      </details>
 
       <!-- Whether handing off paid. A handoff starts a successor session in
            the same thread (a successor thread, before that existed). Folded,
@@ -1475,6 +1501,7 @@
         const rates = (c) => ({
           uncached_in: Number(c.uncached_in) || 0, cache_write: Number(c.cache_write) || 0,
           cache_read: Number(c.cache_read) || 0, out: Number(c.out) || 0,
+          cache_write_1h: c.cache_write_1h, cache_write_12h: c.cache_write_12h,
         });
         const r = rates(card);
         const lr = card.long && typeof card.long === 'object' ? rates(card.long) : r;
@@ -1493,11 +1520,14 @@
         const nWrite = Math.max(0, u.cache_write - (L.cache_write || 0) - (F.cache_write || 0));
         const nOut = Math.max(0, u.out - (L.out || 0) - (F.out || 0));
 
+        const normal = { cache_write: nWrite };
+        for (const k of WRITE_FIELDS) normal[k] = Math.max(0, (u[k] || 0) - (L[k] || 0) - (F[k] || 0));
+        const writes = [bundleWriteCost(normal, r), bundleWriteCost(L, lr), bundleWriteCost(F, fr)];
+        if (writes.some((v) => v === null)) return null;
         const per = 1e6;
         return {
           fresh: (nFresh * r.uncached_in + lFresh * lr.uncached_in + fFresh * fr.uncached_in) / per,
-          write: (nWrite * r.cache_write + (L.cache_write || 0) * lr.cache_write
-                  + (F.cache_write || 0) * fr.cache_write) / per,
+          write: writes.reduce((sum, v) => sum + v, 0),
           read: (nRead * r.cache_read + (L.cache_read || 0) * lr.cache_read
                  + (F.cache_read || 0) * fr.cache_read) / per,
           out: (nOut * r.out + (L.out || 0) * lr.out + (F.out || 0) * fr.out) / per,
@@ -1516,6 +1546,8 @@
       function knownDays() {
         const s = new Set(Object.keys(daily.days));
         for (const c of countedLive()) s.add(localDay(new Date(c.at)));
+        for (const c of cacheDoc?.calls || []) s.add(c.day);
+        for (const srun of cacheDoc?.savings || []) s.add(srun.day);
         s.add(localDay(new Date()));
         return [...s].sort();
       }
@@ -1632,12 +1664,14 @@
       // from a rollup row older than that count, so a cached/cold split over
       // them is unknown rather than read as all cold. `max_in` is the largest
       // prompt in the bundle.
-      const emptyU = () => ({ calls: 0, cached_calls: 0, uncounted: 0, max_in: 0,
+      const WRITE_FIELDS = ['cache_write_known', 'cache_write_1h', 'cache_write_12h'];
+      const ttlFields = (b) => Object.fromEntries(WRITE_FIELDS.map((k) => [k, Number(b?.[k]) || 0]));
+      const emptyU = () => ({ ...ttlFields(null), calls: 0, cached_calls: 0, uncounted: 0, max_in: 0,
                               in: 0, cache_read: 0, cache_write: 0, out: 0,
                               seconds: 0,
                               buckets: [0, 0, 0, 0, 0, 0],
-                              long: { in: 0, out: 0, cache_read: 0, cache_write: 0 },
-                              flex: { in: 0, out: 0, cache_read: 0, cache_write: 0 },
+                              long: { in: 0, out: 0, cache_read: 0, cache_write: 0, ...ttlFields(null) },
+                              flex: { in: 0, out: 0, cache_read: 0, cache_write: 0, ...ttlFields(null) },
                               routed_from: {} });
 
       function addU(a, b) {
@@ -1651,6 +1685,11 @@
         const L = b.long || {};
         a.long.in += L.in || 0; a.long.out += L.out || 0;
         a.long.cache_read += L.cache_read || 0; a.long.cache_write += L.cache_write || 0;
+        for (const k of WRITE_FIELDS) {
+          a[k] += b[k] || 0;
+          a.long[k] += L[k] || 0;
+          a.flex[k] += b.flex?.[k] || 0;
+        }
         const F = b.flex || {};
         a.flex.in += F.in || 0; a.flex.out += F.out || 0;
         a.flex.cache_read += F.cache_read || 0; a.flex.cache_write += F.cache_write || 0;
@@ -1701,17 +1740,18 @@
        *  exactly as the rollup does it. */
       function foldCall(out, c) {
         // The rollup's key: producer|model, plus |effort when the call named one.
-        const key = `${c.producer}|${c.model}` + (c.effort ? `|${c.effort}` : '');
+        const key = `${c.producer}|${c.model}` + ((c.cache_write_known || 0) < c.cache_write
+          ? `|${c.effort || ''}|cache_ttl_unknown` : c.effort ? `|${c.effort}` : '');
         const b = out[key] || (out[key] = emptyU());
         const edges = daily.bucket_edges;
         let bi = 0;
         for (let i = edges.length - 1; i >= 0; i--) { if (c.in >= edges[i]) { bi = i; break; } }
-        const tokens = { in: c.in, out: c.out, cache_read: c.cache_read, cache_write: c.cache_write };
+        const tokens = { in: c.in, out: c.out, cache_read: c.cache_read, cache_write: c.cache_write, ...ttlFields(c) };
         const none = { in: 0, out: 0, cache_read: 0, cache_write: 0 };
         const long = isLongCall(c.model, c.in, localDay(new Date(c.at)));
         addU(b, {
           calls: 1, cached_calls: c.cache_read > 0 ? 1 : 0, max_in: c.in,
-          in: c.in, cache_read: c.cache_read, cache_write: c.cache_write, out: c.out,
+          ...tokens,
           buckets: [0, 0, 0, 0, 0, 0].map((_, i) => (i === bi ? 1 : 0)),
           routed_from: c.asked ? { [c.asked]: 1 } : {},
           long: long ? tokens : none,
@@ -1795,8 +1835,10 @@
           const nModels = unpricedModels.size;
           document.getElementById('hero-unpriced-text').textContent =
             `Not included: ${fmtInt(unpricedU.calls)} call${unpricedU.calls === 1 ? '' : 's'} on ` +
-            `${nModels} unpriced model${nModels === 1 ? '' : 's'}.`;
-          document.getElementById('hero-unpriced-btn').dataset.addRate = [...unpricedModels].join('\n');
+            `${nModels} model${nModels === 1 ? '' : 's'} with missing rates or cache lifetime evidence.`;
+          const missingRates = [...unpricedModels].filter((m) => days.some((d) => !rateFor(m, d)));
+          document.getElementById('hero-unpriced-btn').hidden = !missingRates.length;
+          document.getElementById('hero-unpriced-btn').dataset.addRate = missingRates.join('\n');
         }
 
         document.getElementById('s-calls').textContent = fmtInt(total.calls);
@@ -1807,6 +1849,7 @@
 
         renderAnalysis(days, pf);
         renderHandoffs(days);
+        renderCacheStats(days, pf);
 
         // ONE fact, not a chain. This line used to join four dot-separated
         // bits (days on record, rollup age, calls since the rollup, rates
@@ -2703,10 +2746,12 @@
         // An attribute value, so the attribute escape: a model id is whatever a
         // request body or a provider reply named, and a quote in it must not
         // close the attribute.
+        const missingRates = [...new Set(n.facts.filter((f) => !rateFor(f.model, f.day)).map((f) => baseModel(f.model)))];
         const costCell = n.cost === null
-          ? `<td class="money"><button type="button" class="unpriced-btn" ` +
-            `data-add-rate="${escAttr([...n.unpriced].join('\n'))}" data-tooltip-title="Unpriced" ` +
+          ? missingRates.length ? `<td class="money"><button type="button" class="unpriced-btn" ` +
+            `data-add-rate="${escAttr(missingRates.join('\n'))}" data-tooltip-title="Unpriced" ` +
             `data-tooltip="Not in the total. Click to add a rate in Settings.">Unpriced</button></td>`
+            : '<td class="money muted" data-tooltip-title="Unknown cost" data-tooltip="Not in the total: cache lifetime evidence is missing.">Unknown</td>'
           : `<td class="money">${fmtMoney(n.cost)}</td>`;
         const w = scale.max > 0 ? ((scale.byCost ? (n.cost || 0) : n.u.calls) / scale.max) * 100 : 0;
         return `<td style="padding-left: calc(${level} * 1.25rem + var(--space-sm))"${tip}>` +
@@ -2840,12 +2885,137 @@
         render();
       });
 
+      // ---- Cache and keep-alive ----------------------------------------------
+
+      const CACHE_STATS = 'artifacts/token-cost/cache.json';
+      let cacheDoc = null;
+      let cacheState = 'idle';
+      async function loadCacheStats() {
+        if (cacheState === 'loading') return;
+        cacheState = 'loading';
+        try {
+          const doc = JSON.parse(await lucidos.data.read(CACHE_STATS));
+          if (doc.version !== 1 || !Array.isArray(doc.calls) || !Array.isArray(doc.savings)) throw new Error('Unsupported cache evidence');
+          cacheDoc = doc;
+          cacheState = 'ready';
+        } catch (e) { cacheDoc = null; cacheState = 'missing'; }
+        render();
+      }
+
+      function writeBundle(u) {
+        const cw = u.cache_creation_tokens || 0;
+        const names = [['30m', 'cache_creation_30m_tokens'], ['1h', 'cache_creation_1h_tokens'], ['12h', 'cache_creation_12h_tokens']];
+        const reported = names.filter(([, k]) => u[k] != null);
+        let parts = null;
+        if (cw > 0 && !reported.length && ['5m','30m','1h','12h'].includes(u.cache_creation_requested_ttl)) {
+          parts = { [u.cache_creation_requested_ttl]: cw };
+        } else if (cw > 0 && reported.length) {
+          const total = reported.reduce((n, [, k]) => n + u[k], 0);
+          if (reported.every(([, k]) => u[k] >= 0) && total <= cw && (total === cw || u.cache_creation_1h_tokens != null)) {
+            parts = Object.fromEntries(reported.map(([ttl, k]) => [ttl, u[k]]));
+            if (total < cw) parts['5m'] = cw - total;
+          }
+        }
+        return { cache_write_known: parts ? cw : 0, cache_write_1h: parts?.['1h'] || 0, cache_write_12h: parts?.['12h'] || 0 };
+      }
+      function bundleWriteCost(b, rates) {
+        const cw = b.cache_write || 0, h = b.cache_write_1h || 0, t = b.cache_write_12h || 0;
+        if ((b.cache_write_known || 0) < cw) return cacheWriteCost(rates, cw, null);
+        return cacheWriteCost(rates, cw, { '5m': cw - h - t, '1h': h, '12h': t });
+      }
+      function cacheRates(model, day, prompt, tier) {
+        const card = rateFor(model, day);
+        if (!card || card.per_minute) return null;
+        return isLongCall(model, prompt, day) && card.long ? card.long
+          : tier === 'flex' && card.flex ? card.flex : card;
+      }
+      function cacheWriteCost(rates, tokens, parts) {
+        if (!rates) return null;
+        const base = Number(rates.cache_write) || 0;
+        const rate = (ttl) => Number(rates[ttl === '1h' ? 'cache_write_1h' : ttl === '12h' ? 'cache_write_12h' : 'cache_write'] ?? base);
+        if (!tokens) return 0;
+        // Without TTL evidence a premium write price cannot be selected.
+        if (!parts) return rate('1h') === base && rate('12h') === base ? tokens * base / 1e6 : null;
+        return Object.entries(parts).reduce((sum, [ttl, n]) => sum + n * rate(ttl), 0) / 1e6;
+      }
+      function priceCacheCall(c) {
+        const u = c.usage;
+        const rates = cacheRates(c.model, c.day, u.input_tokens || 0, u.service_tier);
+        if (!rates) return { write: null, read: null, fresh: null, ping: null };
+        const write = cacheWriteCost(rates, u.cache_creation_tokens || 0, c.parts);
+        const read = (u.cache_read_tokens || 0) * (Number(rates.cache_read) || 0) / 1e6;
+        const fresh = Math.max(0, (u.input_tokens || 0) - (u.cache_read_tokens || 0) - (u.cache_creation_tokens || 0)) * (Number(rates.uncached_in) || 0) / 1e6;
+        return { write, read, fresh, ping: write === null ? null : write + read + fresh + (u.output_tokens || 0) * (Number(rates.out) || 0) / 1e6 };
+      }
+      function priceCacheSaving(s) {
+        if (s.tokens == null || !s.ttl) return null;
+        return cacheWriteCost(cacheRates(s.model, s.day, s.prompt, s.tier), s.tokens, { [s.ttl]: s.tokens });
+      }
+
+      function cacheRows(doc, days, pf) {
+        const picked = new Set(days), by = new Map();
+        const dims = groups.some((d) => d === 'model' || d === 'model_effort') ? groups : groups.concat('model');
+        const row = (c) => {
+          const labels = dims.map((d) => [d, dimOf(d, c)]);
+          const id = JSON.stringify([c.day, labels]);
+          if (!by.has(id)) by.set(id, { day: c.day, labels, money: {}, unknown: {}, pings: 0, runs: 0,
+            causes: { ttl_expiry: 0, handoff: 0, model_switch: 0, unknown: 0 } });
+          return by.get(id);
+        };
+        const add = (r, k, v) => { if (v === null) r.unknown[k] = (r.unknown[k] || 0) + 1; else r.money[k] = (r.money[k] || 0) + v; };
+        for (const c of doc.calls) {
+          if (!picked.has(c.day) || !producerMatches(pf, c.producer)) continue;
+          const r = row(c), p = priceCacheCall(c);
+          for (const k of ['write', 'read', 'fresh']) add(r, k, p[k]);
+          if (c.ping) { r.pings++; add(r, 'ping', p.ping); }
+          if (c.cause) r.causes[c.cause in r.causes ? c.cause : 'unknown']++;
+        }
+        for (const s of doc.savings) {
+          if (!picked.has(s.day) || !producerMatches(pf, s.producer)) continue;
+          const r = row(s); r.runs++; add(r, 'saved', priceCacheSaving(s));
+        }
+        return [...by.values()].sort((a, b) => a.day.localeCompare(b.day) || JSON.stringify(a.labels).localeCompare(JSON.stringify(b.labels)));
+      }
+      function renderCacheStats(days, pf) {
+        const block = document.getElementById('cache-block');
+        if (!block?.open) return;
+        if (cacheState === 'idle') loadCacheStats();
+        const note = document.getElementById('cache-note');
+        if (cacheState !== 'ready') {
+          note.textContent = cacheState === 'missing' ? 'Cache evidence is unavailable. The next rollup creates it; older snapshots still work.' : 'Loading cache evidence…';
+          for (const id of ['cache-keep', 'cache-spend', 'cache-causes']) document.getElementById(id).innerHTML = '';
+          return;
+        }
+        if (groups.includes('thread') && threadsState === 'idle') loadThreadsDaily();
+        note.textContent = `Evidence through ${new Date(cacheDoc.generated).toLocaleString()}. Newer live calls appear after the next rollup.`;
+        const esc = lucidos.utils.escapeHtml;
+        const rows = cacheRows(cacheDoc, days, pf);
+        const label = (r) => `<div class="cache-label">${esc(dayLabel(r.day))} · ${r.labels.map(([d, id]) => esc(dimLabel(d, id))).join(' · ')}</div>`;
+        const money = (r, k, absentUnknown = false) => {
+          const n = r.unknown[k] || 0;
+          const known = r.money[k];
+          return (known == null ? (n || absentUnknown ? 'Unknown' : fmtMoney(0)) : fmtMoney(known)) + (n ? ` · ${fmtInt(n)} unknown` : '');
+        };
+        const cells = (values) => '<dl class="cache-values">' + values.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('') + '</dl>';
+        const fill = (id, list, values) => {
+          document.getElementById(id).innerHTML = list.length ? list.map((r) => `<div class="cache-row">${label(r)}${cells(values(r))}</div>`).join('') : '<p class="sec-note">No matching events in this range.</p>';
+        };
+        fill('cache-keep', rows.filter((r) => r.pings || r.runs), (r) => [
+          ['Ping spend', money(r, 'ping')], ['Avoided rewrite spend', money(r, 'saved', !r.runs)],
+          ['Pings / runs observed', `${fmtInt(r.pings)} / ${fmtInt(r.runs)}`]]);
+        fill('cache-spend', rows.filter((r) => ['write', 'read', 'fresh'].some((k) => k in r.money || k in r.unknown)), (r) => [
+          ['Cache writes', money(r, 'write')], ['Cache reads', money(r, 'read')], ['Uncached input', money(r, 'fresh')]]);
+        fill('cache-causes', rows.filter((r) => Object.values(r.causes).some(Boolean)), (r) => [
+          ['TTL expiry', fmtInt(r.causes.ttl_expiry)], ['Handoff', fmtInt(r.causes.handoff)],
+          ['Model switch', fmtInt(r.causes.model_switch)], ['Unknown', fmtInt(r.causes.unknown)]]);
+      }
+      document.getElementById('cache-block').addEventListener('toggle', () => render());
+
       // ---- Handoffs -----------------------------------------------------------
       // One row per handoff checkpoint, opening into its handoffs. The rollup
       // writes handoffs.json whole each run: per handoff, token rows for the
       // narrative turn and for the calls either side of the boundary, which
       // are priced here at the card in force on the handoff's day.
-
       const HANDOFFS = 'artifacts/token-cost/handoffs.json';
       let handoffsDoc = null;
       let handoffsState = 'idle';   // idle | loading | ready | missing
@@ -3091,6 +3261,7 @@
           in: u.input_tokens || 0,
           cache_read: u.cache_read_tokens || 0,
           cache_write: u.cache_creation_tokens || 0,
+          ...writeBundle(u),
           out: u.output_tokens || 0,
           // Served on OpenAI's Flex tier, which the card's `flex` rates price.
           flex: u.service_tier === 'flex',
@@ -3160,7 +3331,7 @@
           row.dataset.at = call.at;
           const t = new Date(call.at);
           const day = localDay(t);
-          const tokens = { in: call.in, out: call.out, cache_read: call.cache_read, cache_write: call.cache_write };
+          const tokens = { in: call.in, out: call.out, cache_read: call.cache_read, cache_write: call.cache_write, ...ttlFields(call) };
           const long = isLongCall(call.model, call.in, day);
           const cost = costOf(call.model, { ...tokens, flex: call.flex && !long ? tokens : null }, long ? tokens : null, day);
           row.innerHTML =
@@ -4823,6 +4994,9 @@
         else if (path.includes('token-cost/threads-daily.json')) {
           // Re-read only if it was read at all; otherwise the next Thread pick does.
           if (threadsState !== 'idle') { threadsState = 'idle'; if (groups.includes('thread')) loadThreadsDaily(); }
+        }
+        else if (path.includes('token-cost/cache.json')) {
+          if (cacheState !== 'idle') { cacheState = 'idle'; render(); }
         }
         else if (path.includes('token-cost/handoffs.json')) {
           // Re-read only if it was read at all; otherwise opening the block does.

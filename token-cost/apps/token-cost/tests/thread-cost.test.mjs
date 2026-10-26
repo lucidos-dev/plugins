@@ -56,7 +56,7 @@ const now = new Date();
 const opus = { all: 4, today: 4, calls: 2 };
 function snapshot({ unpriced = 0, restUnpriced = 0 } = {}) {
   return {
-    generated: now.toISOString(), day: now.toISOString().slice(0, 10), last_sequence: 100,
+    ttl_pricing: 1, generated: now.toISOString(), day: now.toISOString().slice(0, 10), last_sequence: 100,
     total_all: 5, total_today: 4, threads: 2, rates: {},
     top_all: [{ id: 't1', title: 'Thread one', all: 4, today: 4, calls: 2 + unpriced, last: null,
                 models: { 'claude-opus-5-5': opus }, ...(unpriced ? { unpriced } : {}) }],
@@ -78,7 +78,7 @@ async function boot(table, snap, focus = 't1', read = async () => JSON.stringify
     sse: { connect() {}, on(name, fn) { (globalThis.__sse ||= {})[name] = fn; } },
     params: () => ({}),
   };
-  new Function(src + ';globalThis.__w = { fold, render, threadCost, find, sessionRows };')();
+  new Function(src + ';globalThis.__w = { fold, render, threadCost, find, sessionRows, priceCall, ratesFromTable };')();
   await settle();
   return globalThis.__w;
 }
@@ -91,11 +91,11 @@ console.log('\n1. the snapshot says how many calls its total leaves out');
   const w = await boot(shippedTable, snapshot({ unpriced: 3 }));
   ok(getEl('total').textContent === '$4.00', 'the total is the priced spend: ' + getEl('total').textContent);
   ok(getEl('unpriced').hidden === false, 'the unpriced line shows');
-  ok(getEl('unpriced').textContent === 'Not included: 3 unpriced calls', getEl('unpriced').textContent);
+  ok(getEl('unpriced').textContent === 'Not included: 3 unpriced calls (missing rates or cache lifetime evidence)', getEl('unpriced').textContent);
   w.fold(101, 't1', gemini);
   w.render();
   ok(getEl('total').textContent === '$4.00', 'an unpriced live call adds nothing to the total');
-  ok(getEl('unpriced').textContent === 'Not included: 4 unpriced calls', 'but adds to the count: ' + getEl('unpriced').textContent);
+  ok(getEl('unpriced').textContent === 'Not included: 4 unpriced calls (missing rates or cache lifetime evidence)', 'but adds to the count: ' + getEl('unpriced').textContent);
   ok(w.threadCost('t1').calls === 6, 'and to the calls, as the snapshot counts them');
 }
 
@@ -112,13 +112,13 @@ console.log('\n2. after the migration, the same live call is priced at the 0.4.4
 console.log('\n3. a thread from the compact list carries its count too');
 {
   await boot(shippedTable, snapshot({ restUnpriced: 2 }), 't9');
-  ok(getEl('unpriced').textContent === 'Not included: 2 unpriced calls', getEl('unpriced').textContent);
+  ok(getEl('unpriced').textContent === 'Not included: 2 unpriced calls (missing rates or cache lifetime evidence)', getEl('unpriced').textContent);
 }
 
 console.log('\n4. one unpriced call reads in the singular');
 {
   await boot(shippedTable, snapshot({ unpriced: 1 }));
-  ok(getEl('unpriced').textContent === 'Not included: 1 unpriced call', getEl('unpriced').textContent);
+  ok(getEl('unpriced').textContent === 'Not included: 1 unpriced call (missing rates or cache lifetime evidence)', getEl('unpriced').textContent);
 }
 
 console.log('\n5. compact rows retain unpriced counts beside sessions');
@@ -179,6 +179,31 @@ console.log('\n8. a reload keeps the live calls its snapshot does not hold');
   ok(getEl('total').textContent === '$4.80', 'and still in it after the reload: ' + getEl('total').textContent);
   ok(w.threadCost('t1').calls === 3, 'counted once, not twice');
   globalThis.__events = [];
+}
+
+console.log('\n9. Widget live pricing uses evidenced write lifetimes, tiers and safe old-snapshot fallback');
+{
+  const card = {uncached_in:2,cache_read:0.2,cache_write:2.5,cache_write_1h:4,cache_write_12h:5,out:10,
+    long:{threshold_tokens:200000,uncached_in:4,cache_read:0.4,cache_write:5,cache_write_1h:8,cache_write_12h:10,out:20},
+    flex:{uncached_in:1,cache_read:0.1,cache_write:1.25,cache_write_1h:2,cache_write_12h:2.5,out:5}};
+  const w = await boot({models:{'cache-model':[card]}}, snapshot());
+  const p = {model:'cache-model',usage:{input_tokens:100000,cache_read_tokens:30000,cache_creation_tokens:50000,
+    cache_creation_1h_tokens:30000,output_tokens:1000}};
+  ok(Math.abs(w.priceCall(p).cost - 0.226) < 1e-9, 'widget prices mixed 5-minute and 1-hour writes');
+  const long = structuredClone(p); long.usage.input_tokens = 250000;
+  ok(Math.abs(w.priceCall(long).cost - 1.052) < 1e-9, 'widget applies long-tier lifetime rates');
+  const flex = structuredClone(p); flex.usage.service_tier = 'flex';
+  ok(Math.abs(w.priceCall(flex).cost - 0.113) < 1e-9, 'widget applies Flex lifetime rates');
+  const twelve = structuredClone(p); delete twelve.usage.cache_creation_1h_tokens; twelve.usage.cache_creation_requested_ttl='12h';
+  ok(Math.abs(w.priceCall(twelve).cost - 0.306) < 1e-9, 'widget prices requested 12-hour writes');
+  const missing = structuredClone(p); delete missing.usage.cache_creation_1h_tokens;
+  ok(w.priceCall(missing) === null, 'widget leaves a premium write with no lifetime unknown');
+  w.fold(101,'t1',missing); w.render();
+  ok(w.threadCost('t1').unpriced === 1 && /cache lifetime/.test(getEl('unpriced').textContent), 'unknown TTL calls are counted beside the total');
+  const old = snapshot(); delete old.ttl_pricing;
+  const legacy = await boot(undefined, { ...old, rates:{'cache-model':{in:2,cr:0.2,cw:2.5,out:10}} });
+  ok(/predates cache lifetime pricing/.test(getEl('unpriced').textContent), 'an old snapshot visibly marks its historic totals until refreshed');
+  ok(legacy.priceCall(p) === null, 'old compact rates without premiums cannot silently underprice new writes');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
