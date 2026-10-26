@@ -49,7 +49,7 @@ for t in accounting.test.mjs freshness.test.mjs save.test.mjs defaults.test.mjs 
   echo "== $t"
   if ! node "$t"; then fail=1; echo "   ^ $t FAILED"; fi
 done
-for t in rollup.test.py migrate.test.py snapshot.test.py; do
+for t in rollup.test.py cache.test.py migrate.test.py snapshot.test.py; do
   echo "== $t"
   if ! python3 "$t"; then fail=1; echo "   ^ $t FAILED"; fi
 done

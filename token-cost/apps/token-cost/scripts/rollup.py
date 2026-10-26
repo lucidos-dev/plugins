@@ -117,6 +117,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
+from cache_stats import build_cache
 
 WS = pathlib.Path(os.environ.get("LUCIDOS_WORKSPACE", "."))
 OUT = WS / "data" / "artifacts" / "token-cost" / "daily.json"
@@ -1358,6 +1359,47 @@ def handoffs_payload(long_cut: str, max_seq: int) -> dict:
     }
 
 
+# A separate, prompt-free evidence file leaves all older rollups and the
+# Thread cost snapshot readable. A full ordered read retains TTL and session
+# evidence across the range boundary. Prices stay in the app's price table.
+CACHE_SQL = """
+SELECT coalesce(json_agg(row_to_json(t) ORDER BY t.seq), '[]'::json) FROM (
+  SELECT id::text AS id, thread_id::text AS thread, sequence AS seq,
+         event_type AS type,
+         to_char(""" + LOCAL_DAY + """, 'YYYY-MM-DD') AS day,
+         to_char(created AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at,
+         """ + ROW_MODEL + """ AS model,
+         payload->>'producer' AS producer, payload->>'purpose' AS purpose,
+         payload->>'session' AS session, payload->>'parent_tool_use_id' AS parent,
+         payload->>'api_call_id' AS call_id, payload->>'request_event_id' AS anchor,
+         payload->>'reasoning_effort' AS effort,
+         (payload->>'duration_ms')::float8 AS duration_ms,
+         payload->'usage' AS usage, payload->'status' AS status,
+         payload->'origin'->'reason'->>'kind' = 'cache_keep_alive' AS keep_alive,
+         payload->'continuity'->>'kind' AS continuity,
+         payload->>'successor_thread_id' AS successor
+    FROM events
+   WHERE event_type IN ('ContextCaptured', 'PromptInjected', 'SessionStarted',
+                        'SuccessorThreadSpawned', 'CacheKeepAliveStatusChanged')
+) t;
+"""
+
+
+def write_cache_stats():
+    payload = build_cache(json.loads(psql(CACHE_SQL) or "[]"), TZ)
+    summaries = json.loads(psql(ORIGIN_SQL) or "{}")
+    if not isinstance(summaries, dict):
+        sys.exit("not rolling up cache stats: thread_summaries did not read as an object")
+    origins = classify_origins(summaries)
+    for call in payload["calls"]:
+        call["producer"] = agent_producer(call["producer"], call["thread"], origins)
+    result = subprocess.run(
+        ["lucidos", "data", "write", "artifacts/token-cost/cache.json", "--from", "-"],
+        input=json.dumps(payload, separators=(",", ":")), capture_output=True, text=True)
+    if result.returncode:
+        sys.exit(f"cache stats write failed: {result.stderr.strip()[:400]}")
+
+
 def dumps_by_day(doc: dict) -> str:
     """Compact JSON with each top-level key, each day under `days` and
     `hours`, and each session span under `sessions`, on its own line. Still one valid document. The engine commits
@@ -1454,6 +1496,9 @@ def main() -> None:
     touched = sorted(d for d in day_list.split(",") if d)
 
     if not touched:
+        # Status-only changes and upgrades without new calls still refresh
+        # the cache views. Failed queries/writes stop loudly.
+        write_cache_stats()
         print(f"no new ContextCaptured rows above sequence {since}")
         return
 
@@ -1706,6 +1751,7 @@ def main() -> None:
         )
         if w.returncode != 0:
             sys.exit(f"lucidos data write failed for {rel}: {w.stderr.strip()[:400]}")
+    write_cache_stats()
     print(
         f"rolled up {len(touched)} day(s) {touched[0]}..{touched[-1]}, "
         f"seq {since} -> {max_seq}, kept {kept} of {raw_rows} rows "

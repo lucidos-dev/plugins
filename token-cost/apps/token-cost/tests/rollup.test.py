@@ -369,14 +369,18 @@ check("the rollup, the voice pass and the row count all ran", len(reads), 3)
 check("each stops at the cursor", all("sequence <= 4242" in q for q in reads), True)
 check("no placeholder is left in any query", any("%(" in q for q in asked), False)
 check("the cursor written is that same ceiling", written and written[0]["last_sequence"], 4242)
-check("the thread file is written second, the handoff file third", len(written), 3)
+check("daily, thread, handoff and cache evidence files are written", len(written), 4)
 check("the thread file carries the same cursor", written[1]["last_sequence"], 4242)
 check("the handoff file carries the window, the fields and the thread titles",
       (written[2].get("window"), written[2].get("fields") == list(rollup.THREAD_FIELDS), "threads" in written[2]),
       (rollup.HANDOFF_WINDOW, True, True))
 check("the handoff reads stop at the cursor too",
-      [q for q in asked if "parent_tool_use_id" in q] != []
-      and all("sequence <= 4242" in q for q in asked if "parent_tool_use_id" in q), True)
+      [q for q in asked if "parent_tool_use_id" in q and q != rollup.CACHE_SQL] != []
+      and all("sequence <= 4242" in q for q in asked if "parent_tool_use_id" in q and q != rollup.CACHE_SQL), True)
+asked_idle, written_idle = run_main("0|")
+check("a rollup without new calls still rebuilds cache evidence", len(written_idle), 1)
+check("old snapshots gain a versioned cache file without a rebuild", written_idle[0].get("version"), 1)
+check("cache query still runs on status-only updates", rollup.CACHE_SQL in asked_idle, True)
 
 # 16. A Flex call is summed apart, never also as a long call, and a file
 # from before the Flex bucket is rebuilt once.
