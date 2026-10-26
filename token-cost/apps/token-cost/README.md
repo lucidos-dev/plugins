@@ -37,8 +37,11 @@ the provider's own `usage` block. These parts read it:
   and checkpoint comparisons to `artifacts/token-cost/handoffs.json`.
 - The same trigger writes `artifacts/token-cost/cache.json`, a separate,
   versioned projection of cache evidence, without prompts or stored prices.
-  It rebuilds from ordered events, including on runs with no new usage, so
-  status-only changes and upgrades from older snapshots are covered.
+  It holds one summed row per day, thread, producer, model, effort, tier and
+  evidence class (about 9 MB for 1.5M calls). It rebuilds from every event in
+  order, streamed through a psql cursor so the calls never sit in memory at
+  once, and only when an event it reads or a long-context cut changed. Runs
+  with no new usage still check, so status-only changes are covered.
 - The app reads that rollup, then folds anything that has arrived over SSE since
   on top of it, so today's number is live rather than an hour stale. A capped
   first paint marks its total as catching up until that tail finishes.
@@ -98,30 +101,32 @@ Thread cost snapshot formats are unchanged. No setup revision is needed.
 - **Keep-alive cost vs savings** prices actual ping input, output and cache
   usage. A resume ping is identified by its `PromptInjected` anchor's
   `origin.reason.kind = cache_keep_alive`; copy beats use
-  `ContextCaptured.purpose = cache_keep_alive`. Avoided rewrite spend uses
-  `CacheKeepAliveStatusChanged.status` only when an `ended` run has a
-  recorded `saved_usd`, context tokens, a matching wake that read the whole
-  context and a full prior write with an evidenced single lifetime. A partial
-  write cannot establish a lifetime for the whole retained context.
-  The engine's dollars are evidence of a saved
-  rewrite, never a price source. Tokens are repriced from the app's dated
-  price table. This is gross avoided rewrite spend, before ping costs;
-  unknown runs have no estimated savings. Ping costs use their billing day;
-  savings use the local day the wait ended.
+  `ContextCaptured.purpose = cache_keep_alive`. Avoided rewrite spend follows
+  the engine's own claim (`read_run_end`): an `ended` run with a recorded
+  `saved_usd` and `context_tokens`, whose wake (the first real request after
+  the first ping) read cache in the same session and model as the session's
+  last write before it, and that write had an evidenced lifetime. The saving
+  is the run's context written afresh at that write's shortest lifetime, as
+  `CacheTtl::of_write` reads it, priced from the app's dated price table. The
+  engine's dollars are evidence of a saved rewrite, never a price source.
+  This is gross avoided rewrite spend, before ping costs; other runs have no
+  estimated saving. Ping costs use their billing day; savings use the local
+  day the wait ended.
 - **Cache write vs read spend** separates write, read and uncached input
   dollars per day. Input is a total containing the cache counts, so uncached
   input subtracts both. Writes use reported 5-minute, 30-minute, 1-hour and
   12-hour splits, or a recorded supported requested TTL. Dated, served-model,
-  long-context and Flex price cards apply. Missing TTL evidence leaves a
-  premium write price unknown; unpriced amounts carry an unknown count.
-- **Cache rewrites by cause** counts calls with cache writes. Only cold
-  writes with prior context and exactly one supported cause are classified:
-  a recorded handoff boundary, a changed served model, or a request-start
-  gap longer than the evidenced TTL after the last refresh in the same
-  model and session. With mixed lifetimes, every part must have expired.
-  First writes, partial writes, unrecorded boundaries and ambiguous causes
-  count as unknown. The count includes these unclassified writes rather
-  than claiming every write rewrote an existing prefix.
+  long-context and Flex price cards apply. A write with no lifetime evidence
+  is priced at the base write rate and its calls are counted on the row.
+- **Cache rewrites by cause** counts cold writes (cache written, none read)
+  of a context that was cached before. One gets a cause only when exactly one
+  applies: a recorded handoff boundary, a changed served model, or a
+  request-start gap longer than the context's evidenced lifetime since its
+  last refresh, in the same model and session. A read refreshes the retained
+  prefix at its own lifetime, so after an append the context lives to the
+  longer of the two; either unknown leaves it unknown. Otherwise the cause
+  is unknown. First writes of a new context and appends after a cache read
+  are not rewrites and are counted apart.
 
 The source contract was read from Lucidos v0.51.0 on `main`:
 `crates/lucidos-engine/src/engine/types.rs` (`ApiUsage`, `ContextPurpose`),
@@ -135,18 +140,32 @@ deduplication stays scoped to thread and session.
 Lifetime pricing also applies to the existing dashboard, feed, handoff
 comparisons and Thread cost widget. Rollup version 15 appends known-write,
 1-hour and 12-hour token counts to each tier and to compact thread rows. It
-rebuilds older rollups automatically. Calls with unknown lifetimes stay in
-separate buckets, so they cannot hide other calls' priced spend or change it
-when the grouping changes. A premium write without enough evidence is counted
-as unpriced, with its cost excluded visibly; adding a rate cannot repair a
-missing TTL. Older files still read, with unknown write evidence.
+rebuilds older rollups automatically. A write with no lifetime evidence is
+priced at the base write rate: the lowest any write costs, and what the
+engine's own `ApiUsage::usd_on` charges. So a total never overstates, but it
+can miss a 1-hour or 12-hour premium. Those calls stay in separate buckets
+(a fourth key part, `cache_ttl_unknown`), and a folded note under the hero
+counts them and says why their lifetime is unknown:
 
-New widget snapshots carry `ttl_pricing: 1` and the lifetime rates for their
-live tail. An older snapshot still renders, with a notice that its total may
-omit premiums until the next scheduled snapshot. The widget uses the price
-table for newer calls and refuses to use older compact rates to guess a write
-premium. Snapshot pricing uses each dated card's own long threshold and Flex
-rates, including their write lifetime prices.
+- Claude Code calls recorded before Lucidos 0.49.0, which began saving the
+  provider's lifetime split.
+- Codex calls: Codex reports one cache-write total, without the split.
+- Other calls recorded before Lucidos 0.50.0, or served by a route that does
+  not report the split.
+
+`Unpriced` still means a model with no card: those calls stay out of the
+totals, counted beside them.
+
+New widget snapshots carry `ttl_pricing: 1`, the lifetime rates for their
+live tail, and `ttl_unknown`, the calls per thread and producer whose write
+was priced at the base rate. The widget names that count and its reasons
+under the total. An older snapshot still renders, with a notice that its
+total may omit premiums until the next scheduled snapshot. The widget uses
+the price table for newer calls and refuses to use older compact rates to
+guess a write premium. Snapshot pricing uses each dated card's own long
+threshold, inclusive or not, and Flex rates, including their write lifetime
+prices. Its query groups each thread's calls by the prompt's band between the
+cards' long cuts, never by each prompt's size.
 
 ## Tests
 
