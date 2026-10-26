@@ -290,6 +290,8 @@ function render() {
   if (data?.ttl_pricing !== 1) warnings.push('Snapshot predates cache lifetime pricing; totals may omit write premiums until its next refresh.');
   $('unpriced').hidden = !warnings.length;
   $('unpriced').textContent = warnings.join(' · ');
+  // One line with an ellipsis on a small tile: the whole note stays on hover.
+  $('unpriced').title = warnings.join(' · ');
   $('today').innerHTML = calls ? `<b>${usd(today)}</b> today<br>${calls.toLocaleString()} calls` : 'No calls yet';
 
   // Mix: up to four models by name. Fold only when two or more remain,

@@ -206,6 +206,7 @@ console.log('\n9. Widget live pricing uses evidenced write lifetimes, tiers and 
   ok(getEl('total').textContent === '$4.18', 'it is in the total at the floor: ' + getEl('total').textContent);
   ok(getEl('unpriced').textContent === '1 call at the base cache write rate, lifetime unknown (Codex reports no lifetime split)',
      'and the widget says how many and why: ' + getEl('unpriced').textContent);
+  ok(getEl('unpriced').title === getEl('unpriced').textContent, 'the whole note survives the one-line ellipsis as its title');
   const known = await boot({models:{'cache-model':[card]}}, { ...snapshot(), ttl_unknown: { t1: { claude_code: 2, 'auxiliary:memory': 1 } } });
   known.render();
   ok(getEl('unpriced').textContent === '3 calls at the base cache write rate, lifetime unknown (Claude Code before Lucidos 0.49.0; calls before Lucidos 0.50.0 or on routes without the split)',
