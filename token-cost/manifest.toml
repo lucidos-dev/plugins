@@ -6,7 +6,6 @@ source = "https://github.com/lucidos-dev/plugins/tree/main/token-cost"
 engine = ">=0.51.0"
 categories = ["developer-tools", "data"]
 icon = "media/icon.svg"
-screenshots = ["media/dashboard.png", "media/analysis.png", "media/thread-cost-widget.png", "media/settings.png"]
 setup_revision = 2
 setup_reason = "0.5.0 to 0.6.3 stopped reading 0.4.x's pricing.json, so its prices went unpriced. Setup now moves them into Lucidos's price table."
 
