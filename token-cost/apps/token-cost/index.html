@@ -7,6 +7,10 @@
     <link rel="stylesheet" href="/api/v1/sdk-iframe.css" />
     <script src="/api/v1/sdk.js"></script>
     <style>
+      /* Reserve the scrollbar's lane always. Filtering the chart to one model
+         shortens the table, the page stops scrolling, the scrollbar goes, the
+         width grows, and the hero row re-wrapped: Spend today jumped. */
+      html { scrollbar-gutter: stable; }
       body { margin: 0; padding: var(--space-xl); }
       .wrap { max-width: 68rem; margin: 0 auto; }
 
@@ -17,9 +21,13 @@
          beside it. Center is what a control cluster wants: the buttons agree
          with each other, and the row reads as one bar. */
       header.top {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: var(--space-lg); flex-wrap: wrap; margin-bottom: var(--space-xl);
+        display: flex; align-items: flex-start; justify-content: space-between;
+        gap: var(--space-lg); margin-bottom: var(--space-xl);
       }
+      /* No wrap: the gear stays top right on a phone instead of dropping
+         under the title. The title block takes the shrink. */
+      header.top > div:first-child { flex: 1 1 auto; min-width: 0; }
+      header.top > .button-group { flex: 0 0 auto; }
       .top-meta {
         color: var(--text-muted); font-size: var(--font-size-xs);
         margin-top: var(--space-2xs);
@@ -61,6 +69,11 @@
         .hero-value .live.bump { transform: none; }
       }
       .hero-sub { color: var(--text-secondary); font-size: var(--font-size-sm); margin-top: var(--space-sm); }
+      /* Rollup-only first paint: the total is short until the tail lands.
+         Muted and dashed-underlined so it reads as provisional, not final. */
+      .hero-value { transition: color var(--duration-normal, 200ms) ease, opacity var(--duration-normal, 200ms) ease; }
+      .hero-value.stale { color: var(--text-muted); opacity: 0.7; text-decoration: underline dashed; text-decoration-thickness: 0.04em; text-underline-offset: 0.12em; }
+      [data-motion="reduce"] .hero-value { transition: none; }
       /* Unpriced spend. Yellow like the other "this number is incomplete"
          notes, and a button rather than prose, because the fix is one click. */
       .hero-unpriced {
@@ -86,28 +99,10 @@
          read as an alarm rather than a heartbeat, and it fires on every call. */
       @keyframes blip { from { transform: scale(1.45); opacity: 0.8; } to { transform: scale(1); opacity: 1; } }
 
-      /* Tooltip. The host's global tooltip is document-scoped (it binds
-         listeners on the host document and appends #tooltip to the host body),
-         so it cannot reach into an app iframe and the SDK exposes no bridge.
-         This is a local reimplementation that reads the SAME attribute
-         contract (data-tooltip, data-tooltip-title) and copies the host's box
-         treatment from base.css, so it looks identical and the markup already
-         matches if a bridge ever lands. */
-      #tip {
-        position: fixed; z-index: 9999; max-width: 30rem;
-        padding: 0.5rem 0.75rem;
-        background: var(--bg-secondary); color: var(--text-secondary);
-        border: 1px solid var(--border-color); border-radius: 0.625rem;
-        font-family: var(--font-ui); font-size: var(--font-size-xs);
-        line-height: 1.4; text-align: left; white-space: pre-line;
-        pointer-events: none; opacity: 0; display: none;
-        transition: opacity var(--duration-fast); box-shadow: var(--shadow-sm);
-      }
-      #tip-title {
-        font-weight: 600; font-size: var(--font-size-sm);
-        color: var(--text-primary); margin-bottom: 0.5rem;
-      }
-      #tip-title:empty { display: none; }
+      /* Tooltip: the SDK's shared #tooltip (box, arrow, delay) drives every
+         data-tooltip here. Bar tooltips carry one line per series, so keep
+         their newlines. */
+      #tooltip-text { white-space: pre-line; }
 
       .stat-strip {
         display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -115,7 +110,7 @@
       }
       @media (max-width: 40rem) { .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
       .stat { min-width: 0; }
-      #an-metric .segmented-btn, #btn-refresh { white-space: nowrap; }
+      #an-metric .segmented-btn { white-space: nowrap; }
       .stat-v {
         font-family: var(--font-mono); font-size: var(--font-size-2xl);
         color: var(--text-primary); font-variant-numeric: tabular-nums;
@@ -202,9 +197,10 @@
       }
       .cal-day.in { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text-primary); }
       .cal-day.end { background: var(--accent); color: var(--bg-primary); font-weight: 600; }
-      .cal-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); }
+      .cal-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); }
       .cal-field { display: flex; flex-direction: column; gap: var(--space-2xs); font-size: var(--font-size-xs); color: var(--text-muted); }
       .cal-field input {
+        min-width: 0; box-sizing: border-box; width: 100%;
         font-family: var(--font-mono); font-size: var(--font-size-sm); color: var(--text-primary);
         background: var(--bg-primary); border: 1px solid var(--border-color);
         border-radius: var(--radius-sm); padding: var(--space-xs) var(--space-sm);
@@ -224,14 +220,24 @@
         .cal-nav:not(:disabled):hover { background: var(--bg-hover); color: var(--text-primary); }
         .cal-day:not(:disabled):not(.end):hover { background: var(--bg-hover); color: var(--text-primary); border-radius: var(--radius-sm); }
       }
-      /* Phone: presets become a wrapping row on top, one month shows. */
+      /* Phone: presets become a wrapping row on top, one month fills the width,
+         and the panel scrolls rather than running off a short screen. */
       @media (max-width: 40rem) {
-        .cal-pop { position: fixed; left: var(--space-sm); right: var(--space-sm); top: 4rem; grid-template-columns: 1fr; }
+        .cal-pop {
+          position: fixed; left: var(--space-sm); right: var(--space-sm); top: 4rem;
+          grid-template-columns: minmax(0, 1fr);
+          max-height: calc(100dvh - 5rem); overflow-y: auto; overscroll-behavior: contain;
+        }
         .cal-sep { display: none; }
         .cal-presets { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border-color); }
-        .cal-months { grid-template-columns: 1fr; }
+        .cal-months { grid-template-columns: minmax(0, 1fr); }
         .cal-month + .cal-month { display: none; }
+        .cal-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+        .cal-day { width: 100%; height: 2.5rem; }
+        .cal-apply { flex: 1; padding: var(--space-sm) var(--space-md); }
       }
+      /* iOS zooms into a focused field under 16px. */
+      @media (pointer: coarse) { .cal-field input { font-size: max(16px, var(--font-size-sm)); } }
       #producer-slot { width: 13rem; flex: none; }
       #currency-slot { width: 9rem; flex: none; }
       #producer-slot > *, #currency-slot > * { width: 100%; max-width: 100%; }
@@ -332,6 +338,41 @@
       .an-col.now { box-shadow: inset 0 -2px 0 var(--accent-yellow); }
       @media (hover: hover) { .an-col:hover .an-seg { filter: brightness(1.25); } }
       .an-chart .empty-state { flex: 1; align-self: center; }
+      /* Bars over time on the left, the share of the whole range as a donut on
+         the right. Below 36rem the donut drops under the bars. */
+      .an-viz { display: flex; align-items: center; gap: var(--space-lg); }
+      .an-main { flex: 1 1 auto; min-width: 0; }
+      .an-pie { flex: none; position: relative; width: 8rem; height: 8rem; }
+      .an-pie[hidden] { display: none; }
+      .an-pie svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+      /* Hover never changes the stroke width: a growing stroke moves the hit
+         area under the pointer, which toggles hover on and off (flicker). */
+      .an-slice { fill: none; stroke-width: 7; pointer-events: none; transition: opacity var(--duration-fast) ease; }
+      /* The pointer hits these, not the painted slices: full arcs with no
+         hairline gap, so moving across a slice border never lands on bare svg
+         (which reset the dim and hid the tooltip for a frame). */
+      .an-hit { fill: none; stroke: transparent; stroke-width: 9; cursor: pointer; pointer-events: stroke; }
+      .an-slice.dim { opacity: 0.2; }
+      [data-motion="reduce"] .an-slice { transition: none; }
+      /* Percent on a slice, only where the arc has room for it. */
+      .an-pie-pct {
+        position: absolute; transform: translate(-50%, -50%); pointer-events: none;
+        font-size: var(--font-size-2xs); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1;
+        color: var(--text-primary); text-shadow: 0 0 0.2rem var(--bg-primary), 0 0 0.1rem var(--bg-primary);
+        transition: opacity var(--duration-fast) ease;
+      }
+      .an-pie-pct.dim { opacity: 0.2; }
+      [data-motion="reduce"] .an-pie-pct { transition: none; }
+      .an-pie-mid {
+        position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        pointer-events: none; text-align: center; line-height: 1.2;
+      }
+      .an-pie-mid b { font-size: var(--font-size-sm); color: var(--text-primary); font-variant-numeric: tabular-nums; }
+      .an-pie-mid span { font-size: var(--font-size-2xs); color: var(--text-muted); max-width: 5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      @media (max-width: 36rem) {
+        .an-viz { flex-direction: column; align-items: stretch; }
+        .an-pie { align-self: center; }
+      }
       .axis { display: flex; justify-content: space-between; color: var(--text-muted); font-size: var(--font-size-2xs); margin-top: var(--space-sm); }
       .legend { display: flex; gap: var(--space-lg); flex-wrap: wrap; margin-top: var(--space-md); font-size: var(--font-size-xs); color: var(--text-secondary); }
       .swatch { display: inline-block; width: 0.625rem; height: 0.625rem; border-radius: var(--radius-sm); margin-right: var(--space-xs); vertical-align: baseline; flex: none; }
@@ -371,6 +412,7 @@
       tr.an-row.here td { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text-primary); }
       tr.an-row.here td:first-child { box-shadow: inset 0.1875rem 0 0 var(--accent); }
       tr.an-row.holds-here td:first-child { box-shadow: inset 0.1875rem 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+      .an-span { color: var(--text-muted); font-size: var(--font-size-2xs); margin-left: var(--space-xs); }
       .an-here { color: var(--accent); font-size: var(--font-size-2xs); font-weight: 600; margin-left: var(--space-xs); }
       .split { display: inline-flex; width: 7rem; height: 0.5rem; border-radius: 2px; overflow: hidden; vertical-align: middle; background: var(--bg-tertiary); }
       .split span { height: 100%; }
@@ -497,7 +539,6 @@
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
             </svg>
           </button>
-          <button class="action-btn action-btn-secondary" id="btn-refresh">Refresh</button>
         </div>
       </header>
 
@@ -591,8 +632,13 @@
         <p class="sec-note dirty-dot" id="model-label-note" hidden>Model names could not be loaded from the registry, so the rows below show raw model ids, not their display labels.</p>
         <p class="sec-note dirty-dot" id="an-note" hidden></p>
         <div class="card">
-          <div class="an-chart" id="an-chart"></div>
-          <div class="axis"><span id="ax-from"></span><span id="ax-mid"></span><span id="ax-to"></span></div>
+          <div class="an-viz">
+            <div class="an-main">
+              <div class="an-chart" id="an-chart"></div>
+              <div class="axis"><span id="ax-from"></span><span id="ax-mid"></span><span id="ax-to"></span></div>
+            </div>
+            <div class="an-pie" id="an-pie" hidden></div>
+          </div>
           <div class="legend" id="an-legend"></div>
           <div class="an-scroll">
             <table class="an-table">
@@ -617,6 +663,32 @@
           </div>
         </div>
       </section>
+
+      <!-- Whether handing off paid. A handoff starts a successor session in
+           the same thread (a successor thread, before that existed). Folded,
+           and handoffs.json is only read once it is opened. -->
+      <details class="block live-block" id="handoff-block">
+        <summary><h2 class="sec">Handoffs</h2></summary>
+        <p class="sec-note">Per handoff checkpoint: what writing the handoff narrative cost (a warm handoff; a cold one starts from the engine's brief, so it costs nothing), and the cost per call over the last 20 calls before the handoff and the first 20 after it. Verdicts are the handoff estimate's: a "pays" verdict held when calls got cheaper.</p>
+        <p class="sec-note dirty-dot" id="ho-note" hidden></p>
+        <div class="card">
+          <div class="an-scroll">
+            <table class="an-table">
+              <thead>
+                <tr>
+                  <th>Checkpoint</th><th>Handoffs</th>
+                  <th data-tooltip-title="Narrative turn" data-tooltip="The turn that wrote the handoff narrative, on average over the warm handoffs.">Narrative</th>
+                  <th data-tooltip-title="Before" data-tooltip="Cost per call over the old session's last 20 calls before the handoff.">Per call before</th>
+                  <th data-tooltip-title="After" data-tooltip="Cost per call over the new session's first 20 calls.">Per call after</th>
+                  <th>Change</th>
+                  <th data-tooltip-title="Verdicts" data-tooltip="How often the handoff estimate's verdict at the checkpoint matched what happened: pays when calls got cheaper, does not pay when they did not.">Verdicts held</th>
+                </tr>
+              </thead>
+              <tbody id="ho-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
 
       <!-- A curiosity, so it sits last and starts folded. -->
       <details class="block live-block">
@@ -752,6 +824,11 @@
       const DEFAULT_SETTINGS = {
         producers: {
           main_llm: 'Lucidos Agent',
+          // The agent's calls, one id per thread origin (`main_llm:<origin>`).
+          // Bare `main_llm` is a call whose origin is unknown, see OWN_SUBTYPE_LABEL.
+          'main_llm:chat': 'Chat',
+          'main_llm:trigger': 'Trigger',
+          'main_llm:other': 'Other origin',
           claude_code: 'Claude Code',
           codex: 'Codex',
           jev_browser: 'Jev Browser',
@@ -866,6 +943,88 @@
         return true;
       }
 
+      // The Lucidos Agent runs both the chats a person starts and the runs a
+      // trigger fires, and its call does not say which: its thread does. The
+      // rollup files an agent call under `main_llm:<origin>` (chat, trigger,
+      // other) by its thread's root in thread_summaries, and the live tail does
+      // the same from the origins it knows: daily.json's `thread_origins`, then
+      // the thread list for a thread newer than the rollup. Derived in
+      // countedLive, like the keep-alive type, so an origin learned after its
+      // calls still files them. A call whose thread is not known stays bare
+      // `main_llm`, "Origin unknown": it is never guessed as chat.
+      const AGENT = 'main_llm';
+      const AGENT_PREFIX = 'main_llm:';
+      const AGENT_ORIGINS = ['chat', 'trigger', 'other'];
+      const threadOrigins = new Map();   // thread id -> chat | trigger | other
+      /** Learn origins from daily.json's map, { origin: [thread ids] }. An
+       *  origin never changes, so one already known is kept. */
+      function noteThreadOrigins(doc) {
+        let added = 0;
+        for (const o of AGENT_ORIGINS) {
+          for (const tid of (Array.isArray(doc?.[o]) ? doc[o] : [])) {
+            if (!tid || threadOrigins.has(tid)) continue;
+            threadOrigins.set(tid, o);
+            added++;
+          }
+        }
+        if (added) liveRevision++;
+        return added;
+      }
+
+      /** A thread's origin from its summary, by the rule the rollup applies
+       *  (classify_origins): trigger when a trigger opened it, else its
+       *  parent's origin, else chat when a person started it and other when
+       *  the system did. `summaryOf(id)` gives a parent's summary. Null when
+       *  the walk cannot finish: no summary, a missing parent, or a loop. */
+      function originOfSummary(t, summaryOf) {
+        const seen = new Set();
+        while (t && !seen.has(t.thread_id)) {
+          seen.add(t.thread_id);
+          if (t.trigger_id || t.channel === 'trigger') return 'trigger';
+          if (!t.parent_thread_id) return t.initiator === 'user' ? 'chat' : 'other';
+          const known = threadOrigins.get(t.parent_thread_id);
+          if (known) return known;
+          t = summaryOf(t.parent_thread_id);
+        }
+        return null;
+      }
+
+      /** Learn origins from thread-list rows. Returns how many were new. */
+      function learnThreadOrigins(list) {
+        const byId = new Map((Array.isArray(list) ? list : []).filter((t) => t?.thread_id).map((t) => [t.thread_id, t]));
+        let added = 0;
+        for (const t of byId.values()) {
+          if (threadOrigins.has(t.thread_id)) continue;
+          const o = originOfSummary(t, (id) => byId.get(id));
+          if (!o) continue;
+          threadOrigins.set(t.thread_id, o);
+          added++;
+        }
+        if (added) liveRevision++;
+        return added;
+      }
+
+      // Threads the list was already asked about, so one it does not hold
+      // (older than its newest 1000) is not asked about on every render.
+      const originAsked = new Set();
+      let originLookupAt = 0;
+      /** Origins for live agent calls from threads the rollup has not seen:
+       *  one started since it ran, or idle longer than its window. At most
+       *  every 30 seconds. A thread the list does not hold stays unknown until
+       *  the next rollup files it. */
+      async function lookupOrigins() {
+        const unknown = countedLive().filter((c) => c.producer === AGENT && c.thread && !originAsked.has(c.thread));
+        if (!unknown.length || Date.now() - originLookupAt < 30000) return;
+        originLookupAt = Date.now();
+        try {
+          const list = await lucidos.threads.list({ limit: 1000 });
+          for (const c of unknown) originAsked.add(c.thread);
+          if (learnThreadOrigins(list)) { syncProducerFilter(); render(); }
+        } catch (e) {
+          console.warn('token-cost: could not list threads for agent origins', e);
+        }
+      }
+
       function countedLive() {
         const cursor = daily.last_sequence || 0;
         if (countedCache.rev === liveRevision && countedCache.cursor === cursor) {
@@ -877,12 +1036,17 @@
         lastUsageByThread.clear();
         const out = [];
         for (const c of rows) {
+          // Per thread AND session, as the rollup's LAG: the first call of a
+          // successor session is a new context, never a re-delivered frame.
           if (c.producer === 'claude_code') {
             const key = `${c.in}/${c.cache_read}/${c.cache_write}/${c.out}`;
-            if (lastUsageByThread.get(c.thread) === key) continue;
-            lastUsageByThread.set(c.thread, key);
+            const scope = `${c.thread}@${c.session || ''}`;
+            if (lastUsageByThread.get(scope) === key) continue;
+            lastUsageByThread.set(scope, key);
           }
-          out.push(keepAliveAnchors.has(c.request) ? { ...c, producer: KEEP_ALIVE_TYPE } : c);
+          if (keepAliveAnchors.has(c.request)) out.push({ ...c, producer: KEEP_ALIVE_TYPE });
+          else if (c.producer === AGENT && threadOrigins.has(c.thread)) out.push({ ...c, producer: AGENT_PREFIX + threadOrigins.get(c.thread) });
+          else out.push(c);
         }
         countedCache = { rev: liveRevision, cursor, calls: out };
         return out;
@@ -897,6 +1061,13 @@
       const CATCHUP_MS = 45000;        // backstop reconcile while visible
       const ROLLUP_STALE_MS = 70 * 60000;  // hourly rollup, plus a grace margin
       let catchUpInFlight = false;
+      // Until the first load has painted, only that load may catch up. A
+      // pageshow or visibility pass racing ahead of it would run before the
+      // rollup is read (cursor 0) and, by holding catchUpInFlight, would make
+      // the first load paint the rollup alone: the short total again.
+      let firstPaintDone = false;
+      const FIRST_PAINT_CAP_MS = 2500; // longest the first paint waits for the tail
+      let tailPending = false;         // painted from the rollup alone, tail still loading
       let lastCatchUpAt = 0;           // performance.now() of the last success
       let lastCatchUpFailed = false;
       let lastCatchUpError = null;   // the message, so the header can name it
@@ -1424,25 +1595,32 @@
       /** The filter value that stands for every auxiliary sub-producer. */
       const AUX_ALL = 'auxiliary:*';
       const AUX_PREFIX = 'auxiliary:';
+      // The filter value that stands for every Lucidos Agent origin.
+      const AGENT_ALL = 'main_llm:*';
 
       /** Whether a row's producer id passes the producer filter. `all` passes
        *  everything, `auxiliary:*` the bare `auxiliary` id and every
-       *  `auxiliary:<purpose>`, anything else only itself. */
+       *  `auxiliary:<purpose>`, `main_llm:*` every agent origin, the unknown
+       *  one too, anything else only itself. */
       function producerMatches(pf, producer) {
         if (pf === 'all' || producer === pf) return true;
+        if (pf === AGENT_ALL) return typeParent(producer) === AGENT;
         return pf === AUX_ALL && typeParent(producer) === 'auxiliary';
       }
 
       /** The Type row a producer id sits under. A producer with a type of its
-       *  own is its own row. Everything else, whatever carries no type, is under
-       *  `auxiliary`: the auxiliary purposes, cache keep-alive pings, and any
-       *  producer this list does not know. */
+       *  own is its own row, and the agent's origins sit under the agent.
+       *  Everything else, whatever carries no type, is under `auxiliary`: the
+       *  auxiliary purposes, cache keep-alive pings, and any producer this list
+       *  does not know. */
       const TYPED_PRODUCERS = new Set(['main_llm', 'claude_code', 'codex', 'jev_browser']);
       function typeParent(producer) {
+        if (producer.startsWith(AGENT_PREFIX)) return AGENT;
         return TYPED_PRODUCERS.has(producer) ? producer : 'auxiliary';
       }
-      // What Auxiliary calls its calls that have no purpose.
-      const OWN_SUBTYPE_LABEL = { auxiliary: 'Auxiliary (unspecified)' };
+      // What a type calls its calls with no sub-type: an auxiliary call with no
+      // purpose, an agent call whose thread origin is not known.
+      const OWN_SUBTYPE_LABEL = { auxiliary: 'Auxiliary (unspecified)', main_llm: 'Origin unknown' };
 
       function producerFilter() {
         return producerSelect ? (producerSelect.getValue() || 'all') : 'all';
@@ -1606,8 +1784,11 @@
         const pricedCalls = total.calls - unpricedU.calls;
         const perCall = pricedCalls ? totalCost / pricedCalls : 0;
         const daysN = Math.max(1, days.length);
-        document.getElementById('hero-sub').textContent =
-          `${fmtMoney(totalCost / daysN)} per day average · ${fmtMoney(perCall)} per call`;
+        heroEl.classList.toggle('stale', tailPending);
+        heroEl.title = tailPending ? 'From the last rollup. Calls since then are still loading.' : '';
+        document.getElementById('hero-sub').textContent = tailPending
+          ? 'From the last rollup · catching up on newer calls…'
+          : `${fmtMoney(totalCost / daysN)} per day average · ${fmtMoney(perCall)} per call`;
         const heroUnpriced = document.getElementById('hero-unpriced');
         heroUnpriced.hidden = !unpricedU.calls;
         if (unpricedU.calls) {
@@ -1625,6 +1806,7 @@
         document.getElementById('s-cache').textContent = cachePct.toFixed(1) + '%';
 
         renderAnalysis(days, pf);
+        renderHandoffs(days);
 
         // ONE fact, not a chain. This line used to join four dot-separated
         // bits (days on record, rollup age, calls since the rollup, rates
@@ -1643,6 +1825,8 @@
         meta.className = 'top-meta' + (isStale() ? ' stale' : '');
         renderFeed();
         renderFxNote();
+        // Not awaited: it re-renders itself if it files anything.
+        lookupOrigins();
       }
 
       // ---- Analysis ---------------------------------------------------------
@@ -1733,7 +1917,7 @@
         try {
           threadsDaily = JSON.parse(await lucidos.data.read(THREADS_DAILY));
           for (const [tid, m] of Object.entries(threadsDaily.threads || {})) {
-            threadMeta.set(tid, { title: m[0] || '', parent: m[1] || null });
+            threadMeta.set(tid, { title: m[0] || '', parent: m[1] || null, before: m[2] || null });
           }
           threadsState = 'ready';
         } catch (e) {
@@ -1766,7 +1950,12 @@
         }
       }
 
-      const parentOf = (tid) => threadMeta.get(tid)?.parent || null;
+      // A legacy successor thread folds into the thread it took over from, as
+      // if it were a sub-thread. Handoffs now start a successor session in
+      // the same thread, so this keeps one piece of work on one row whether
+      // it handed off the old way or the new one.
+      const predecessorOf = (tid) => threadMeta.get(tid)?.before || null;
+      const parentOf = (tid) => threadMeta.get(tid)?.parent || predecessorOf(tid);
 
       /** The top of a thread's tree, so a parent's row carries every sub-thread
        *  under it. Guarded against a cycle, which the data should never hold. */
@@ -1797,6 +1986,13 @@
         return threadMeta.get(tid)?.title || 'Untitled thread';
       }
 
+      /** A thread file key back to [thread, session]. The rollup keys a call
+       *  `<thread>@<session>`, or the bare thread when it names no session. */
+      function splitSlot(slot) {
+        const i = slot.lastIndexOf('@');
+        return i < 0 ? [slot, ''] : [slot.slice(0, i), slot.slice(i + 1)];
+      }
+
       /** One compact thread row back to a bundle. See THREAD_FIELDS in the
        *  rollup: a flat list in `fields` order, trailing zeros dropped. */
       function rowToU(r, fields) {
@@ -1821,12 +2017,14 @@
        *  already in its rows and is skipped, so nothing counts twice. */
       function factsFor(day, hour, withThreads) {
         const map = new Map();
-        const put = (tid, key, u) => {
-          const id = tid + '\n' + key;
+        // `session` is the agent session's ordinal as a string, '' for a call
+        // from before the engine stamped it.
+        const put = (tid, key, u, session = '') => {
+          const id = tid + '\n' + session + '\n' + key;
           let f = map.get(id);
           if (!f) {
             const [producer, model, effort = ''] = key.split('|');
-            f = { day, thread: tid, key, producer, model, effort, u: emptyU(), cost: null };
+            f = { day, thread: tid, session, key, producer, model, effort, u: emptyU(), cost: null };
             map.set(id, f);
           }
           addU(f.u, u);
@@ -1834,8 +2032,9 @@
         if (withThreads) {
           const src = hour == null ? threadsDaily?.days?.[day] : threadsDaily?.hours?.[day]?.[String(hour)];
           const fields = threadsDaily?.fields || [];
-          for (const [tid, keys] of Object.entries(src || {})) {
-            for (const [key, r] of Object.entries(keys)) put(tid, key, rowToU(r, fields));
+          for (const [slot, keys] of Object.entries(src || {})) {
+            const [tid, session] = splitSlot(slot);
+            for (const [key, r] of Object.entries(keys)) put(tid, key, rowToU(r, fields), session);
           }
         } else {
           const src = hour == null ? daily.days[day] : daily.hours?.[day]?.[String(hour)];
@@ -1849,7 +2048,7 @@
           const one = {};
           foldCall(one, c);
           const [key, u] = Object.entries(one)[0];
-          put(withThreads ? (c.thread || '') : null, key, u);
+          put(withThreads ? (c.thread || '') : null, key, u, withThreads ? c.session : '');
         }
         const out = [...map.values()];
         for (const f of out) f.cost = costOf(f.model, f.u, f.u.long, day);
@@ -1914,8 +2113,83 @@
         // Distinct threads below this one, so its row can say "+3 sub".
         const subThreads = dim === 'thread' && id
           ? new Set(facts.filter((f) => f.thread !== id).map((f) => f.thread)).size : 0;
-        return { dim, id, facts, rest, path, sub, u, uUnpriced, unpriced, subThreads,
-                 cost: priced ? cost : null, kids: rest.length > 0 || subThreads > 0 };
+        // The thread's own agent sessions. A handoff starts a successor
+        // session in the same thread, so one thread can hold several
+        // contexts, each with its own peak; one max over all of them would
+        // read as a context no session ever held.
+        const peaks = new Map();
+        if (dim === 'thread' && id) {
+          for (const f of facts) {
+            if (f.thread === id) peaks.set(f.session, Math.max(peaks.get(f.session) || 0, f.u.max_in || 0));
+          }
+        }
+        const sessionPeaks = peaks.size > 1 ? [...peaks].sort((a, b) => sessionOrder(a[0]) - sessionOrder(b[0])) : null;
+        // Session rows show whenever the thread's calls name a session, so a
+        // one-session thread still says what ran it and when. Calls from
+        // before sessions were stamped alone draw none.
+        const sessionRows = peaks.size > 1 || (peaks.size === 1 && !peaks.has(''));
+        // A session opens into its keep-alive pings, on their own line.
+        const keepAlive = dim === 'session' && facts.some((f) => f.producer === KEEP_ALIVE_TYPE);
+        return { dim, id, facts, rest, path, sub, u, uUnpriced, unpriced, subThreads, sessionPeaks, sessionRows,
+                 cost: priced ? cost : null,
+                 kids: rest.length > 0 || subThreads > 0 || sessionRows || keepAlive };
+      }
+
+      /** A row that always shows what is under it, with no twisty: a session
+       *  and its keep-alive line read as one. */
+      const opensAlways = (n) => n.dim === 'session';
+
+      /** A session's first and last call as [ms, ms]: the rollup's span, then
+       *  stretched by any live call above its cursor. Null for calls from
+       *  before sessions were stamped, or before the rollup wrote spans. */
+      function sessionSpan(slot) {
+        const [tid, s] = splitSlot(slot);
+        if (!s) return null;
+        const stored = threadsDaily?.sessions?.[slot];
+        let first = stored ? Date.parse(stored[0]) : Infinity;
+        let last = stored ? Date.parse(stored[1]) : -Infinity;
+        const cursor = threadsDaily?.last_sequence || 0;
+        for (const c of countedLive()) {
+          if (c.thread !== tid || c.session !== s || (c.seq != null && c.seq <= cursor)) continue;
+          const t = Date.parse(c.at);
+          if (t < first) first = t;
+          if (t > last) last = t;
+        }
+        return Number.isFinite(first) && Number.isFinite(last) ? [first, last] : null;
+      }
+
+      /** "23 Oct 17:29–18:01", or "22 Oct 17:29 → 23 Oct 09:12" across midnight. */
+      function spanLabel([first, last]) {
+        const a = new Date(first), b = new Date(last);
+        const hm = (d) => d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        const da = localDay(a), db = localDay(b);
+        return da === db ? `${dayLabel(da)} ${hm(a)}–${hm(b)}` : `${dayLabel(da)} ${hm(a)} → ${dayLabel(db)} ${hm(b)}`;
+      }
+
+      /** A session ordinal for sorting: calls from before sessions were
+       *  stamped come first, as they are the oldest. */
+      const sessionOrder = (s) => (s === '' ? 0 : Number(s) || 0);
+
+      /** "Session 2 · Codex · GPT-5.5 · medium": the session and what ran
+       *  it, taken from its costliest key. A session that switched model
+       *  says how many others it used. Keep-alive pings have their own line,
+       *  so they never name the session. */
+      function sessionLabel(n) {
+        const session = splitSlot(n.id)[1];
+        const head = session ? `Session ${session}` : 'Before sessions were recorded';
+        const work = n.facts.filter((f) => f.producer !== KEEP_ALIVE_TYPE);
+        const by = new Map();
+        for (const f of work) {
+          const k = `${f.producer}|${f.model}|${f.effort}`;
+          const was = by.get(k) || { f, cost: 0, calls: 0 };
+          was.cost += f.cost || 0; was.calls += f.u.calls;
+          by.set(k, was);
+        }
+        const top = [...by.values()].sort((a, b) => b.cost - a.cost || b.calls - a.calls)[0];
+        if (!top) return head;
+        const models = new Set(work.map((f) => f.model)).size;
+        const ran = [producerLabel(top.f.producer), modelName(top.f.model), top.f.effort].filter(Boolean).join(' · ');
+        return `${head} · ${ran}${models > 1 ? ` +${models - 1} model${models > 2 ? 's' : ''}` : ''}`;
       }
 
       // Unpriced rows lead, as they are the ones asking for something; then
@@ -1926,11 +2200,14 @@
       /** Type:subtype picked right after Type: a Type row with one producer id
        *  and nothing else under it has no sub-types, so the level is left out
        *  and the next chip's groups follow directly. Anywhere else the
-       *  Type:subtype chip is a plain flat grouping and always shows. */
+       *  Type:subtype chip is a plain flat grouping and always shows. Lucidos
+       *  Agent always opens into its origins, so rows of unknown origin say so
+       *  rather than passing as the whole agent. */
       function withoutEmptySubtype(facts, dims, underType) {
         if (!underType || dims[0] !== 'subtype') return dims;
         const ids = new Set(facts.map((f) => f.producer));
-        const own = ids.size === 1 && typeParent([...ids][0]) === [...ids][0];
+        const id = [...ids][0];
+        const own = ids.size === 1 && typeParent(id) === id && id !== AGENT;
         return own ? dims.slice(1) : dims;
       }
 
@@ -1951,11 +2228,28 @@
       }
 
       /** What a row opens into: the next chip's groups, and for a thread its
-       *  direct sub-threads, each carrying its own subtree. The next chip's
-       *  groups cover the thread's own calls AND its subs', so they sum to the
-       *  row; the sub-thread rows are a second cut of the same total. */
+       *  agent sessions and direct sub-threads, each carrying its own subtree.
+       *  The next chip's groups cover the thread's own calls AND its subs', so
+       *  they sum to the row; the session rows (the thread's own calls, one
+       *  per session, oldest first) plus the sub-thread rows are a second cut
+       *  of the same total. A session opens into one "Cache keep-alive" line:
+       *  the part of its cost the keep-alive pings made. */
       function childrenOf(node) {
+        if (node.dim === 'session') {
+          const pings = node.facts.filter((f) => f.producer === KEEP_ALIVE_TYPE);
+          return pings.length ? [makeNode('keepalive', node.id, pings, [], `${node.path}/keepalive`, false)] : [];
+        }
         const kids = groupLevel(node.facts, node.rest, node.path);
+        if (node.dim === 'thread' && node.sessionRows) {
+          const by = new Map();
+          for (const f of node.facts) {
+            if (f.thread !== node.id) continue;
+            if (!by.has(f.session)) by.set(f.session, []);
+            by.get(f.session).push(f);
+          }
+          kids.push(...[...by].sort((a, b) => sessionOrder(a[0]) - sessionOrder(b[0])).map(([s, fs]) =>
+            makeNode('session', `${node.id}@${s}`, fs, [], `${node.path}/session:${s}`, false)));
+        }
         if (node.dim === 'thread' && node.subThreads) {
           const by = new Map();
           for (const f of node.facts) {
@@ -2066,9 +2360,29 @@
         }
       }
 
+      /** Ranges longer than this many days draw one bar per week, not per day. */
+      const WEEKLY_AFTER_DAYS = 31;
+
+      /** The Monday that starts the week a YYYY-MM-DD day falls in, as YYYY-MM-DD. */
+      function weekStart(day) {
+        const [y, m, d] = day.split('-').map(Number);
+        const t = new Date(y, m - 1, d);
+        t.setDate(t.getDate() - ((t.getDay() + 6) % 7));
+        return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+      }
+
+      /** The day six days after a YYYY-MM-DD Monday. */
+      function weekEnd(monday) {
+        const [y, m, d] = monday.split('-').map(Number);
+        const t = new Date(y, m - 1, d + 6);
+        return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+      }
+
       /** The chart: one column per hour on a single day, cropped from the
-       *  first call to now, or one per day on a wider range. Bars stack the
-       *  first chip's top five, or cached against cold calls. */
+       *  first call to now, one per day on a range up to WEEKLY_AFTER_DAYS,
+       *  and one per week (Monday first) past that. Bars stack the first
+       *  chip's top five, or cached against cold calls. The donut beside them
+       *  is the same series summed over the whole range. */
       function renderChart(days, pf, dims, top, colour, dayFacts, threadsOn) {
         const today = localDay(new Date());
         const nowHour = new Date().getHours();
@@ -2088,10 +2402,32 @@
           const last = day === today ? nowHour : (used.length ? used[used.length - 1] : 23);
           const first = Math.min(used.length ? used[0] : last, last);
           cols = cols.slice(first, last + 1);
+        } else if (days.length > WEEKLY_AFTER_DAYS) {
+          // A week the range cuts into says which of its days it holds, so a
+          // short first or last bar is not read as a quiet week.
+          const first = days[0], last = days[days.length - 1];
+          const byWeek = new Map();
+          for (const day of days) {
+            const wk = weekStart(day);
+            let w = byWeek.get(wk);
+            if (!w) {
+              const end = weekEnd(wk);
+              const from = first > wk ? first : wk;
+              const to = last < end ? last : end;
+              const partial = from !== wk || to !== end;
+              w = { label: wk, title: `Week of ${wk}` + (partial ? ` (${from} to ${to} only)` : ''), facts: [], now: false };
+              byWeek.set(wk, w);
+            }
+            for (const f of dayFacts.get(day) || []) w.facts.push(f);
+            if (day === today) w.now = true;
+          }
+          cols = [...byWeek.values()];
+          while (cols.length > 1 && !cols[0].facts.some((f) => f.u.calls)) cols.shift();
         } else {
           for (const day of days) cols.push({ label: day, facts: dayFacts.get(day) || [], now: false });
           while (cols.length > 1 && !cols[0].facts.some((f) => f.u.calls)) cols.shift();
         }
+        const weekly = !hourly && days.length > WEEKLY_AFTER_DAYS;
 
         const dim = dims[0] || null;
         const series = metric === 'cache'
@@ -2139,7 +2475,7 @@
         for (const c of max ? cols : []) {
           const col = document.createElement('div');
           col.className = 'an-col' + (c.now ? ' now' : '');
-          col.setAttribute('data-tooltip-title', c.label);
+          col.setAttribute('data-tooltip-title', c.title || c.label);
           const lines = series.filter(([id]) => c.values.get(id)).map(([id, label]) => `${label}: ${fmt(c.values.get(id))}`);
           col.setAttribute('data-tooltip', c.total ? lines.concat(`Total: ${fmt(c.total)}`).join('\n') : 'No calls');
           // Top of the stack first in the DOM, so the first series sits at the bottom.
@@ -2162,7 +2498,7 @@
 
         const esc = lucidos.utils.escapeHtml;
         const what = metric === 'cost' ? 'cost' : metric === 'calls' ? 'calls' : 'cached and cold calls';
-        const per = hourly ? 'per hour' : 'per day';
+        const per = hourly ? 'per hour' : weekly ? 'per week' : 'per day';
         const legend = document.getElementById('an-legend');
         legend.classList.toggle('filtered', focusSeries !== null);
         const canFilter = series.filter(([id]) => used.has(id)).length > 1 || focusSeries !== null;
@@ -2177,6 +2513,67 @@
             })
             .join('') +
           (max ? `<span class="muted">${what} ${per}, top ${fmt(max)}</span>` : '');
+
+        renderPie(cols, series, fmt);
+      }
+
+      /** The donut: each series' share of the whole range, summed from the
+       *  unfiltered columns, so a legend filter dims the other slices rather
+       *  than redrawing the circle as 100% of one series. Hover and click
+       *  share the legend's behaviour. */
+      let pieHover = null;
+      function renderPie(cols, series, fmt) {
+        const host = document.getElementById('an-pie');
+        const sums = new Map();
+        for (const c of cols) for (const [id, n] of c.allValues) sums.set(id, (sums.get(id) || 0) + n);
+        const parts = series.map(([id, label, paint]) => ({ id, label, paint, n: sums.get(id) || 0 })).filter((p) => p.n > 0);
+        const total = parts.reduce((a, p) => a + p.n, 0);
+        if (!total) { host.hidden = true; host.innerHTML = ''; return; }
+        host.hidden = false;
+        const esc = lucidos.utils.escapeHtml;
+        const pct = (n) => { const v = (n / total) * 100; return v >= 10 || v === 0 ? `${v.toFixed(0)}%` : `${v.toFixed(1)}%`; };
+        // r makes the circumference 100, so a dash length is a percentage.
+        const r = 15.91549;
+        let at = 0;
+        // A label fits inside an arc of at least PIE_LABEL_MIN percent.
+        const PIE_LABEL_MIN = 7;
+        const labels = [];
+        const hits = [];
+        const slices = parts.map((p) => {
+          const len = (p.n / total) * 100;
+          // A hairline gap between slices, unless one slice is the whole circle.
+          const gap = parts.length > 1 ? Math.min(0.6, len / 3) : 0;
+          const si = chartSeriesIds.indexOf(p.id);
+          const dim = focusSeries !== null && p.id !== focusSeries;
+          const svg = `<circle class="an-slice${dim ? ' dim' : ''}" data-si="${si}" cx="20" cy="20" r="${r}" stroke="${escAttr(p.paint)}"` +
+            ` stroke-dasharray="${(len - gap).toFixed(3)} ${(100 - len + gap).toFixed(3)}" stroke-dashoffset="${(-at).toFixed(3)}"></circle>`;
+          hits.push(`<circle class="an-hit" data-si="${si}" cx="20" cy="20" r="${r}"` +
+            ` stroke-dasharray="${len.toFixed(3)} ${(100 - len).toFixed(3)}" stroke-dashoffset="${(-at).toFixed(3)}"` +
+            ` data-tooltip-title="${escAttr(p.label)}" data-tooltip="${escAttr(`${fmt(p.n)} of ${fmt(total)} (${pct(p.n)})`)}"></circle>`);
+          if (len >= PIE_LABEL_MIN) {
+            // The svg is turned -90deg, so 0 is twelve o'clock, clockwise.
+            const a = ((at + len / 2) / 100) * 2 * Math.PI;
+            const k = (r / 40) * 100;
+            const x = 50 + k * Math.sin(a), y = 50 - k * Math.cos(a);
+            labels.push(`<span class="an-pie-pct${dim ? ' dim' : ''}" data-si="${si}" style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%">${pct(p.n)}</span>`);
+          }
+          at += len;
+          return svg;
+        });
+        const focus = focusSeries !== null ? parts.find((p) => p.id === focusSeries) : null;
+        const mid = focus
+          ? `<b>${pct(focus.n)}</b><span>${esc(focus.label)}</span>`
+          : metric === 'cache'
+            ? `<b>${pct(sums.get('cached') || 0)}</b><span>cached</span>`
+            : `<b>${fmt(total)}</b><span>${metric === 'cost' ? 'total' : 'calls'}</span>`;
+        const html = `<svg viewBox="0 0 40 40" role="img" aria-label="Share of the range">${slices.join('')}${hits.join('')}</svg>` +
+          labels.join('') + `<div class="an-pie-mid">${mid}</div>`;
+        // Live calls re-render often. Rebuilding identical markup swapped the
+        // circle under the pointer, which dropped and re-fired hover: flicker.
+        if (host.dataset.sig === html) return;
+        host.dataset.sig = html;
+        host.innerHTML = html;
+        if (pieHover !== null) highlightSeries(pieHover);
       }
 
       function renderTable(top, total, dims, colour) {
@@ -2214,13 +2611,13 @@
             const tr = document.createElement('tr');
             const isHere = n.dim === 'thread' && hereThread && n.id === hereThread;
             const holdsHere = !isHere && n.dim === 'thread' && hereThread && n.id && childUnder(n.id, hereThread);
-            tr.className = 'an-row' + (n.kids ? ' kids' : '') + (level ? ' deep' : '') +
+            tr.className = 'an-row' + (n.kids && !opensAlways(n) ? ' kids' : '') + (level ? ' deep' : '') +
               (isHere ? ' here' : holdsHere ? ' holds-here' : '');
             tr.dataset.path = n.path;
             // A transparent swatch on uncoloured top rows keeps their names in line.
             tr.innerHTML = rowCells(n, level, level === 0 ? (colour.get(n.id) || 'transparent') : null, scale);
             tbody.appendChild(tr);
-            if (n.kids && expanded.has(n.path)) walk(childrenOf(n), level + 1, n.path);
+            if (n.kids && (opensAlways(n) || expanded.has(n.path))) walk(childrenOf(n), level + 1, n.path);
           }
           const rest = nodes.slice(limit);
           if (rest.length) {
@@ -2247,14 +2644,19 @@
 
       /** The cells after the name, cost and bar: calls, cached / cold, cache
        *  hit, context per call, and the token split. Shared by the total. */
-      function numberCells(u) {
+      function numberCells(u, sessionPeaks = null) {
         const cold = u.calls - u.cached_calls - u.uncounted;
         const cached = u.uncounted
           ? `<td class="num muted" data-tooltip-title="Not counted yet" data-tooltip="These calls come from a rollup that predates the count. The next rollup run adds it.">–</td>`
           : `<td class="num">${fmtInt(u.cached_calls)} <span class="muted">/ ${fmtInt(cold)}</span></td>`;
         const hit = u.in ? `${((u.cache_read / u.in) * 100).toFixed(0)}%` : '–';
-        const ctx = u.calls && u.in
-          ? `${fmtTok(u.in / u.calls)} <span class="muted">/ ${u.max_in ? fmtTok(u.max_in) : '–'}</span>` : '–';
+        // A thread with several sessions shows each session's peak, oldest
+        // first: one max over them would mix contexts.
+        const peak = sessionPeaks
+          ? `<span class="muted" data-tooltip-title="Peak per session" data-tooltip="${escAttr(sessionPeaks.map(([s, m]) =>
+              `${s ? `Session ${s}` : 'Before sessions'}: ${fmtTok(m)}`).join('\n'))}">/ ${sessionPeaks.map(([, m]) => fmtTok(m)).join(' · ')}</span>`
+          : `<span class="muted">/ ${u.max_in ? fmtTok(u.max_in) : '–'}</span>`;
+        const ctx = u.calls && u.in ? `${fmtTok(u.in / u.calls)} ${peak}` : '–';
         const fresh = Math.max(0, u.in - u.cache_read - u.cache_write);
         const toks = fresh + u.cache_read + u.cache_write + u.out;
         const parts = [[fresh, 'var(--accent-red)'], [u.cache_read, 'var(--accent-green)'],
@@ -2275,10 +2677,19 @@
 
       function rowCells(n, level, paint, scale) {
         const esc = lucidos.utils.escapeHtml;
-        const label = dimLabel(n.dim, n.id);
-        const twisty = n.kids ? (expanded.has(n.path) ? '▾' : '▸') : '';
+        const label = n.dim === 'session' ? sessionLabel(n)
+          : n.dim === 'keepalive' ? producerLabel(KEEP_ALIVE_TYPE) : dimLabel(n.dim, n.id);
+        const twisty = n.kids && !opensAlways(n) ? (expanded.has(n.path) ? '▾' : '▸') : '';
+        // A session's first and last call, over its whole life, not just the
+        // days picked: the cost is the range's, the span says when it ran.
+        const span = n.dim === 'session' ? sessionSpan(n.id) : null;
+        const spanTag = span
+          ? `<span class="an-span" data-tooltip-title="First and last call" data-tooltip="Over the session's whole life, keep-alive pings included.">${esc(spanLabel(span))}</span>` : '';
         const swatch = paint ? `<span class="swatch" style="background:${paint}"></span>` : '';
-        const subTag = n.sub ? '<span class="an-sub">sub</span> ' : '';
+        // A legacy successor thread folds in as a sub-row; it says so.
+        const subTag = !n.sub ? ''
+          : n.dim === 'thread' && !threadMeta.get(n.id)?.parent && predecessorOf(n.id)
+            ? '<span class="an-sub">successor thread</span> ' : '<span class="an-sub">sub</span> ';
         const subCount = n.subThreads ? `<span class="an-sub">+${n.subThreads} sub</span>` : '';
         const hereTag = n.dim === 'thread' && hereThread && n.id === hereThread ? '<span class="an-here">open now</span>' : '';
         const routed = n.dim === 'model' ? routedNote(n.u.routed_from, n.id)
@@ -2288,7 +2699,7 @@
           ? `<a class="an-link" href="#" data-thread="${escAttr(n.id)}">${esc(label)}</a>` : esc(label);
         // Thread titles run long and the cell truncates, so the full title is
         // a hover away.
-        const tip = n.dim === 'thread' ? ` data-tooltip="${escAttr(label)}"` : '';
+        const tip = n.dim === 'thread' || n.dim === 'session' ? ` data-tooltip="${escAttr(label)}"` : '';
         // An attribute value, so the attribute escape: a model id is whatever a
         // request body or a provider reply named, and a quote in it must not
         // close the attribute.
@@ -2299,10 +2710,10 @@
           : `<td class="money">${fmtMoney(n.cost)}</td>`;
         const w = scale.max > 0 ? ((scale.byCost ? (n.cost || 0) : n.u.calls) / scale.max) * 100 : 0;
         return `<td style="padding-left: calc(${level} * 1.25rem + var(--space-sm))"${tip}>` +
-            `<span class="tw">${twisty}</span>${swatch}${subTag}${name}${hereTag}${subCount}${routed}</td>` +
+            `<span class="tw">${twisty}</span>${swatch}${subTag}${name}${spanTag}${hereTag}${subCount}${routed}</td>` +
           costCell +
           `<td class="an-barc">${w > 0 ? `<span class="an-bar" style="width:${Math.max(w, 0.5).toFixed(2)}%"></span>` : ''}</td>` +
-          numberCells(n.u);
+          numberCells(n.u, n.sessionPeaks);
       }
 
       document.getElementById('an-chips').addEventListener('click', (e) => {
@@ -2344,6 +2755,12 @@
         for (const seg of document.querySelectorAll('#an-chart .an-seg')) {
           seg.classList.toggle('dim', si !== null && seg.dataset.si !== si);
         }
+        // With a filter on, the slices keep showing it once the hover ends.
+        const keep = focusSeries !== null ? String(chartSeriesIds.indexOf(focusSeries)) : null;
+        const want = si !== null ? si : keep;
+        for (const sl of document.querySelectorAll('#an-pie .an-slice, #an-pie .an-pie-pct')) {
+          sl.classList.toggle('dim', want !== null && sl.dataset.si !== want);
+        }
       };
       anLegend.addEventListener('pointerover', (e) => {
         const b = e.target.closest?.('.lg-item[data-si]');
@@ -2351,7 +2768,7 @@
       });
       anLegend.addEventListener('pointerout', (e) => {
         const b = e.target.closest?.('.lg-item[data-si]');
-        if (b && !b.contains(e.relatedTarget)) highlightSeries(null);
+        if (b && !e.relatedTarget?.closest?.('.lg-item[data-si]')) highlightSeries(null);
       });
       anLegend.addEventListener('focusin', (e) => {
         const b = e.target.closest?.('.lg-item[data-si]');
@@ -2369,6 +2786,29 @@
         render();
         // Keep the keyboard on the item that was pressed.
         anLegend.querySelector(`.lg-item[data-si="${b.dataset.si}"]`)?.focus({ preventScroll: true });
+      });
+
+      // The donut's slices hover and filter as the legend items do.
+      const anPie = document.getElementById('an-pie');
+      anPie.addEventListener('pointerover', (e) => {
+        const sl = e.target.closest?.('.an-hit[data-si]');
+        if (sl && sl.dataset.si !== pieHover) { pieHover = sl.dataset.si; highlightSeries(pieHover); }
+      });
+      // Reset only when the pointer leaves the donut itself. Slice to slice,
+      // or into the hole, keeps the last highlight instead of flashing every
+      // series back on in between.
+      anPie.addEventListener('pointerleave', () => { pieHover = null; highlightSeries(null); });
+      anPie.addEventListener('click', (e) => {
+        const sl = e.target.closest?.('.an-hit[data-si]');
+        if (!sl) return;
+        const id = chartSeriesIds[Number(sl.dataset.si)];
+        if (id === undefined) return;
+        // One series alone has nothing to filter against.
+        if (anPie.querySelectorAll('.an-slice').length < 2 && focusSeries === null) return;
+        focusSeries = focusSeries === id ? null : id;
+        expanded.clear();
+        showAll.clear();
+        render();
       });
 
       document.getElementById('an-metric').addEventListener('click', (e) => {
@@ -2397,6 +2837,169 @@
         if (!tr.classList.contains('kids')) return;
         const p = tr.dataset.path;
         if (expanded.has(p)) expanded.delete(p); else expanded.add(p);
+        render();
+      });
+
+      // ---- Handoffs -----------------------------------------------------------
+      // One row per handoff checkpoint, opening into its handoffs. The rollup
+      // writes handoffs.json whole each run: per handoff, token rows for the
+      // narrative turn and for the calls either side of the boundary, which
+      // are priced here at the card in force on the handoff's day.
+
+      const HANDOFFS = 'artifacts/token-cost/handoffs.json';
+      let handoffsDoc = null;
+      let handoffsState = 'idle';   // idle | loading | ready | missing
+      const handoffOpen = new Set();   // checkpoint groups opened by a click
+
+      async function loadHandoffs() {
+        if (handoffsState === 'loading') return;
+        handoffsState = 'loading';
+        try {
+          handoffsDoc = JSON.parse(await lucidos.data.read(HANDOFFS));
+          handoffsState = 'ready';
+        } catch (e) {
+          console.info('token-cost: no handoff file yet', e && e.message);
+          handoffsDoc = null;
+          handoffsState = 'missing';
+        }
+        render();
+      }
+
+      /** A handoff's token rows priced: cost, calls, and whether any part had
+       *  no card (that part is left out, as everywhere else). */
+      function priceRows(rows, fields, day) {
+        const out = { cost: 0, calls: 0, unpriced: false };
+        for (const [key, r] of Object.entries(rows || {})) {
+          const u = rowToU(r, fields);
+          const c = costOf(key.split('|')[1], u, u.long, day);
+          if (c === null) out.unpriced = true;
+          else { out.cost += c; out.calls += u.calls; }
+        }
+        return out;
+      }
+
+      /** One handoff, measured. `held` is whether the estimate's verdict
+       *  matched: pays and calls got cheaper, or no and they did not. */
+      function measureHandoff(h, fields) {
+        const before = priceRows(h.before, fields, h.day);
+        const after = priceRows(h.after, fields, h.day);
+        const narrative = h.narrative ? priceRows(h.narrative, fields, h.day) : null;
+        const perBefore = before.calls ? before.cost / before.calls : null;
+        const perAfter = after.calls ? after.cost / after.calls : null;
+        const change = perBefore && perAfter != null ? perAfter / perBefore - 1 : null;
+        const held = h.pays == null || change == null ? null : h.pays ? change < 0 : change >= 0;
+        return { h, before, after, narrative, perBefore, perAfter, change, held };
+      }
+
+      const meanOf = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+
+      /** A checkpoint group: each handoff weighs the same, so one long
+       *  session cannot speak for the rest. */
+      function handoffGroup(id, ms) {
+        // Warm by the recorded opening. A legacy successor thread recorded
+        // none, so its last turn shows on its own row but not in this mean.
+        const warm = ms.filter((m) => m.narrative && m.h.opening === 'narrative');
+        const perBefore = meanOf(ms.map((m) => m.perBefore).filter((x) => x != null));
+        const perAfter = meanOf(ms.map((m) => m.perAfter).filter((x) => x != null));
+        const judged = ms.filter((m) => m.held != null);
+        return {
+          id, ms, warm: warm.length, cold: ms.filter((m) => m.h.opening === 'brief').length,
+          legacy: ms.filter((m) => m.h.kind === 'thread').length,
+          narrative: meanOf(warm.map((m) => m.narrative.cost)),
+          perBefore, perAfter,
+          change: perBefore && perAfter != null ? perAfter / perBefore - 1 : null,
+          held: judged.filter((m) => m.held).length, judged: judged.length,
+        };
+      }
+
+      const fmtChange = (x) => (x == null ? '–' : `${x > 0 ? '+' : ''}${(x * 100).toFixed(0)}%`);
+      const moneyOr = (x) => (x == null ? '–' : fmtMoney(x));
+
+      /** "Claude Code · Opus 5.5 · high" for a producer|model|effort id. */
+      function implementerLabel(id) {
+        if (!id) return '';
+        const [producer, model, effort] = id.split('|');
+        return [producerLabel(producer), model && modelName(model), effort].filter(Boolean).join(' · ');
+      }
+
+      function renderHandoffs(days) {
+        const block = document.getElementById('handoff-block');
+        if (!block || !block.open) return;
+        const note = document.getElementById('ho-note');
+        const body = document.getElementById('ho-body');
+        if (handoffsState === 'idle') loadHandoffs();
+        if (handoffsState !== 'ready') {
+          note.hidden = false;
+          note.textContent = handoffsState === 'missing'
+            ? 'There is no handoff file yet. The next hourly rollup writes it.'
+            : 'Loading the handoffs…';
+          body.innerHTML = '';
+          return;
+        }
+        note.hidden = true;
+        const esc = lucidos.utils.escapeHtml;
+        const fields = handoffsDoc.fields || [];
+        const titles = handoffsDoc.threads || {};
+        const inRange = new Set(days);
+        const by = new Map();
+        for (const h of handoffsDoc.handoffs || []) {
+          if (!inRange.has(h.day)) continue;
+          const id = h.checkpoint || '';
+          if (!by.has(id)) by.set(id, []);
+          by.get(id).push(measureHandoff(h, fields));
+        }
+        const groups = [...by].map(([id, ms]) => handoffGroup(id, ms)).sort((a, b) => b.ms.length - a.ms.length);
+        if (!groups.length) {
+          body.innerHTML = '<tr><td colspan="7"><div class="empty-state">No handoffs in this range.</div></td></tr>';
+          return;
+        }
+        const cell = (x) => `<td class="num">${x}</td>`;
+        let html = '';
+        for (const g of groups) {
+          const open = handoffOpen.has(g.id);
+          const kinds = [g.warm && `${g.warm} warm`, g.cold && `${g.cold} cold`, g.legacy && `${g.legacy} successor thread${g.legacy === 1 ? '' : 's'}`]
+            .filter(Boolean).join(' · ');
+          html += `<tr class="an-row kids" data-ho="${escAttr(g.id)}">` +
+            `<td><span class="tw">${open ? '▾' : '▸'}</span>${esc(g.id || 'No checkpoint')}</td>` +
+            `<td class="num">${fmtInt(g.ms.length)}${kinds ? ` <span class="muted">${esc(kinds)}</span>` : ''}</td>` +
+            cell(moneyOr(g.narrative)) + cell(moneyOr(g.perBefore)) + cell(moneyOr(g.perAfter)) +
+            cell(fmtChange(g.change)) + cell(g.judged ? `${g.held} of ${g.judged}` : '–') + '</tr>';
+          if (!open) continue;
+          for (const m of g.ms.slice().sort((a, b) => (b.h.at || '').localeCompare(a.h.at || ''))) {
+            const h = m.h;
+            const title = titles[h.thread] || threadMeta.get(h.thread)?.title || 'Untitled thread';
+            const step = h.kind === 'thread'
+              ? 'successor thread'
+              : `session ${h.from_session} → ${h.to_session}`;
+            const from = implementerLabel(h.from), to = implementerLabel(h.to);
+            const ran = from && to && from !== to ? ` · ${from} → ${to}` : '';
+            const opening = h.opening === 'brief' ? 'cold' : h.opening === 'narrative' ? 'warm' : 'opening not recorded';
+            const verdict = h.pays == null ? '–'
+              : `${h.pays ? 'pays' : 'does not pay'}${m.held == null ? '' : m.held ? ' · held' : ' · missed'}`;
+            html += `<tr class="an-row deep">` +
+              `<td style="padding-left: calc(1.25rem + var(--space-sm))" data-tooltip="${escAttr(title)}">` +
+              `<a class="an-link" href="#" data-thread="${escAttr(h.to_thread || h.thread)}">${esc(title)}</a>` +
+              ` <span class="an-sub">${esc(step)}</span><span class="muted">${esc(ran)}</span></td>` +
+              `<td class="num">${esc(h.day)}${h.progress ? ` <span class="muted">${esc(h.progress)}</span>` : ''} <span class="muted">${opening}</span></td>` +
+              cell(m.narrative ? fmtMoney(m.narrative.cost) : '–') + cell(moneyOr(m.perBefore)) + cell(moneyOr(m.perAfter)) +
+              cell(fmtChange(m.change)) + cell(esc(verdict)) + '</tr>';
+          }
+        }
+        body.innerHTML = html;
+      }
+
+      document.getElementById('handoff-block').addEventListener('toggle', () => render());
+      document.getElementById('ho-body').addEventListener('click', (e) => {
+        const link = e.target.closest?.('[data-thread]');
+        if (link) {
+          e.preventDefault();
+          lucidos.ui.navigate('thread', { id: link.dataset.thread });
+          return;
+        }
+        const tr = e.target.closest?.('[data-ho]');
+        if (!tr) return;
+        const id = tr.dataset.ho;
+        if (handoffOpen.has(id)) handoffOpen.delete(id); else handoffOpen.add(id);
         render();
       });
 
@@ -2482,6 +3085,9 @@
           // Kept on the call, because the frame collapse is per thread and is
           // now computed from the stored rows rather than at arrival.
           thread: ev.thread_id || '',
+          // The thread's agent session, counted from 1. Absent on a call
+          // from before the engine stamped it.
+          session: p.session == null ? '' : String(p.session),
           in: u.input_tokens || 0,
           cache_read: u.cache_read_tokens || 0,
           cache_write: u.cache_creation_tokens || 0,
@@ -2656,6 +3262,7 @@
       }
 
       async function catchUp(opts = {}) {
+        if (!firstPaintDone && !opts.initial) return;
         if (catchUpInFlight) return;
         catchUpInFlight = true;
         try {
@@ -2860,14 +3467,43 @@
         const cursor = daily.last_sequence || 0;
         live = live.filter((c) => c.seq == null || c.seq > cursor);
         seenSeq = new Set(live.map((c) => c.seq).filter((s) => s != null));
+        // Files the live agent calls by origin, as the rollup filed the rest.
+        noteThreadOrigins(daily.thread_origins);
         liveRevision++;
         await labelsReady;
         syncProducerFilter();
         syncCurrencyFilter();
         renderSettings();
+        // FIRST LOAD: fetch the unrolled tail BEFORE the first paint. Painting
+        // the rollup alone showed a total that was short by every call since
+        // the rollup last ran (up to an hour of spend), and then jumped up a
+        // few seconds later when the catch-up landed. A number that is wrong
+        // and then corrects itself reads as a bug, and it was one: the first
+        // figure on screen was never the real total.
+        //
+        // Capped, so a slow or failing event query can never keep the
+        // dashboard dark: past the cap it paints the rollup and the catch-up
+        // finishes behind it, as before. Later loads (a rollup rewrite) keep
+        // the old order, since the live tail is already held and the totals
+        // on screen stay consistent across the swap.
+        if (!firstPaintDone) {
+          // Past the cap the first paint is the rollup alone, so the total is
+          // short. Mark it stale (muted figure, "catching up" note) until the
+          // tail lands, so a low number never passes as the real one.
+          let tailSettled = false;
+          const tail = catchUp({ initial: true }).finally(() => { tailSettled = true; });
+          await Promise.race([tail, new Promise((r) => setTimeout(r, FIRST_PAINT_CAP_MS))]);
+          tailPending = !tailSettled;
+          firstPaintDone = true;
+          render();
+          try {
+            await tail;
+          } finally {
+            if (tailPending) { tailPending = false; render(); }
+          }
+          return;
+        }
         render();
-        // After the paint, never before it: the rollup is the bulk of the
-        // numbers and should be on screen while the recent tail is fetched.
         await catchUp({ initial: true });
       }
 
@@ -3112,12 +3748,20 @@
         for (const day of Object.values(daily.days || {})) {
           for (const key of Object.keys(day)) seen.add(key.split('|')[0]);
         }
-        for (const c of live) seen.add(c.producer);
+        // Counted, so a live agent call is listed under its origin.
+        for (const c of countedLive()) seen.add(c.producer);
         const ids = [...seen].sort();
         const options = [{ value: 'all', label: 'All producers' }];
-        // The group sits before its members, and only when the data has any.
+        // A group sits before its members, and only when the data has any.
+        // The agent's only when it has two origins, or it would repeat its one.
         if (ids.some((pid) => producerMatches(AUX_ALL, pid))) options.push({ value: AUX_ALL, label: 'Auxiliary (all)' });
-        for (const pid of ids) options.push({ value: pid, label: producerLabel(pid) });
+        const agentIds = ids.filter((pid) => typeParent(pid) === AGENT);
+        if (agentIds.length > 1) options.push({ value: AGENT_ALL, label: `${producerLabel(AGENT)} (all)` });
+        for (const pid of ids) {
+          // "Chat" alone could be anything; the agent's origins carry its name.
+          const label = typeParent(pid) === AGENT ? `${producerLabel(AGENT)} · ${dimLabel('subtype', pid)}` : producerLabel(pid);
+          options.push({ value: pid, label });
+        }
 
         if (!producerSelect) {
           producerSelect = lucidos.ui.Select.create({
@@ -4159,19 +4803,9 @@
         if (e.key === 'Escape' && !calPop.hidden) { closeCal(); dateBtn.focus(); }
       });
 
-      document.getElementById('btn-refresh').addEventListener('click', async () => {
-        // Nothing can be unsaved for long, but a write may still be sitting in
-        // the debounce, so land it before pulling the file back off disk.
-        await flushSave();
-        // A save that is still unsaved (it failed, or it is asking about a
-        // newer file) keeps its draft rather than dropping it here.
-        if (!dirty) {
-          draft = null;
-          setSaveState('', 'muted');
-        }
-        await load();
-        lucidos.ui.toast('Reloaded', 'success');
-      });
+      // No Refresh button: the live stream, DataFileWritten reloads, the
+      // catch-up interval and the visibility/pageshow reconcile below already
+      // keep every figure current, so a manual reload had nothing left to do.
 
       lucidos.sse.connect();
       sseOpenedAt = Date.now();
@@ -4189,6 +4823,10 @@
         else if (path.includes('token-cost/threads-daily.json')) {
           // Re-read only if it was read at all; otherwise the next Thread pick does.
           if (threadsState !== 'idle') { threadsState = 'idle'; if (groups.includes('thread')) loadThreadsDaily(); }
+        }
+        else if (path.includes('token-cost/handoffs.json')) {
+          // Re-read only if it was read at all; otherwise opening the block does.
+          if (handoffsState !== 'idle') { handoffsState = 'idle'; render(); }
         }
         else if (path.endsWith(OVERRIDE)) onFileWritten(OVERRIDE);
         else if (path.endsWith(SETTINGS)) onFileWritten(SETTINGS);
@@ -4240,50 +4878,6 @@
         if (lastSseAt && performance.now() - lastSseAt > CATCHUP_MS) catchUp();
       });
 
-      // ---- Tooltip ----------------------------------------------------------
-      // Mirrors the host's global tooltip: same attributes, same box, same
-      // prefer-above-then-flip placement. Delegated from the document so it
-      // covers bars that are rebuilt on every render.
-      (function tooltips() {
-        const tip = document.createElement('div');
-        tip.id = 'tip';
-        const title = document.createElement('div');
-        title.id = 'tip-title';
-        const body = document.createElement('div');
-        tip.appendChild(title);
-        tip.appendChild(body);
-        document.body.appendChild(tip);
-        const GAP = 8;
-
-        function hide() { tip.style.opacity = '0'; tip.style.display = 'none'; }
-
-        function show(el) {
-          const text = el.getAttribute('data-tooltip');
-          if (!text) return;
-          title.textContent = el.getAttribute('data-tooltip-title') || '';
-          body.textContent = text;
-          tip.style.display = 'block';
-          const t = el.getBoundingClientRect();
-          const r = tip.getBoundingClientRect();
-          // Prefer above the element's own border, so the box never covers the
-          // bar being read and never drifts with the pointer inside it.
-          let top = t.top - r.height - GAP;
-          if (top < GAP) top = t.bottom + GAP;
-          let left = t.left + t.width / 2 - r.width / 2;
-          left = Math.max(GAP, Math.min(left, window.innerWidth - r.width - GAP));
-          tip.style.top = `${top}px`;
-          tip.style.left = `${left}px`;
-          tip.style.opacity = '1';
-        }
-
-        document.addEventListener('mouseover', (e) => {
-          const el = e.target.closest?.('[data-tooltip]');
-          if (el) show(el); else hide();
-        });
-        document.addEventListener('mouseleave', hide, true);
-        window.addEventListener('scroll', hide, true);
-        window.addEventListener('blur', hide);
-      })();
     </script>
   </body>
 </html>

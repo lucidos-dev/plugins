@@ -50,12 +50,13 @@ import sys
 sql = sys.argv[-1]
 if "max(sequence)" in sql: print("100")
 elif "json_agg(t)" in sql: print(open(sys.argv[0] + ".rows").read())
+elif "parent_thread_id IS NOT NULL" in sql: print("")
 elif "thread_summaries" in sql: print('{{"t1": "Thread one", "t2": "Thread two"}}')
 else: print("{{}}")
 '''
 
 
-def snapshot(with_legacy):
+def snapshot(with_legacy, rows=ROWS):
     root = pathlib.Path(tempfile.mkdtemp(prefix="tc-snapshot-"))
     (root / "data" / "artifacts" / "token-cost").mkdir(parents=True)
     (root / ".lucidos" / "tmp").mkdir(parents=True)
@@ -66,7 +67,7 @@ def snapshot(with_legacy):
     bin_dir.mkdir()
     (bin_dir / "lucidos").write_text(f'#!/bin/sh\nexec "{sys.executable}" -I "{HERE / "fake_lucidos.py"}" "$@"\n')
     (bin_dir / "psql").write_text(FAKE_PSQL)
-    (bin_dir / "psql.rows").write_text(json.dumps(ROWS))
+    (bin_dir / "psql.rows").write_text(json.dumps(rows))
     for f in ("lucidos", "psql"):
         (bin_dir / f).chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "LUCIDOS_WORKSPACE": str(root),
@@ -108,6 +109,15 @@ check("2 the widget gets the moved rate", out["rates"].get("gemini-3-flash-previ
 check("2 only the model priced nowhere is left out",
       (out.get("unpriced_calls"), out.get("unpriced_models")), (1, {"mystery-model-1": 1}))
 check("2 thread two still says so", thread(out, "t2").get("unpriced"), 1)
+
+# Session totals and the lightweight head are emitted together, with no
+# tradeoff between session rows and the plugin's unpriced-call warning.
+rows = [{**r, "sess": n + 1} for n, r in enumerate(ROWS)]
+p, out = snapshot(with_legacy=True, rows=rows)
+check("3 sessions sum to the thread's priced total",
+      round(sum(s[1] for s in thread(out, "t1")["sessions"]), 2), thread(out, "t1")["all"])
+check("3 each session keeps its ordinal", [s[0] for s in thread(out, "t1")["sessions"]], [1, 2])
+check("3 unpriced session keeps its warning", thread(out, "t2").get("unpriced"), 1)
 
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

@@ -340,6 +340,8 @@ def run_main(head):
             return "0"
         if sql == rollup.PROXY_CUTOVER_SQL:
             return ""
+        if sql == rollup.ORIGIN_SQL:
+            return "{}"
         return "[]"
 
     class Done:
@@ -367,8 +369,14 @@ check("the rollup, the voice pass and the row count all ran", len(reads), 3)
 check("each stops at the cursor", all("sequence <= 4242" in q for q in reads), True)
 check("no placeholder is left in any query", any("%(" in q for q in asked), False)
 check("the cursor written is that same ceiling", written and written[0]["last_sequence"], 4242)
-check("the thread file is written second", len(written), 2)
+check("the thread file is written second, the handoff file third", len(written), 3)
 check("the thread file carries the same cursor", written[1]["last_sequence"], 4242)
+check("the handoff file carries the window, the fields and the thread titles",
+      (written[2].get("window"), written[2].get("fields") == list(rollup.THREAD_FIELDS), "threads" in written[2]),
+      (rollup.HANDOFF_WINDOW, True, True))
+check("the handoff reads stop at the cursor too",
+      [q for q in asked if "parent_tool_use_id" in q] != []
+      and all("sequence <= 4242" in q for q in asked if "parent_tool_use_id" in q), True)
 
 # 16. A Flex call is summed apart, never also as a long call, and a file
 # from before the Flex bucket is rebuilt once.
@@ -537,6 +545,305 @@ finally:
     rollup.WS, rollup.PRICE_TABLE = real_ws, real_table
     os.environ.clear()
     os.environ.update(saved_env)
+
+# 21. A Lucidos Agent call is filed by the origin of the thread it ran in:
+# main_llm:chat, main_llm:trigger, main_llm:other, or bare main_llm when the
+# summaries cannot say. The rule reads thread_summaries; a sub-thread takes its
+# root's origin. Nothing unknown is guessed as chat.
+SUMMARIES = {
+    # thread: [source, initiator, trigger_id, parent, active in the export window]
+    "trig": ["trigger", "system", "t-1", None, True],
+    "trig-in-chat": ["chat", "system", "t-2", None, True],
+    "chat": ["chat", "user", None, None, True],
+    "sys": ["chat", "system", None, None, True],
+    "kid-of-trig": ["chat", "system", None, "trig", True],
+    "grandkid": ["chat", "system", None, "kid-of-trig", True],
+    "kid-of-chat": ["chat", "system", None, "chat", False],
+    "orphan": ["chat", "user", None, "gone", True],
+    "loop-a": ["chat", "user", None, "loop-b", True],
+    "loop-b": ["chat", "user", None, "loop-a", True],
+    "blank-trigger": ["chat", "user", "", None, True],
+    "old-chat": ["chat", "user", None, None, False],
+}
+origins = rollup.classify_origins(SUMMARIES)
+check("a thread a trigger opened is trigger", (origins["trig"], origins["trig-in-chat"]), ("trigger", "trigger"))
+check("a thread a person started is chat", origins["chat"], "chat")
+check("a system-started thread with no trigger or parent is other", origins["sys"], "other")
+check("a sub-thread inherits its root", (origins["kid-of-trig"], origins["grandkid"], origins["kid-of-chat"]),
+      ("trigger", "trigger", "chat"))
+check("a sub-thread whose parent is gone is unknown", "orphan" in origins, False)
+check("a parent cycle is unknown, and terminates", ("loop-a" in origins, "loop-b" in origins), (False, False))
+check("an empty trigger id is no trigger", origins["blank-trigger"], "chat")
+check("a thread the summaries lost is unknown", "gone" in origins, False)
+
+check("an agent call takes its thread's origin", rollup.agent_producer("main_llm", "trig", origins), "main_llm:trigger")
+check("chat", rollup.agent_producer("main_llm", "chat", origins), "main_llm:chat")
+check("an unknown thread keeps the bare id", rollup.agent_producer("main_llm", "gone", origins), "main_llm")
+check("a call with no thread keeps the bare id", rollup.agent_producer("main_llm", "", origins), "main_llm")
+check("an auxiliary call is never split by origin",
+      rollup.agent_producer("auxiliary:title", "trig", origins), "auxiliary:title")
+check("nor is Claude Code", rollup.agent_producer("claude_code", "chat", origins), "claude_code")
+check("nor a keep-alive ping", rollup.agent_producer("cache_keep_alive", "chat", origins), "cache_keep_alive")
+check("the origin query reads the projection", "FROM thread_summaries" in rollup.ORIGIN_SQL, True)
+check("a file from before the origin split is rebuilt",
+      rollup.needs_rebuild({"rollup_version": 12}, {}) is not None, True)
+
+
+def qrow(thread, producer, calls, tokens, hour=9, model="gpt-5.5", session=None):
+    """One row of ROLLUP_SQL's output."""
+    z = {k: 0 for k in ("cached_calls", "cache_read", "cache_write", "out_tok", "b1", "b2", "b3", "b4", "b5",
+                        "long_in", "long_out", "long_cr", "long_cw", "flex_in", "flex_out", "flex_cr", "flex_cw")}
+    return {**z, "day": "2026-10-10", "hour": hour, "producer": producer, "model": model, "asked": None,
+            "effort": "", "thread": thread, "session": session, "calls": calls, "total_in": tokens,
+            "b0": calls, "max_in": tokens}
+
+
+def run_origin_main(rows, secs, summaries):
+    asked, written = [], []
+
+    def fake_psql(sql):
+        asked.append(sql)
+        if "max(sequence)" in sql and "string_agg" in sql:
+            return "5000|2026-10-10"
+        if sql.startswith("SELECT count(*)"):
+            return str(sum(r["calls"] for r in rows))
+        if sql == rollup.PROXY_CUTOVER_SQL:
+            return ""
+        if sql == rollup.ORIGIN_SQL:
+            if isinstance(summaries, Exception):
+                sys.exit("psql failed: relation thread_summaries is unreadable")
+            return json.dumps(summaries)
+        if sql == rollup.THREAD_META_SQL:
+            return "{}"
+        if "duration_secs" in sql:
+            return json.dumps(secs)
+        if "FROM events c" in sql and "GROUP BY" in sql:
+            return json.dumps(rows)
+        return "[]"
+
+    class Done:
+        returncode, stderr = 0, ""
+
+    def fake_run(cmd, **kw):
+        written.append(json.loads(kw["input"]))
+        return Done()
+
+    real = rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS
+    tmp = pathlib.Path(tempfile.mkdtemp())
+    rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS = (
+        fake_psql, fake_run, tmp / "daily.json", tmp / "threads-daily.json", tmp)
+    try:
+        rollup.main()
+        exited = None
+    except SystemExit as e:
+        exited = str(e)
+    finally:
+        rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS = real
+    return asked, written, exited
+
+
+ROWS = [
+    qrow("chat", "main_llm", 3, 3000),
+    qrow("trig", "main_llm", 5, 5000),
+    qrow("kid-of-trig", "main_llm", 1, 100, hour=10),
+    qrow("sys", "main_llm", 2, 200),
+    qrow("gone", "main_llm", 7, 700),
+    qrow("trig", "auxiliary:title", 4, 400),
+    qrow("chat", "claude_code", 6, 600),
+]
+SECS = [{"day": "2026-10-10", "hour": 9, "producer": "main_llm", "model": "gpt-5.5", "thread": "trig", "seconds": 30}]
+asked, written, exited = run_origin_main(ROWS, SECS, SUMMARIES)
+check("the run with origins completes", exited, None)
+day = written[0]["days"]["2026-10-10"] if written else {}
+check("the day holds one key per origin, auxiliary and Claude Code apart", sorted(day), sorted([
+    "main_llm:chat|gpt-5.5", "main_llm:trigger|gpt-5.5", "main_llm:other|gpt-5.5", "main_llm|gpt-5.5",
+    "auxiliary:title|gpt-5.5", "claude_code|gpt-5.5"]))
+check("chat calls", day.get("main_llm:chat|gpt-5.5", {}).get("calls"), 3)
+check("trigger calls, its sub-thread included", day.get("main_llm:trigger|gpt-5.5", {}).get("calls"), 6)
+check("a thread with no summary is the bare id", day.get("main_llm|gpt-5.5", {}).get("calls"), 7)
+check("voice seconds land on the row their tokens are in", day.get("main_llm:trigger|gpt-5.5", {}).get("seconds"), 30)
+check("calls are conserved across the split", sum(b["calls"] for b in day.values()), sum(r["calls"] for r in ROWS))
+check("tokens are conserved across the split", sum(b["in"] for b in day.values()), sum(r["total_in"] for r in ROWS))
+hrs = written[0]["hours"]["2026-10-10"] if written else {}
+check("the hours carry the same keys", sorted({k for h in hrs.values() for k in h}), sorted(day))
+check("and the same calls", sum(b["calls"] for h in hrs.values() for b in h.values()), sum(r["calls"] for r in ROWS))
+tdays = written[1]["days"]["2026-10-10"] if len(written) > 1 else {}
+check("the thread file files by origin too", sorted(tdays.get("trig", {})),
+      ["auxiliary:title|gpt-5.5", "main_llm:trigger|gpt-5.5"])
+check("the thread file sums to the same calls",
+      sum(r[0] for keys in tdays.values() for r in keys.values()), sum(r["calls"] for r in ROWS))
+exported = written[0].get("thread_origins", {}) if written else {}
+check("daily.json carries the origins of recently active threads", exported, {
+    "chat": ["blank-trigger", "chat"],
+    "other": ["sys"],
+    "trigger": ["grandkid", "kid-of-trig", "trig", "trig-in-chat"]})
+check("a thread outside the window is not exported", "old-chat" in exported.get("chat", []), False)
+check("the format note names the origin ids", "main_llm:<origin>" in written[0].get("note", ""), True)
+
+asked, written, exited = run_origin_main(ROWS, SECS, RuntimeError("no summaries"))
+check("an unreadable projection stops the run", exited is not None, True)
+check("and writes nothing, rather than filing every agent call as unknown", written, [])
+
+
+# 22. Agent sessions. A thread can hold several sessions (a handoff starts a
+# successor session in the same thread), each on its own backend and model.
+# The thread file keys each one `<thread>@<session>`, and the frame dedupe
+# never compares the last call of one session with the first of the next.
+check("a call naming its session is keyed thread@session", rollup.thread_slot("t", "2"), "t@2")
+check("a call from before sessions keeps the bare thread", rollup.thread_slot("t", None), "t")
+check("Jev has no thread and no session", rollup.thread_slot("", "1"), "")
+check("a slot gives back its thread", (rollup.slot_thread("t@2"), rollup.slot_thread("t")), ("t", "t"))
+check("the dedupe partitions by thread and session",
+      "PARTITION BY thread_id, payload->>'session' ORDER BY sequence" in rollup.ROLLUP_SQL, True)
+check("the rollup groups by session", "payload->>'session' AS session" in rollup.ROLLUP_SQL, True)
+check("voice seconds take the session of their own thread's call",
+      "CASE WHEN c.thread_id = e.thread_id THEN c.session END" in rollup.SECONDS_SQL, True)
+check("a file from before sessions is rebuilt",
+      rollup.needs_rebuild({"rollup_version": 13}, {}) is not None, True)
+
+# A two-session thread: Claude Code in session 1, Codex in session 2.
+TWO = [
+    qrow("chat", "claude_code", 4, 4000, model="claude-opus-5-5", session="1"),
+    qrow("chat", "codex", 3, 900, hour=10, model="gpt-5.5", session="2"),
+    qrow("chat", "main_llm", 2, 200, session=None),
+]
+asked, written, exited = run_origin_main(TWO, [], SUMMARIES)
+check("the two-session run completes", exited, None)
+tdays = written[1]["days"]["2026-10-10"] if len(written) > 1 else {}
+check("the thread file holds one slot per session", sorted(tdays), ["chat", "chat@1", "chat@2"])
+check("session 1 holds Claude Code", sorted(tdays.get("chat@1", {})), ["claude_code|claude-opus-5-5"])
+check("session 2 holds Codex", sorted(tdays.get("chat@2", {})), ["codex|gpt-5.5"])
+check("the sessions keep their own peak",
+      (tdays["chat@1"]["claude_code|claude-opus-5-5"][7], tdays["chat@2"]["codex|gpt-5.5"][7]), (4000, 900))
+check("the sessions sum to the day's calls",
+      sum(r[0] for keys in tdays.values() for r in keys.values()),
+      sum(b["calls"] for b in written[0]["days"]["2026-10-10"].values()))
+thrs = written[1]["hours"]["2026-10-10"] if len(written) > 1 else {}
+check("the hours split by session too", sorted(thrs.get("10", {})), ["chat@2"])
+check("the format note names the slot", "<thread>@<session>" in written[1].get("note", ""), True)
+
+
+# 23. A legacy successor chain keeps its link, so the app folds it into one row.
+def meta_with(doc, tids):
+    real = rollup.psql
+    rollup.psql = lambda sql: json.dumps(doc)
+    try:
+        return rollup.thread_meta(tids)
+    finally:
+        rollup.psql = real
+
+
+meta = meta_with({"first": ["Build", None, None], "second": ["Build (2)", None, "first"],
+                  "kid": ["Sub", "second", None]}, {"kid@1", "second@3"})
+check("a successor thread names its predecessor", meta.get("second"), ["Build (2)", None, "first"])
+check("and the predecessor comes along", meta.get("first"), ["Build"])
+check("a sub-thread keeps its parent", meta.get("kid"), ["Sub", "second"])
+check("the meta query reads successor_of", "successor_of" in rollup.THREAD_META_SQL, True)
+
+
+# 24. Handoffs. A warm handoff (narrative) has a narrative turn, a cold one
+# (brief) has none. Before and after are the windows either side.
+def ev(seq, type_, thread="t", **kw):
+    return {"thread": thread, "seq": seq, "type": type_, "day": "2026-10-23",
+            "at": f"2026-10-23T10:{seq % 60:02d}:00Z", **kw}
+
+
+def call(seq, session, thread="t", producer="claude_code", model="claude-opus-5-5", tokens=1000, **kw):
+    return {"thread": thread, "seq": seq, "session": session, "producer": producer, "model": model,
+            "effort": "medium", "in_tok": tokens, "cr": tokens // 2, "cw": 0, "out_tok": 10, **kw}
+
+
+EVENTS = [
+    ev(1, "SessionStarted", continuity="first", coding_agent="claude-code"),
+    ev(10, "CodingAgentIdled"),
+    ev(20, "HandoffCheckpointReached", checkpoint="phase-commit", progress="2/5", pays="true"),
+    ev(24, "SessionHandedOff", opening="narrative", checkpoint="phase-commit", progress="2/5"),
+    ev(25, "CodingAgentIdled"),
+    ev(26, "SessionStarted", continuity="handoff", opening="narrative", checkpoint="phase-commit",
+       progress="2/5", coding_agent="codex"),
+    ev(40, "SessionHandedOff", opening="brief"),
+    ev(41, "SessionStarted", continuity="handoff", opening="brief", coding_agent="claude-code"),
+]
+CALLS = ([call(s, "1", tokens=100000 + s) for s in range(2, 20)]
+         + [call(21, "1", tokens=150000), call(22, "1", tokens=151000), call(23, "1", tokens=152000)]
+         + [call(s, "2", producer="codex", model="gpt-5.5", tokens=20000) for s in range(27, 40)]
+         + [call(s, "3", tokens=5000) for s in range(42, 70)])
+hs = rollup.build_handoffs(EVENTS, CALLS)
+check("two handoffs in one thread", [(h["from_session"], h["to_session"]) for h in hs], [(1, 2), (2, 3)])
+warm, cold = hs
+check("a warm handoff stays in its thread", (warm["kind"], warm["thread"], warm["to_thread"]), ("session", "t", "t"))
+check("its narrative turn is the calls after the checkpoint",
+      warm["narrative"]["claude_code|claude-opus-5-5|medium"][0], 3)
+check("before is the last calls ahead of the narrative turn",
+      warm["before"]["claude_code|claude-opus-5-5|medium"][0], 18)
+check("after is the new session's first calls, on its own backend",
+      sorted(warm["after"]), ["codex|gpt-5.5|medium"])
+check("the implementers either side",
+      (warm["from"], warm["to"]), ("claude_code|claude-opus-5-5|medium", "codex|gpt-5.5|medium"))
+check("the checkpoint, its progress and the estimate's verdict",
+      (warm["checkpoint"], warm["progress"], warm["pays"]), ("phase-commit", "2/5", True))
+check("a cold handoff has no narrative turn", (cold["opening"], cold["narrative"]), ("brief", None))
+check("its before window is the old session's last calls",
+      cold["before"]["codex|gpt-5.5|medium"][0], 13)
+check("the after window stops at the window size",
+      cold["after"]["claude_code|claude-opus-5-5|medium"][0], rollup.HANDOFF_WINDOW)
+check("a handoff with no checkpoint borrows no reading from an earlier session",
+      (cold["checkpoint"], cold["pays"]), (None, None))
+
+# A resume opens no session, so the ordinal skips it.
+RESUMED = [ev(1, "SessionStarted", continuity="first"), ev(5, "SessionStarted", continuity="resumed"),
+           ev(8, "SessionStarted", continuity="fresh"), ev(12, "SessionStarted", continuity="handoff", opening="brief")]
+hs = rollup.build_handoffs(RESUMED, [call(9, "2"), call(13, "3")])
+check("a resume stays in its session, a fresh start opens the next",
+      [(h["from_session"], h["to_session"]) for h in hs], [(2, 3)])
+
+# A legacy successor thread: the old thread's last session against the new thread's first.
+LEGACY = [ev(5, "CodingAgentIdled", thread="old"),
+          ev(9, "SuccessorThreadSpawned", thread="old", successor="new")]
+hs = rollup.build_handoffs(LEGACY, [call(3, None, thread="old"), call(6, None, thread="old"),
+                                    call(7, None, thread="old"), call(20, None, thread="new")])
+check("a legacy successor thread is a handoff of kind thread",
+      [(h["kind"], h["thread"], h["to_thread"], h["opening"]) for h in hs], [("thread", "old", "new", None)])
+check("its last turn is measured as the narrative turn",
+      sum(r[0] for r in hs[0]["narrative"].values()), 2)
+check("and the new thread's first calls are after", sum(r[0] for r in hs[0]["after"].values()), 1)
+
+# A long call keeps its tokens in `long`, as the app prices it.
+row = rollup.call_bundles([call(1, "1", tokens=300000, long=True)])["claude_code|claude-opus-5-5|medium"]
+fields = list(rollup.THREAD_FIELDS)
+check("a long call's prompt lands in long.in", row[fields.index("long.in")], 300000)
+check("the handoff calls exclude sub-agents and keep-alives",
+      "parent_tool_use_id' IS NULL" in rollup.HANDOFF_CALLS_SQL and "NOT (c.payload->>'producer'" in rollup.HANDOFF_CALLS_SQL,
+      True)
+
+# Session spans: the calls since the cursor fold into the spans on file.
+def spans_with(reply, old, since=10, max_seq=20):
+    asked = []
+    real = rollup.psql
+    def fake(sql):
+        asked.append(sql)
+        if isinstance(reply, Exception):
+            sys.exit("psql failed")
+        return json.dumps(reply)
+    rollup.psql = fake
+    try:
+        return rollup.session_spans(old, since, max_seq), asked
+    finally:
+        rollup.psql = real
+
+OLD = {"t@1": ["2026-10-20T08:00:00Z", "2026-10-20T09:00:00Z"], "t@2": ["2026-10-21T08:00:00Z", "2026-10-21T08:30:00Z"]}
+spans, asked = spans_with({"t@2": ["2026-10-22T10:00:00Z", "2026-10-22T11:00:00Z"],
+                           "u": ["2026-10-22T07:00:00Z", "2026-10-22T07:05:00Z"]}, OLD)
+check("a session that called again keeps its first call and moves its last",
+      spans["t@2"], ["2026-10-21T08:00:00Z", "2026-10-22T11:00:00Z"])
+check("a session with no new call keeps its span", spans["t@1"], OLD["t@1"])
+check("a new slot gets its own span", spans["u"], ["2026-10-22T07:00:00Z", "2026-10-22T07:05:00Z"])
+check("the span query reads only above the cursor, up to the ceiling",
+      "sequence > 10 AND sequence <= 20" in asked[0], True)
+spans, _ = spans_with(RuntimeError(), OLD)
+check("a failed read keeps the spans on file", spans, OLD)
+check("the thread file writes one span per line",
+      sum(1 for line in rollup.dumps_by_day({"sessions": OLD}).splitlines() if line.startswith('"t@')), 2)
 
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

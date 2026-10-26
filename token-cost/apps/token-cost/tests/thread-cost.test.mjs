@@ -77,7 +77,7 @@ async function boot(table, snap, focus = 't1') {
     sse: { connect() {}, on() {} },
     params: () => ({}),
   };
-  new Function(src + ';globalThis.__w = { fold, render, threadCost };')();
+  new Function(src + ';globalThis.__w = { fold, render, threadCost, find, sessionRows };')();
   await settle();
   return globalThis.__w;
 }
@@ -118,6 +118,30 @@ console.log('\n4. one unpriced call reads in the singular');
 {
   await boot(shippedTable, snapshot({ unpriced: 1 }));
   ok(getEl('unpriced').textContent === 'Not included: 1 unpriced call', getEl('unpriced').textContent);
+}
+
+console.log('\n5. compact rows retain unpriced counts beside sessions');
+{
+  const snap = snapshot({ restUnpriced: 2 });
+  snap.rest.t9.push([[1, 1, 'claude-opus-5-5', 'claude_code']]);
+  const w = await boot(shippedTable, snap, 't9');
+  ok(w.find('t9').unpriced === 2 && w.find('t9').sessions.length === 1, 'the merged compact format keeps both fields');
+  snap.rest.t9[6] = snap.rest.t9.pop();
+  const legacy = await boot(shippedTable, snap, 't9');
+  ok(legacy.find('t9').unpriced === 0 && legacy.find('t9').sessions.length === 1, 'workspace session-only snapshots still read');
+}
+
+console.log('\n6. session boundaries keep identical first calls');
+{
+  const w = await boot(migratedTable, snapshot());
+  const p = { ...gemini, producer: 'claude_code', session: 1 };
+  w.fold(101, 't1', p);
+  w.fold(102, 't1', p);
+  w.fold(103, 't1', { ...p, session: 2 });
+  const t = w.threadCost('t1');
+  ok(t.calls === 4, 'a repeated frame is dropped only inside its own session');
+  ok(t.sessions.filter(s => s.n > 0).length === 2, 'each named session keeps its spend');
+  ok(Math.abs(t.all - 5.6) < 1e-9, 'both session opening calls are priced');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

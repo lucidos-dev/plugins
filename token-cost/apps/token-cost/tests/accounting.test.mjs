@@ -1,9 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-const WS = process.env.LUCIDOS_WORKSPACE ||
-  path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..');
-const P = (p) => path.join(WS, p);
-
 // The app under test is the one beside this file, not the workspace's live
 // copy: run from a worktree, the live copy is the code BEFORE the change.
 const html = fs.readFileSync(new URL('../index.html', import.meta.url),'utf8');
@@ -47,7 +43,8 @@ global.fetch = async () => ({ ok:true, json: async()=>[] });
 global.URL = URL;
 global.Intl = Intl;
 
-const daily = JSON.parse(fs.readFileSync(P('data/artifacts/token-cost/daily.json'),'utf8'));
+const daily = { generated: new Date().toISOString(), last_sequence: 100,
+  bucket_edges: [0, 32000, 64000, 128000, 200000, 400000], days: {}, hours: {} };
 // The price table as lucidos.priceTable.get() returns it: the cards Lucidos
 // shipped on 2026-10-16 merged with this workspace's migrated override.
 const priceTableRaw = fs.readFileSync(new URL('./fixtures/price-table.json', import.meta.url),'utf8');
@@ -67,6 +64,7 @@ global.lucidos = {
   // these tests drive the accounting directly via pushLive. `/models` goes
   // through the generic bridged call, which has no labels to give.
   events:{ query: async () => [] }, request: async () => [],
+  threads:{ list: async () => [] },
   sse:{ connect(){}, on(){} },
   // As the SDK has them: the text escape leaves quotes raw, the attribute
   // escape does not, so a test can tell which one an attribute used.
@@ -82,9 +80,11 @@ const harness = src + `
   setDaily(d){ daily = d; }, setPricing(p){ pricing = p; },
   setGroups(g){ groups = g; expanded.clear(); }, expand(p){ expanded.add(p); }, threadMeta,
   setThreads(t){ threadsDaily = t; threadsState = t ? 'ready' : 'missing'; },
+  setHandoffs(d){ handoffsDoc = d; handoffsState = d ? 'ready' : 'missing'; }, measureHandoff, handoffOpen,
   get daily(){ return daily; },
   get metaText(){ return document.getElementById('meta').textContent; },
   noteKeepAliveAnchor, dimLabel, producerLabel, typeParent, dims: DIMS, producerMatches, syncProducerFilter, pickDim, chooseDim, oneOfEachFamily,
+  noteThreadOrigins, originOfSummary, learnThreadOrigins, lookupOrigins, threadOrigins, resetOrigins(){ threadOrigins.clear(); originAsked.clear(); originLookupAt = 0; },
   resetLive(){ live=[]; seenSeq=new Set(); liveRevision++; }, get feedRows(){ return document.getElementById('feed').children.map(c=>c.dataset.at); }, renderFeed,
 };
 `;
@@ -801,25 +801,28 @@ const r35 = rowsOf();
 ok(r35.length === 3, 'Group by Type has one row per typed producer, plus Auxiliary for the rest: '+r35.length);
 ok(/Auxiliary/.test(r35[0]) && /\$110\.00/.test(r35[0]), 'Auxiliary carries purposes, keep-alive pings and the untyped call');
 ok(/Claude Code/.test(r35[1]) && /\$16\.00/.test(r35[1]), 'Claude Code keeps only its own turns');
-// Type folds the purposes into one row and opens straight into the next chip,
-// so with Type alone the Auxiliary row has nothing under it.
-tc.expand('/type:auxiliary'); tc.render();
-ok(rowsOf().length === 3, 'Type alone does not open Auxiliary into sub-types: '+rowsOf().length);
-tc.setGroups(['type', 'model']); tc.expand('/type:main_llm'); tc.render();
-ok(rowsOf().length === 4 && /acme-1/.test(rowsOf().join('')), 'with a Model chip after it, a typed producer opens straight into models: '+rowsOf().length);
-// Type:subtype is its own chip: a flat list with one row per producer id.
-tc.setGroups(['subtype']); tc.render();
+ok(!rowsOf().some((r) => /Memory/.test(r)), 'Type alone does not open into sub-types');
+// Sub-types are the Type:subtype chip's level, not a Type row's own.
+tc.setGroups(['type', 'subtype']); tc.expand('/type:auxiliary'); tc.render();
 const r35b = rowsOf();
-ok(r35b.length === 7, 'Type:subtype lists every sub-type flat: '+r35b.length);
+ok(r35b.length === 8, 'opening Auxiliary lists every sub-type: '+r35b.length);
 ok(/Compaction/.test(r35b.join('')) && /Memory/.test(r35b.join('')) && /Change summary/.test(r35b.join('')), 'purposes read capitalised, without a prefix');
 ok(!/Aux: /.test(r35b.join('')), 'no row carries the prefix');
 ok(r35b.some((r) => /Cache keep-alive/.test(r) && /\$32\.00/.test(r)), 'the keep-alive pings are a sub-type, with their own cost');
 ok(r35b.some((r) => />mystery</.test(r) && /\$64\.00/.test(r)), 'a producer with no type is a sub-type under its raw id');
-ok(r35b.some((r) => /Claude Code/.test(r) && /\$16\.00/.test(r)), 'a typed producer is its own sub-type');
+tc.expand('/type:claude_code'); tc.render();
+ok(rowsOf().length === 8, 'Claude Code has no sub-types to open');
+tc.expand('/type:main_llm'); tc.render();
+// A legacy agent row (no origin recorded) still opens, into Origin unknown,
+// so it is never shown as if it were chat or trigger.
+ok(rowsOf().length === 9 && /Origin unknown/.test(rowsOf().join('')), 'a legacy agent row opens into Origin unknown: '+rowsOf().length);
+tc.setGroups(['type', 'model']); tc.expand('/type:main_llm'); tc.render();
+ok(rowsOf().length === 4 && /acme-1/.test(rowsOf().join('')), 'with a Model chip after it, a typed producer opens straight into models: '+rowsOf().length);
+tc.setGroups(['type', 'subtype']); tc.expand('/type:auxiliary');
 lastSelect.setValue('auxiliary:*'); tc.render();
-ok(rowsOf().length === 5 && /\$110\.00/.test(document.getElementById('an-total').innerHTML), 'Auxiliary (all) keeps the whole family: '+rowsOf().length);
+ok(rowsOf().length === 6 && /\$110\.00/.test(document.getElementById('an-total').innerHTML), 'Auxiliary (all) keeps the whole family: '+rowsOf().length);
 lastSelect.setValue('auxiliary:memory'); tc.render();
-ok(rowsOf().length === 1 && /\$2\.00/.test(document.getElementById('an-total').innerHTML), 'one sub-producer keeps only its own cost');
+ok(rowsOf().length === 2 && /\$2\.00/.test(document.getElementById('an-total').innerHTML), 'one sub-producer keeps only its own cost');
 tc.setGroups(['type']);
 lastSelect.setValue('main_llm'); tc.render();
 ok(rowsOf().length === 1 && /\$1\.00/.test(document.getElementById('an-total').innerHTML), 'a typed producer excludes every auxiliary row');
@@ -836,7 +839,7 @@ ok(tc.producerMatches('auxiliary:*', 'cache_keep_alive') && tc.producerMatches('
    'Auxiliary (all) matches the whole family');
 ok(tc.dimLabel('type', 'claude_code') === 'Claude Code' && tc.dimLabel('type', 'auxiliary') === 'Auxiliary', 'a top row is labelled by its family');
 ok(tc.dimLabel('subtype', 'cache_keep_alive') === 'Cache keep-alive' && tc.dimLabel('subtype', 'auxiliary:title') === 'Title', 'a sub-type by its own label');
-ok(tc.dimLabel('subtype', 'auxiliary') === 'Auxiliary (unspecified)', 'a call with no purpose says it is an auxiliary one, in the flat list');
+ok(tc.dimLabel('subtype', 'auxiliary') === 'Auxiliary (unspecified)', 'a call with no purpose says it is an unspecified auxiliary call');
 ok(!tc.dims.some((d) => d.id === 'producer'), 'there is no separate Producer chip');
 tc.setGroups(['type', 'model']);
 
@@ -857,6 +860,310 @@ ok(J(tc.pickDim(['type', 'model'], 'model')) === J(['type']), 'the face on an on
 ok(J(tc.pickDim(['type'], 'model_effort')) === J(['type', 'model_effort']), 'a family not on is appended');
 ok(J(tc.chooseDim(['type', 'model'], 'model')) === J(['type', 'model']), 'a menu pick of the current variant keeps it on');
 ok(J(tc.oneOfEachFamily(['model', 'type', 'model_effort', 'subtype', 'thread'])) === J(['model', 'type', 'thread']), 'a stored pick with both variants keeps the first');
+
+console.log('\n39. Lucidos Agent splits into Chat and Trigger by the thread it ran in');
+// $1 per million uncached input tokens, so a row's cost is its millions.
+tc.setPricing({ ...tableWith({ 'acme-1': { uncached_in:1, cache_write:0, cache_read:0, out:0 } }), producers:{ main_llm:'Lucidos Agent' } });
+tc.resetLive(); tc.resetOrigins();
+const money = () => document.getElementById('an-total').innerHTML;
+const heroMoney = () => document.getElementById('hero-cost').querySelector('.live').textContent;
+const agentSel = () => selects.find((x) => x.options.some((o) => o.label === 'All producers'));
+const row39 = (rows, re) => rows.find((r) => re.test(r)) || '';
+tc.setDaily({ ...empty, days:{ [today]: {
+  'main_llm:chat|acme-1': bucket(1, 1e6, 0),
+  'main_llm:trigger|acme-1': bucket(1, 2e6, 0),
+  'main_llm|acme-1': bucket(1, 4e6, 0),              // rolled up before origin was recorded
+  'main_llm:other|acme-1': bucket(1, 8e6, 0),
+  'auxiliary:title|acme-1': bucket(1, 16e6, 0),
+  'claude_code|acme-1': bucket(1, 32e6, 0),
+}}, hours:{} });
+tc.syncProducerFilter();
+agentSel().setValue('all');
+
+ok(tc.typeParent('main_llm:chat') === 'main_llm' && tc.typeParent('main_llm:trigger') === 'main_llm'
+   && tc.typeParent('main_llm:other') === 'main_llm' && tc.typeParent('main_llm') === 'main_llm', 'every origin sits under Lucidos Agent');
+ok(tc.typeParent('auxiliary:title') === 'auxiliary', 'an auxiliary call does not');
+ok(tc.dimLabel('type', tc.typeParent('main_llm:trigger')) === 'Lucidos Agent', 'the Type row keeps its name');
+ok(tc.dimLabel('subtype', 'main_llm:chat') === 'Chat' && tc.dimLabel('subtype', 'main_llm:trigger') === 'Trigger', 'the sub-types read Chat and Trigger');
+ok(tc.dimLabel('subtype', 'main_llm') === 'Origin unknown', 'a legacy row reads Origin unknown, never Chat');
+ok(tc.dimLabel('subtype', 'main_llm:other') === 'Other origin', 'a system-started thread reads Other origin');
+
+tc.setGroups(['type']); tc.render();
+const r39 = rowsOf();
+ok(r39.length === 3, 'Type keeps one Lucidos Agent row: '+r39.length);
+ok(/Lucidos Agent/.test(row39(r39, /Lucidos Agent/)) && /\$15\.00/.test(row39(r39, /Lucidos Agent/)), 'it carries every origin, the unknown one too');
+ok(/\$16\.00/.test(row39(r39, /Auxiliary/)), 'auxiliary calls stay in their own row, never under Lucidos Agent');
+ok(/\$63\.00/.test(money()) && heroMoney() === '$63.00', 'the total is unchanged by the split: '+heroMoney());
+
+tc.setGroups(['type', 'subtype']); tc.expand('/type:main_llm'); tc.render();
+const r39b = rowsOf();
+ok(r39b.length === 3 + 4, 'Type:subtype opens Lucidos Agent into its four origins: '+r39b.length);
+ok(/\$1\.00/.test(row39(r39b, />Chat</)) && /\$2\.00/.test(row39(r39b, />Trigger</)), 'Chat and Trigger each keep their own cost');
+ok(/\$4\.00/.test(row39(r39b, /Origin unknown/)), 'the legacy row is its own sub-type');
+ok(/\$8\.00/.test(row39(r39b, /Other origin/)), 'and so is a system-started thread');
+tc.expand('/type:claude_code'); tc.render();
+ok(rowsOf().length === 7, 'Claude Code still has no sub-types');
+
+tc.setGroups(['subtype']); tc.render();
+ok(rowsOf().length === 6 && /\$63\.00/.test(money()), 'flat Type:subtype lists all six and sums to the same total');
+tc.setGroups(['model', 'subtype']); tc.expand('/model:acme-1'); tc.render();
+ok(rowsOf().length === 1 + 6 && /\$63\.00/.test(money()), 'Model then Type:subtype: the same six under the model');
+tc.setGroups(['subtype', 'model']); tc.expand('/subtype:main_llm:trigger'); tc.render();
+ok(rowsOf().length === 6 + 1 && /\$2\.00/.test(row39(rowsOf(), />Trigger</)), 'Type:subtype then Model: a sub-type opens into its models');
+
+const opts39 = agentSel().options;
+const label39 = (v) => opts39.find((o) => o.value === v)?.label;
+ok(label39('main_llm:*') === 'Lucidos Agent (all)', 'the filter offers Lucidos Agent (all)');
+ok(label39('main_llm:chat') === 'Lucidos Agent · Chat' && label39('main_llm:trigger') === 'Lucidos Agent · Trigger', 'and each origin, named after the agent');
+ok(label39('main_llm') === 'Lucidos Agent · Origin unknown', 'the legacy rows are listed as unknown');
+ok(opts39.findIndex((o) => o.value === 'main_llm:*') < opts39.findIndex((o) => o.value === 'main_llm:chat'), 'the group sits before its members');
+ok(tc.producerMatches('main_llm:*', 'main_llm') && tc.producerMatches('main_llm:*', 'main_llm:trigger') && !tc.producerMatches('main_llm:*', 'auxiliary:title'),
+   'Lucidos Agent (all) matches every origin and no auxiliary call');
+tc.setGroups(['type']);
+agentSel().setValue('main_llm:*'); tc.render();
+ok(heroMoney() === '$15.00', 'Lucidos Agent (all) is the whole family: '+heroMoney());
+agentSel().setValue('main_llm:trigger'); tc.render();
+ok(heroMoney() === '$2.00', 'Trigger alone: '+heroMoney());
+agentSel().setValue('main_llm'); tc.render();
+ok(heroMoney() === '$4.00', 'the bare id is the unknown rows only: '+heroMoney());
+agentSel().setValue('all');
+
+console.log('\n40. the thread origin rule, as the rollup applies it');
+const byId = new Map();
+const sum = (t) => { byId.set(t.thread_id, t); return t; };
+const look = (id) => tc.originOfSummary(byId.get(id), (pid) => byId.get(pid));
+sum({ thread_id:'trig', channel:'trigger', initiator:'system', trigger_id:'x' });
+sum({ thread_id:'trig-in-chat', channel:'chat', initiator:'system', trigger_id:'x' });
+sum({ thread_id:'chat', channel:'chat', initiator:'user' });
+sum({ thread_id:'sys', channel:'chat', initiator:'system' });
+sum({ thread_id:'kid-of-trig', channel:'chat', initiator:'system', parent_thread_id:'trig' });
+sum({ thread_id:'grandkid', channel:'chat', initiator:'system', parent_thread_id:'kid-of-trig' });
+sum({ thread_id:'kid-of-chat', channel:'chat', initiator:'system', parent_thread_id:'chat' });
+sum({ thread_id:'orphan', channel:'chat', initiator:'user', parent_thread_id:'gone' });
+sum({ thread_id:'loop-a', channel:'chat', initiator:'user', parent_thread_id:'loop-b' });
+sum({ thread_id:'loop-b', channel:'chat', initiator:'user', parent_thread_id:'loop-a' });
+sum({ thread_id:'blank-trigger', channel:'chat', initiator:'user', trigger_id:'' });
+ok(look('trig') === 'trigger' && look('trig-in-chat') === 'trigger', 'a thread a trigger opened is Trigger');
+ok(look('chat') === 'chat', 'a thread a person started is Chat');
+ok(look('sys') === 'other', 'a thread the system started, with no trigger and no parent, is Other');
+ok(look('kid-of-trig') === 'trigger' && look('grandkid') === 'trigger', 'a sub-thread inherits its root: Trigger');
+ok(look('kid-of-chat') === 'chat', 'and Chat');
+ok(look('orphan') === null, 'a sub-thread whose parent is gone is unknown, not guessed');
+ok(look('loop-a') === null, 'a parent cycle is unknown, and terminates');
+ok(look('blank-trigger') === 'chat', 'an empty trigger id is no trigger');
+ok(tc.originOfSummary(undefined, look) === null, 'a thread with no summary is unknown');
+
+console.log('\n41. a live call is filed by origin, exactly as the rollup files it');
+const mkT = (seq, tid, producer, inT, purpose) => {
+  const e = { seq, created:new Date().toISOString(), thread_id:tid,
+    event:{ type:'ContextCaptured', model:'acme-1', producer, usage:{ input_tokens:inT, cache_read_tokens:0, cache_creation_tokens:0, output_tokens:0 } } };
+  if (purpose) e.event.purpose = purpose;
+  return e;
+};
+const liveCalls = [
+  mkT(999501, 'th-chat', 'main_llm', 1e6),
+  mkT(999502, 'th-trig', 'main_llm', 2e6),
+  mkT(999503, 'th-none', 'main_llm', 4e6),
+  mkT(999504, 'th-sys', 'main_llm', 8e6),
+  mkT(999505, 'th-trig', 'auxiliary', 16e6, 'title'),
+  mkT(999506, 'th-chat', 'claude_code', 32e6),
+];
+const origins41 = { chat:['th-chat'], trigger:['th-trig'], other:['th-sys'] };
+const subtypeTable = () => {
+  tc.setGroups(['type', 'subtype']); tc.expand('/type:main_llm'); tc.render();
+  return rowsOf().map((r) => r.replace(/\s+/g, ' ')).sort().join('\n') + '\n' + money();
+};
+// Historical: the same calls as the rollup would file them, with every field
+// a current rollup writes, so the two tables can be compared whole.
+const hb = (inT) => ({ ...bucket(1, inT, 0), cached_calls:0, max_in:inT });
+tc.resetLive(); tc.resetOrigins();
+tc.setDaily({ ...empty, thread_origins: origins41, days:{ [today]: {
+  'main_llm:chat|acme-1': hb(1e6), 'main_llm:trigger|acme-1': hb(2e6),
+  'main_llm|acme-1': hb(4e6), 'main_llm:other|acme-1': hb(8e6),
+  'auxiliary:title|acme-1': hb(16e6), 'claude_code|acme-1': hb(32e6),
+}}, hours:{} });
+const historical = subtypeTable();
+// Live: no stored rows, the calls arrive over the stream.
+tc.resetLive(); tc.resetOrigins();
+tc.setDaily({ ...empty, thread_origins: origins41, days:{}, hours:{} });
+tc.noteThreadOrigins(origins41);
+for (const e of liveCalls) tc.pushLive(e, { quiet:true });
+const liveTable = subtypeTable();
+ok(liveTable === historical, 'live and historical give the same Type:subtype table');
+ok(/noteThreadOrigins\(daily\.thread_origins\)/.test(src), "a load reads the rollup's origin map");
+ok(/\$63\.00/.test(liveTable), 'and the same total');
+const liveKeys = Object.keys(tc.seriesForDay(today));
+ok(liveKeys.includes('main_llm:chat|acme-1') && liveKeys.includes('main_llm:trigger|acme-1'), 'the live series keys carry the origin');
+ok(liveKeys.includes('main_llm|acme-1'), 'a thread no source names stays unknown');
+ok(liveKeys.includes('auxiliary:title|acme-1') && !liveKeys.includes('auxiliary:title:trigger|acme-1'), 'an auxiliary call in a trigger thread stays auxiliary');
+ok(tc.countedLive().find((c) => c.seq === 999506).producer === 'claude_code', 'Claude Code in a chat thread stays Claude Code');
+tc.setThreads({ last_sequence:0, fields:['calls','cached_calls','in'], threads:{}, days:{}, hours:{} });
+tc.setGroups(['thread', 'subtype']); tc.render();
+ok(/\$63\.00/.test(money()), 'the Thread view sums to the same total');
+tc.setThreads(null);
+
+console.log('\n42. an origin learned after the call moves it, and moves no money');
+tc.resetLive(); tc.resetOrigins();
+tc.setDaily({ ...empty, days:{}, hours:{} });
+tc.pushLive(mkT(999601, 'th-new', 'main_llm', 2e6), { quiet:true });
+tc.pushLive(mkT(999602, 'th-new-kid', 'main_llm', 1e6), { quiet:true });
+ok(tc.countedLive().every((c) => c.producer === 'main_llm'), 'before its thread is known, a call is Origin unknown');
+tc.setGroups(['type']); tc.render();
+const before42 = heroMoney();
+const added42 = tc.learnThreadOrigins([
+  { thread_id:'th-new-kid', channel:'chat', initiator:'system', parent_thread_id:'th-new' },
+  { thread_id:'th-new', channel:'trigger', initiator:'system', trigger_id:'x' },
+]);
+ok(added42 === 2, 'the thread list teaches both, the sub-thread through its parent: '+added42);
+ok(tc.countedLive().every((c) => c.producer === 'main_llm:trigger'), 'both calls move to Trigger');
+tc.render();
+ok(heroMoney() === before42 && before42 === '$3.00', 'the total does not move: '+before42+' -> '+heroMoney());
+ok(tc.learnThreadOrigins([{ thread_id:'th-new', channel:'chat', initiator:'user' }]) === 0, 'an origin once known is not overwritten');
+ok(tc.threadOrigins.get('th-new') === 'trigger', 'it stays Trigger');
+
+console.log('\n43. the live lookup asks the thread list for an unknown thread, and not forever');
+tc.resetLive(); tc.resetOrigins();
+let listCalls = 0;
+lucidos.threads = { list: async (o) => { listCalls++; return [{ thread_id:'th-late', channel:'chat', initiator:'user' }]; } };
+tc.pushLive(mkT(999701, 'th-late', 'main_llm', 1e6), { quiet:true });
+tc.pushLive(mkT(999702, 'th-lost', 'main_llm', 1e6), { quiet:true });
+await tc.lookupOrigins();
+ok(listCalls === 1, 'one list call for the unknown threads');
+ok(tc.countedLive().find((c) => c.seq === 999701).producer === 'main_llm:chat', 'the listed thread is filed as Chat');
+ok(tc.countedLive().find((c) => c.seq === 999702).producer === 'main_llm', 'the missing one stays unknown, not guessed');
+await tc.lookupOrigins();
+ok(listCalls === 1, 'a second lookup within the throttle does not call again');
+lucidos.threads = { list: async () => [] };
+tc.resetLive(); tc.resetOrigins();
+
+console.log('\n44. a thread with two agent sessions shows one row per session');
+tc.setPricing(tableWith({ 'acme-1': { uncached_in:1, cache_write:0, cache_read:0, out:0 } }));
+tc.resetLive();
+tc.threadMeta.set('two', { title:'Two-session thread', parent:null });
+tc.threadMeta.set('old', { title:'Old chain', parent:null });
+tc.threadMeta.set('old2', { title:'Old chain, continued', parent:null, before:'old' });
+const F44 = ['calls','cached_calls','in','cache_read','cache_write','out','seconds','max_in'];
+tc.setDaily({ ...empty, last_sequence:0, days:{ [today]: {
+  'claude_code|acme-1|high': { ...bucket(2, 2e6, 0), cached_calls:2 },
+  'codex|acme-1': { ...bucket(1, 1e6, 0), cached_calls:1 },
+  'claude_code|acme-1': { ...bucket(3, 3e6, 0), cached_calls:3 },
+} }, hours:{} });
+tc.setThreads({ last_sequence:0, fields:F44, days:{ [today]: {
+  'two@1': { 'claude_code|acme-1|high': [2, 2, 2e6, 0, 0, 0, 0, 150000] },
+  'two@2': { 'codex|acme-1': [1, 1, 1e6, 0, 0, 0, 0, 40000] },
+  'old':   { 'claude_code|acme-1': [1, 1, 1e6, 0, 0, 0, 0, 90000] },
+  'old2':  { 'claude_code|acme-1': [2, 2, 2e6, 0, 0, 0, 0, 80000] },
+} }, hours:{} });
+tc.setGroups(['thread']);
+tc.render();
+let r44 = rowsOf();
+const row44 = (rows, re) => rows.find((r) => re.test(r)) || '';
+ok(r44.length === 2, 'one row per piece of work, the legacy chain folded into one: '+r44.length);
+ok(/\$3\.00/.test(row44(r44, /Two-session thread/)), 'the thread row carries both sessions');
+ok(/150\.0k · 40\.0k/.test(row44(r44, /Two-session thread/)), 'its context column shows each session\'s peak, not one max');
+ok(/Peak per session/.test(row44(r44, /Two-session thread/)), 'and names them');
+ok(/\$3\.00/.test(row44(r44, /Old chain</)) && /\+1 sub/.test(row44(r44, /Old chain</)), 'a legacy chain is one row, its successor folded in');
+tc.expand('/thread:two');
+tc.render();
+r44 = rowsOf();
+const s1 = row44(r44, /Session 1 · /), s2 = row44(r44, /Session 2 · /);
+ok(/Claude Code · acme-1 · high/.test(s1) && /\$2\.00/.test(s1), 'session 1 names its implementer and its own cost: '+s1.slice(0, 160));
+ok(/Codex · acme-1/.test(s2) && /\$1\.00/.test(s2), 'session 2 names its own backend and cost');
+ok(/\/ 150\.0k/.test(s1) && /\/ 40\.0k/.test(s2), 'each session row shows its own peak');
+ok(r44.indexOf(s1) < r44.indexOf(s2), 'sessions read oldest first');
+tc.expand('/thread:old');
+tc.render();
+ok(/successor thread/.test(row44(rowsOf(), /Old chain, continued/)), 'the old successor thread says what it is');
+ok(/Total.*\$6\.00/.test(document.getElementById('an-total').innerHTML), 'the total is unchanged by the session split');
+
+// One session still draws its row, with its time span and its keep-alive
+// pings on their own line under it.
+tc.setThreads({ last_sequence:0, fields:F44, days:{ [today]: { 'two@1': {
+  'claude_code|acme-1|high': [2, 2, 2e6, 0, 0, 0, 0, 150000],
+  'cache_keep_alive|acme-1|high': [3, 3, 5e5, 0, 0, 0, 0, 150000],
+} } }, sessions:{ 'two@1': [today+'T08:05:00Z', today+'T09:40:00Z'] }, hours:{} });
+tc.expand('/thread:two');
+tc.render();
+let r44b = rowsOf();
+const one = row44(r44b, /Session 1 · /);
+ok(/Claude Code · acme-1 · high/.test(one) && /\$2\.50/.test(one), 'a one-session thread shows its session row, keep-alive in its cost: '+one.slice(0, 200));
+ok(!/\+1 model/.test(one), 'keep-alive pings never name the session or count as another model');
+const hm = (iso) => new Date(iso).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+ok(one.includes(`${hm(today+'T08:05:00Z')}–${hm(today+'T09:40:00Z')}`), 'the session row shows its first and last call');
+const ka = row44(r44b, /Cache keep-alive/);
+ok(/\$0\.50/.test(ka) && r44b.indexOf(ka) === r44b.indexOf(one) + 1, 'its keep-alive pings sit on their own line right under it');
+ok(!/class="an-row kids/.test(one) && !/▸|▾/.test(one), 'the session row has no twisty: its keep-alive line always shows');
+// A live call above the cursor stretches the span.
+const late = mk(999700, today+'T10:15:00Z', 'claude_code', 'acme-1', [1000, 0, 0, 10]);
+late.thread_id = 'two'; late.event.session = 1;
+tc.pushLive(late, { quiet:true });
+tc.render();
+ok(row44(rowsOf(), /Session 1 · /).includes(`–${hm(today+'T10:15:00Z')}`), 'a live call moves the session\'s last call');
+tc.resetLive();
+// No span on file and no live call: the row shows no time.
+tc.setThreads({ last_sequence:0, fields:F44, days:{ [today]: { 'two@1': { 'claude_code|acme-1|high': [2, 2, 2e6, 0, 0, 0, 0, 150000] } } }, hours:{} });
+tc.render();
+r44b = rowsOf();
+ok(!/an-span/.test(row44(r44b, /Session 1 · /)), 'a session with no span on file shows no time');
+ok(!/Cache keep-alive/.test(r44b.join('')), 'a session with no keep-alive ping draws no keep-alive line');
+// Calls from before sessions were stamped draw no session row on their own.
+tc.setThreads({ last_sequence:0, fields:F44, days:{ [today]: { 'two': { 'claude_code|acme-1|high': [2, 2, 2e6, 0, 0, 0, 0, 150000] } } }, hours:{} });
+tc.render();
+ok(!/Before sessions were recorded/.test(rowsOf().join('')), 'a thread from before sessions shows no session row');
+
+// The live frame dedupe never compares across a session boundary.
+tc.setDaily({ ...empty, last_sequence:0, days:{}, hours:{} });
+tc.resetLive();
+const at44 = new Date().toISOString();
+const ses = (seq, session) => { const e = mk(seq, at44, 'claude_code', 'acme-1', [5000, 4000, 0, 50]); e.event.session = session; return e; };
+tc.pushLive(ses(999801, 1), { quiet:true });
+tc.pushLive(ses(999802, 1), { quiet:true });
+ok(tc.countedLive().length === 1, 'a repeat inside one session is a re-delivered frame');
+tc.pushLive(ses(999803, 2), { quiet:true });
+ok(tc.countedLive().length === 2, 'the same usage as the first call of the next session is a new call');
+ok(tc.countedLive()[1].session === '2', 'a live call keeps its session');
+tc.resetLive();
+tc.setThreads({ last_sequence:0, fields:[], days:{}, hours:{} });
+tc.setGroups(['type', 'model']);
+
+console.log('\n45. the handoff view: narrative cost, cost per call either side, verdicts held');
+tc.setPricing(tableWith({ 'acme-1': { uncached_in:1, cache_write:0, cache_read:0, out:0 } }));
+const HF = ['calls','cached_calls','in','cache_read','cache_write','out','seconds','max_in'];
+const ho = (o) => ({ kind:'session', thread:'two', to_thread:'two', from_session:1, to_session:2, day:today,
+  at:today+'T10:00:00Z', opening:'narrative', checkpoint:'phase-commit', progress:'2/5', pays:true,
+  from:'claude_code|acme-1|high', to:'codex|acme-1', narrative:{ 'claude_code|acme-1|high': [2, 2, 1e6] },
+  before:{ 'claude_code|acme-1|high': [10, 10, 4e6] }, after:{ 'codex|acme-1': [10, 10, 1e6] }, ...o });
+// Warm and paid: 0.40 a call before, 0.10 after. Cold, said pays, got dearer.
+// A legacy successor thread with no recorded opening. One with no checkpoint.
+tc.setHandoffs({ fields:HF, threads:{ two:'Two-session thread', old:'Old chain' }, handoffs:[
+  ho({}),
+  ho({ at:today+'T11:00:00Z', opening:'brief', narrative:null, from_session:2, to_session:3,
+       before:{ 'codex|acme-1': [10, 10, 1e6] }, after:{ 'claude_code|acme-1': [10, 10, 2e6] } }),
+  ho({ kind:'thread', thread:'old', to_thread:'old2', from_session:null, to_session:null, opening:null, pays:false,
+       before:{ 'claude_code|acme-1': [10, 10, 2e6] }, after:{ 'claude_code|acme-1': [10, 10, 3e6] } }),
+  ho({ checkpoint:null, pays:null }),
+  ho({ day:'2001-01-01' }),
+] });
+const m45 = tc.measureHandoff(ho({}), HF);
+ok(Math.abs(m45.narrative.cost - 1) < 1e-9, 'a warm handoff\'s narrative turn is priced: '+m45.narrative.cost);
+ok(Math.abs(m45.perBefore - 0.4) < 1e-9 && Math.abs(m45.perAfter - 0.1) < 1e-9, 'cost per call either side');
+ok(Math.abs(m45.change + 0.75) < 1e-9 && m45.held === true, 'calls got 75% cheaper, so a pays verdict held');
+const block45 = document.getElementById('handoff-block');
+block45.open = true;
+tc.render();
+const body45 = () => document.getElementById('ho-body').innerHTML;
+ok(/phase-commit/.test(body45()) && /No checkpoint/.test(body45()), 'one row per checkpoint, and one for none');
+ok(/>3 <span class="muted">1 warm · 1 cold · 1 successor thread<\/span>/.test(body45()), 'the group counts warm, cold and legacy handoffs: '+(body45().match(/>3 <span[^<]*<\/span>/)||[''])[0]);
+ok(/2 of 3/.test(body45()), 'the warm pays and the legacy no-pay held, the cold pays did not');
+ok(!/2001/.test(body45()), 'a handoff outside the range is left out');
+tc.handoffOpen.add('phase-commit');
+tc.render();
+ok(/session 1 → 2/.test(body45()) && /Claude Code · acme-1 · high → Codex · acme-1/.test(body45()), 'a handoff names its sessions and the implementer change');
+ok(/successor thread/.test(body45()) && /opening not recorded/.test(body45()), 'a legacy handoff says what it is and that its opening is unknown');
+ok(/cold/.test(body45()) && /pays · missed/.test(body45()), 'the cold handoff got dearer, so its pays verdict missed');
+block45.open = false;
+tc.handoffOpen.clear();
+tc.setHandoffs(null);
 
 console.log('\n'+pass+' passed, '+fail+' failed');
 process.exit(fail?1:0);

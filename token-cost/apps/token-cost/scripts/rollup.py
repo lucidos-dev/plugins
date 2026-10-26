@@ -23,10 +23,14 @@ emits 2-3 identical `ContextCaptured` rows per real API call. Measured
 codex (1.01x) and main_llm (1.00x) are clean.
 
 So a row is dropped when its `(input, cache_read, cache_write, output)` tuple
-is identical to the PREVIOUS row in the same thread by sequence. Consecutive
-and per-thread both matter: two unrelated calls elsewhere in the workspace
-that happen to match are never collapsed, and a real repeat separated by any
-other call in its own thread survives.
+is identical to the PREVIOUS row in the same thread and agent session by
+sequence. Consecutive and per-thread both matter: two unrelated calls
+elsewhere in the workspace that happen to match are never collapsed, and a
+real repeat separated by any other call in its own thread survives. A thread
+can hold several sessions (a handoff starts a successor session in the same
+thread), and the first call of a new session is a new context, so it is never
+compared with the last call of the session before. A row from before the
+engine stamped `session` carries none, and those compare among themselves.
 
 This is a heuristic, unlike the fix the engine needs (key on the CC assistant
 message id, which is not persisted here). It is safe at these magnitudes: the
@@ -80,15 +84,26 @@ selection can land on) and pruned from older days, so the file does not grow
 
 PER THREAD, IN A SECOND FILE
 ----------------------------
-The query also groups by thread, and the same pass writes those rows to
-artifacts/token-cost/threads-daily.json as compact lists (see THREAD_FIELDS),
-with each thread's title and parent. The app reads it only when its Thread
+The query also groups by thread and agent session, and the same pass writes
+those rows to artifacts/token-cost/threads-daily.json as compact lists (see
+THREAD_FIELDS), keyed `<thread>@<session>` (see thread_slot()), with each
+thread's title, parent and predecessor. A thread now holds one row per
+session, and each session may run on its own backend and model, so the app's
+thread drill-down shows one row per session that sums to the thread. The app reads it only when its Thread
 group-by is on, and folds sub-threads into their root there. One query feeds
 both files, so the per-thread rows always sum to daily.json. The two share a
 cursor; when they disagree, the next run rebuilds both.
 
 Each row also counts `cached_calls`, the calls that read any cache, so the app
 can show cached against cold calls rather than only token shares.
+
+LUCIDOS AGENT CALLS, BY ORIGIN
+------------------------------
+A `main_llm` call is filed as `main_llm:chat`, `main_llm:trigger` or
+`main_llm:other` by the origin of its thread's root, read from
+thread_summaries after the usage query, or bare `main_llm` when the origin
+cannot be read. See classify_origins(). daily.json also lists recent threads'
+origins under `thread_origins`, which is how the app files a live call.
 
 State path is anchored on LUCIDOS_WORKSPACE, never on __file__ (see
 knowhow/script-state-paths.md).
@@ -701,6 +716,7 @@ COPY (
       asked,
       effort,
       thread_id::text AS thread,
+      session,
       count(*) AS calls,
       count(*) FILTER (WHERE cr > 0) AS cached_calls,
       sum(in_tok) AS total_in,
@@ -731,6 +747,7 @@ COPY (
     + LOCAL_HOUR
     + """ AS local_hour,
         thread_id,
+        payload->>'session' AS session,
         """
     + producer_id_sql("payload")
     + """ AS producer,
@@ -754,7 +771,7 @@ COPY (
     + """ IS NOT DISTINCT FROM LAG("""
     + _USAGE_TUPLE
     + """)
-          OVER (PARTITION BY thread_id ORDER BY sequence)
+          OVER (PARTITION BY thread_id, payload->>'session' ORDER BY sequence)
         AND payload->>'producer' = 'claude_code' AS dup,
         """
     + KEEP_ALIVE
@@ -773,7 +790,7 @@ COPY (
     ) s
     WHERE NOT dup
       AND local_day = ANY (%(days)s)
-    GROUP BY 1, 2, 3, 4, 5, 6, 7
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
   ) t
 ) TO STDOUT;
 """
@@ -795,12 +812,9 @@ def psql(sql: str) -> str:
 #
 # `VoiceSessionEnded` names no model, so each session is attributed to a voice
 # `ContextCaptured` row: the last one in the SAME thread at or before the
-# hangup, which is the session that just ended. Six of the 33 sessions on
-# record have no such row (the talker opened and produced no frame, or the call
-# died early), and those fall back to the nearest voice row in time anywhere in
-# the store. Nearest in TIME, not the latest before: a fallback that walked
-# backwards filed two calls made on a GPT-Live evening under the Realtime model
-# last used nine days earlier. A session with no voice row within a day of it
+# hangup, which is the session that just ended. Sessions without such a row
+# (no frame or an early failure) fall back to the nearest voice row in time
+# anywhere in the store. Nearest in TIME, not the latest before. A session with no voice row within a day of it
 # is dropped rather than guessed at.
 #
 # The candidate rows are materialised once. There is no index on the payload's
@@ -810,7 +824,7 @@ SECONDS_SQL = (
     """
 COPY (
   WITH voice_calls AS MATERIALIZED (
-    SELECT thread_id, sequence, created,
+    SELECT thread_id, sequence, created, payload->>'session' AS session,
            """
     + producer_id_sql("payload")
     + """ AS producer,
@@ -831,10 +845,12 @@ COPY (
       m.producer,
       m.model,
       e.thread_id::text AS thread,
+      m.session,
       sum((e.payload->>'duration_secs')::bigint) AS seconds
     FROM events e
     CROSS JOIN LATERAL (
-      SELECT c.producer, c.model
+      SELECT c.producer, c.model,
+             CASE WHEN c.thread_id = e.thread_id THEN c.session END AS session
       FROM voice_calls c
       WHERE abs(extract(epoch FROM c.created - e.created)) < 86400
       ORDER BY
@@ -848,7 +864,7 @@ COPY (
       AND """
     + E_DAY
     + """ = ANY (%(days)s)
-    GROUP BY 1, 2, 3, 4, 5
+    GROUP BY 1, 2, 3, 4, 5, 6
   ) t
 ) TO STDOUT;
 """
@@ -884,7 +900,13 @@ COPY (
 #      the engine recorded `served_model` joins its bare id's row too
 #  12  2026-10-20: an auxiliary call is filed under `auxiliary:<purpose>`
 #      (bare `auxiliary` with no purpose), so history splits per sub-producer
-ROLLUP_VERSION = 12
+#  13  2026-10-21: a Lucidos Agent call is filed under `main_llm:<origin>`
+#      (chat, trigger, other; bare `main_llm` when the thread's origin is
+#      unknown), and daily.json carries `thread_origins` for the live tail
+#  14  2026-10-23: the thread file splits each thread by agent session
+#      (`<thread>@<session>`), the frame dedupe compares calls only within one
+#      session, and a thread's meta names the thread it succeeded
+ROLLUP_VERSION = 14
 
 
 # A thread row is a flat list in this order, trailing zeros dropped. Most
@@ -904,6 +926,18 @@ def row_key(producer: str, model: str, effort: str | None = None) -> str:
     return f"{producer}|{model}|{effort}" if effort else f"{producer}|{model}"
 
 
+def thread_slot(tid: str, session) -> str:
+    """A thread file key: `<thread>@<session>` for a call that names its agent
+    session, the bare thread id for one written before the engine stamped it
+    (and for Jev, which has no thread). The app splits on the last `@`."""
+    return f"{tid}@{session}" if tid and session not in (None, "") else tid
+
+
+def slot_thread(slot: str) -> str:
+    """The thread id of a thread file key."""
+    return slot.rpartition("@")[0] if "@" in slot else slot
+
+
 def thread_row(b: dict) -> list:
     """One bucket as a THREAD_FIELDS list."""
     out = []
@@ -917,46 +951,424 @@ def thread_row(b: dict) -> list:
 
 # A plain SELECT, not COPY like the queries above: COPY's text format doubles
 # every backslash, and a title or first message holding one is no longer JSON.
+#
+# `successor_of` names the thread a legacy successor thread took over from.
+# Handoffs now start a successor session inside the same thread, so no new
+# row sets it, but the old chains keep the link. The app folds a chain into
+# its first thread, so one piece of work is one row whether it handed off the
+# old way or the new one.
 THREAD_META_SQL = """
 SELECT coalesce(json_object_agg(thread_id::text, json_build_array(
-  coalesce(nullif(title, ''), left(first_message, 80), ''), parent_thread_id::text)), '{}'::json)
+  coalesce(nullif(title, ''), left(first_message, 80), ''), parent_thread_id::text,
+  successor_of::text)), '{}'::json)
 FROM thread_summaries;
 """
 
 
+# When each agent session made its first and last call, so the app can show a
+# session's time span. Keyed like the thread file (`<thread>@<session>`). Calls
+# from before the engine stamped sessions get none: they are ten thousand bare
+# threads, and their spans would add a megabyte for a row that rarely shows.
+# Read only for the calls since the cursor and merged into the spans already
+# on file, so an hourly run does not rescan history. A plain SELECT, as
+# THREAD_META_SQL.
+SESSION_SPANS_SQL = """
+SELECT coalesce(json_object_agg(slot, span), '{}'::json) FROM (
+  SELECT thread_id::text || '@' || (payload->>'session') AS slot,
+         json_build_array(
+           to_char(min(created) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+           to_char(max(created) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')) AS span
+  FROM events
+  WHERE event_type = 'ContextCaptured'
+    AND payload->'usage' IS NOT NULL
+    AND thread_id IS NOT NULL
+    AND coalesce(payload->>'session', '') <> ''
+    AND sequence > %(since)s AND sequence <= %(max_seq)s
+  GROUP BY 1
+) s;
+"""
+
+
+def session_spans(old: dict | None, since: int, max_seq: int) -> dict:
+    """`old` with the spans of the calls in (since, max_seq] folded in: the
+    earliest first call and the latest last call per slot. ISO UTC strings
+    compare in time order. A failed read keeps the old spans, as a missing
+    span only hides the time on a session row."""
+    spans = {k: list(v) for k, v in (old or {}).items() if isinstance(v, list) and len(v) == 2}
+    try:
+        new = json.loads(psql(SESSION_SPANS_SQL.replace("%(since)s", str(since))
+                              .replace("%(max_seq)s", str(max_seq))) or "{}")
+    except (SystemExit, ValueError):
+        return spans
+    if not isinstance(new, dict):
+        return spans
+    for slot, (first, last) in new.items():
+        was = spans.get(slot)
+        spans[slot] = [min(was[0], first), max(was[1], last)] if was else [first, last]
+    return spans
+
+
 def thread_meta(tids: set) -> dict:
-    """Title and parent for every thread in the file, plus each one's
-    ancestors, so the app can fold a sub-thread into its root even when the
-    root itself made no call. A thread the summaries no longer hold is left
-    out, and the app shows it under its id."""
+    """Title, parent and predecessor for every thread in the file, plus each
+    one's ancestors and predecessors, so the app can fold a sub-thread into
+    its root, and a successor thread into the chain it continues, even when
+    that root made no call. Each entry is [title], [title, parent] or
+    [title, parent or None, predecessor]. A thread the summaries no longer
+    hold is left out, and the app shows it under its id."""
     try:
         doc = json.loads(psql(THREAD_META_SQL) or "{}")
     except (SystemExit, ValueError):
         return {}
     if not isinstance(doc, dict):
         return {}
-    meta, todo = {}, [t for t in tids if t]
+    meta, todo = {}, [slot_thread(t) for t in tids if t]
     while todo:
         t = todo.pop()
         if t in meta or t not in doc:
             continue
-        title, parent = doc[t]
-        meta[t] = [title, parent] if parent else [title]
-        if parent:
-            todo.append(parent)
+        title, parent, before = (list(doc[t]) + [None, None])[:3]
+        meta[t] = [title, parent, before] if before else [title, parent] if parent else [title]
+        todo.extend(x for x in (parent, before) if x)
     return meta
 
 
+# The Lucidos Agent (`main_llm`) runs both the chats a person starts and the
+# runs a trigger fires, and the call itself does not say which. Its thread
+# does: thread_summaries records who started it (`initiator`), the trigger
+# that opened it (`trigger_id`, `source` = trigger) and its parent. So an agent
+# call is filed under `main_llm:<origin>`:
+#   trigger  the thread, or its root, was opened by a trigger
+#   chat     the root was started by a person
+#   other    the root was started by the system with no trigger: a message from
+#            another workspace, the API, plugin setup, a spawn with no parent
+# A sub-thread takes its root's origin, so a trigger's spawned work counts as
+# the trigger's. When the summaries cannot say (the thread or an ancestor is no
+# longer there, or the parents loop) the call keeps the bare `main_llm`, which
+# the app shows as "Origin unknown". Nothing is guessed as chat.
+#
+# Measured 2026-10-21: every thread holding a main_llm call has a summary, and
+# a trigger never fires into a chat thread, so the thread is a clean key. A
+# person's reply inside a trigger's thread counts as the trigger's (142 of the
+# 2,716 calls in trigger threads over 14 days).
+#
+# The other producers keep their ids: auxiliary calls stay auxiliary, Claude
+# Code stays Claude Code, whatever thread they ran in.
+AGENT = "main_llm"
+ORIGINS = ("chat", "trigger", "other")
+# daily.json lists the origins of threads active this recently, so the app can
+# file a live call before the next rollup. A thread newer than the last rollup
+# is looked up through the thread list instead.
+ORIGIN_WINDOW_DAYS = 14
+ORIGIN_SQL = f"""
+SELECT coalesce(json_object_agg(thread_id::text, json_build_array(
+  source, initiator, trigger_id, parent_thread_id::text,
+  last_activity > now() - interval '{ORIGIN_WINDOW_DAYS} days')), '{{}}'::json)
+FROM thread_summaries;
+"""
+
+
+def classify_origins(doc: dict) -> dict:
+    """Thread id -> chat | trigger | other, from ORIGIN_SQL's rows
+    ([source, initiator, trigger_id, parent, recent]). A thread whose origin
+    cannot be read is left out. The app's originOfSummary() is the same rule."""
+    out: dict = {}
+    for start in doc:
+        path, t, origin = [], start, None
+        while t is not None and t not in out:
+            rec = doc.get(t)
+            if rec is None or t in path:
+                break
+            path.append(t)
+            source, initiator, trigger_id, parent = rec[0], rec[1], rec[2], rec[3]
+            if trigger_id or source == "trigger":
+                origin = "trigger"
+                break
+            if not parent:
+                origin = "chat" if initiator == "user" else "other"
+                break
+            t = parent
+        else:
+            origin = out.get(t)
+        if origin is not None:
+            for p in path:
+                out[p] = origin
+    return out
+
+
+def agent_producer(producer: str, tid: str, origins: dict) -> str:
+    """The producer id a row is filed under: `main_llm:<origin>` for an agent
+    call whose thread origin is known, else the producer as it came."""
+    if producer != AGENT or not tid or tid not in origins:
+        return producer
+    return f"{AGENT}:{origins[tid]}"
+
+
+# HANDOFFS, IN A THIRD FILE
+# -------------------------
+# A handoff ends a session and starts a successor session in the same thread
+# (`SessionStarted.continuity.kind = handoff`). Before that existed, it started
+# a successor thread (`SuccessorThreadSpawned`); those are reported too, as
+# kind `thread`, so old and new handoffs compare like for like.
+#
+# Per handoff, artifacts/token-cost/handoffs.json records three token bundles
+# in THREAD_FIELDS rows keyed producer|model[|effort], which the app prices:
+#   narrative  the old session's calls after its last turn end, checkpoint or
+#              successor request before the handoff: the turn that wrote the
+#              handoff narrative. A warm handoff (opening `narrative`) has one.
+#              A cold one (opening `brief`) has none: the engine wrote the
+#              brief, so the field is null.
+#   before     the old session's last HANDOFF_WINDOW calls before that turn
+#   after      the new session's first HANDOFF_WINDOW calls
+# Only main-session calls count: Claude Code or Codex, no sub-agent call (it
+# runs in its own context) and no cache keep-alive ping (it repeats the
+# context without doing work). The windows compare cost per call on either
+# side of the boundary, which is what the handoff estimate's verdict (`pays`
+# on the HandoffCheckpointReached it read) predicted. The file is rebuilt
+# whole on every run: handoffs are rare, and a window can grow after the
+# handoff itself.
+HANDOFFS_OUT = WS / "data" / "artifacts" / "token-cost" / "handoffs.json"
+HANDOFF_WINDOW = 20
+HANDOFF_EVENTS = ("SessionStarted", "SessionHandedOff", "CodingAgentIdled",
+                  "HandoffCheckpointReached", "SuccessorRequested", "SuccessorThreadSpawned")
+# A turn end, a checkpoint or a successor request: the narrative turn starts
+# after the last of these before the handoff.
+TURN_MARKS = ("CodingAgentIdled", "HandoffCheckpointReached", "SuccessorRequested")
+# The continuity kinds that open a new session, as the engine counts them
+# (session_scope.rs). A resume stays in its session; the first is session 1.
+OPENING_KINDS = ("fresh", "handoff")
+
+# Threads that handed off either way, and the successor threads of the old way.
+_HANDOFF_THREADS = """(
+  SELECT thread_id FROM events
+  WHERE (event_type = 'SessionStarted' AND payload->'continuity'->>'kind' = 'handoff')
+     OR event_type = 'SuccessorThreadSpawned'
+  UNION
+  SELECT (payload->>'successor_thread_id')::uuid FROM events
+  WHERE event_type = 'SuccessorThreadSpawned'
+)"""
+
+# Plain SELECTs, not COPY: a narrative message or a title may hold a backslash.
+HANDOFF_EVENTS_SQL = (
+    """
+SELECT coalesce(json_agg(row_to_json(t) ORDER BY t.seq), '[]'::json) FROM (
+  SELECT thread_id::text AS thread, sequence AS seq, event_type AS type,
+         to_char("""
+    + LOCAL_DAY
+    + """, 'YYYY-MM-DD') AS day,
+         to_char(created AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS at,
+         payload->'continuity'->>'kind' AS continuity,
+         coalesce(payload->'continuity'->>'opening', payload->>'opening') AS opening,
+         coalesce(payload->'continuity'->>'checkpoint', payload->>'checkpoint', payload->>'name') AS checkpoint,
+         coalesce(payload->'continuity'->>'progress',
+                  CASE WHEN jsonb_typeof(payload->'progress') = 'object'
+                       THEN (payload->'progress'->>'done') || '/' || (payload->'progress'->>'total')
+                       ELSE payload->>'progress' END) AS progress,
+         payload->>'coding_agent' AS coding_agent,
+         payload->>'pays' AS pays,
+         payload->>'successor_thread_id' AS successor
+  FROM events
+  WHERE event_type IN ("""
+    + ", ".join(f"'{e}'" for e in HANDOFF_EVENTS)
+    + """)
+    AND sequence <= %(max_seq)s
+    AND thread_id IN """
+    + _HANDOFF_THREADS
+    + """
+) t;
+"""
+)
+
+HANDOFF_CALLS_SQL = (
+    """
+SELECT coalesce(json_agg(row_to_json(t) ORDER BY t.seq), '[]'::json) FROM (
+  SELECT c.thread_id::text AS thread, c.sequence AS seq,
+         c.payload->>'session' AS session,
+         c.payload->>'producer' AS producer,
+         """
+    + row_model_sql("c.payload->>'model'", "c.payload->>'served_model'")
+    + """ AS model,
+         coalesce(c.payload->>'reasoning_effort', '') AS effort,
+         (c.payload->'usage'->>'input_tokens')::bigint AS in_tok,
+         coalesce((c.payload->'usage'->>'cache_read_tokens')::bigint, 0) AS cr,
+         coalesce((c.payload->'usage'->>'cache_creation_tokens')::bigint, 0) AS cw,
+         (c.payload->'usage'->>'output_tokens')::bigint AS out_tok,
+         coalesce(c.payload->'usage'->>'service_tier', '') = 'flex' AS flex,
+         (c.payload->'usage'->>'input_tokens')::bigint > """
+    + LONG_CUT_MARK
+    + """ AS long
+  FROM events c
+  WHERE c.event_type = 'ContextCaptured'
+    AND c.payload->'usage' IS NOT NULL
+    AND c.payload->>'producer' IN ('claude_code', 'codex')
+    AND c.payload->>'parent_tool_use_id' IS NULL
+    AND c.sequence <= %(max_seq)s
+    AND c.thread_id IN """
+    + _HANDOFF_THREADS
+    + """
+    AND NOT """
+    + KEEP_ALIVE
+    + """
+) t;
+"""
+)
+
+
+def call_bundles(calls: list) -> dict:
+    """Calls as THREAD_FIELDS rows keyed producer|model[|effort], the shape
+    the app prices. A Flex call over the long cut stays in `long` only."""
+    out: dict = {}
+    for c in calls:
+        b = out.setdefault(row_key(c["producer"], c["model"], c.get("effort")), {
+            "calls": 0, "cached_calls": 0, "in": 0, "cache_read": 0, "cache_write": 0, "out": 0,
+            "max_in": 0, "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0},
+            "flex": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0}})
+        tokens = {"in": int(c["in_tok"] or 0), "cache_read": int(c["cr"] or 0),
+                  "cache_write": int(c["cw"] or 0), "out": int(c["out_tok"] or 0)}
+        b["calls"] += 1
+        b["cached_calls"] += tokens["cache_read"] > 0
+        for k, v in tokens.items():
+            b[k] += v
+        b["max_in"] = max(b["max_in"], tokens["in"])
+        part = "long" if c.get("long") else "flex" if c.get("flex") else None
+        if part:
+            for k, v in tokens.items():
+                b[part][k] += v
+    return {k: thread_row(b) for k, b in out.items()}
+
+
+def implementer(call: dict | None, agent: str | None = None) -> str | None:
+    """`producer|model[|effort]` of one call, or the backend alone when the
+    session made no call yet."""
+    if call is None:
+        return {"claude-code": "claude_code", "codex": "codex"}.get(agent or "", agent)
+    return row_key(call["producer"], call["model"], call.get("effort"))
+
+
+def build_handoffs(events: list, calls: list) -> list:
+    """One record per handoff, oldest first. See HANDOFFS, IN A THIRD FILE."""
+    ev_by: dict = {}
+    for e in events:
+        ev_by.setdefault(e["thread"], []).append(e)
+    calls_by: dict = {}
+    for c in calls:
+        calls_by.setdefault(c["thread"], []).append(c)
+    for v in list(ev_by.values()) + list(calls_by.values()):
+        v.sort(key=lambda r: int(r["seq"]))
+
+    def last_before(rows, seq, types, pred=lambda r: True):
+        hit = None
+        for r in rows:
+            if int(r["seq"]) >= seq:
+                break
+            if r["type"] in types and pred(r):
+                hit = r
+        return hit
+
+    def record(thread, to_thread, at_event, old, new, mark_end, opening, kind, sessions, agent, since):
+        # Only the old session's own marks: a checkpoint read in an earlier
+        # session says nothing about this handoff.
+        evs = [r for r in ev_by.get(thread, []) if int(r["seq"]) > since]
+        anchor = last_before(evs, mark_end, TURN_MARKS)
+        cut = int(anchor["seq"]) if anchor else -1
+        warm = opening != "brief"
+        narrative = [c for c in old if int(c["seq"]) > cut] if warm else []
+        before = [c for c in old if not warm or int(c["seq"]) <= cut][-HANDOFF_WINDOW:]
+        checkpoint = at_event.get("checkpoint")
+        reading = last_before(evs, int(at_event["seq"]), ("HandoffCheckpointReached",),
+                              lambda r: checkpoint is None or r.get("checkpoint") == checkpoint)
+        if checkpoint is None and reading is not None:
+            checkpoint = reading.get("checkpoint")
+        pays = (reading or {}).get("pays")
+        return {
+            "kind": kind,
+            "thread": thread,
+            "to_thread": to_thread,
+            "from_session": sessions[0],
+            "to_session": sessions[1],
+            "day": at_event["day"],
+            "at": at_event["at"],
+            "opening": opening,
+            "checkpoint": checkpoint,
+            "progress": at_event.get("progress") or (reading or {}).get("progress"),
+            "pays": None if pays in (None, "") else str(pays).lower() == "true",
+            "from": implementer(old[-1] if old else None),
+            "to": implementer(new[0] if new else None, agent),
+            "narrative": call_bundles(narrative) if warm else None,
+            "before": call_bundles(before),
+            "after": call_bundles(new[:HANDOFF_WINDOW]),
+        }
+
+    out = []
+    for thread, evs in ev_by.items():
+        tcalls = calls_by.get(thread, [])
+        opened, session_start = 0, -1
+        for e in evs:
+            if e["type"] == "SessionStarted" and e.get("continuity") in OPENING_KINDS:
+                opened += 1
+                since, session_start = session_start, int(e["seq"])
+                if e["continuity"] != "handoff":
+                    continue
+                n = opened + 1
+                seq = int(e["seq"])
+                handed = last_before(evs, seq, ("SessionHandedOff",))
+                old = [c for c in tcalls if c.get("session") == str(n - 1) and int(c["seq"]) < seq]
+                new = [c for c in tcalls if c.get("session") == str(n)]
+                out.append(record(thread, thread, e, old, new,
+                                  int(handed["seq"]) if handed else seq,
+                                  e.get("opening") or (handed or {}).get("opening"),
+                                  "session", [n - 1, n], e.get("coding_agent"), since))
+            elif e["type"] == "SuccessorThreadSpawned" and e.get("successor"):
+                seq = int(e["seq"])
+                old = [c for c in tcalls if int(c["seq"]) < seq]
+                if old and old[-1].get("session"):
+                    old = [c for c in old if c.get("session") == old[-1]["session"]]
+                succ = calls_by.get(e["successor"], [])
+                first = succ[0].get("session") if succ else None
+                new = [c for c in succ if c.get("session") == first]
+                # A successor thread's opening was not recorded: `null`, and
+                # its last turn is measured as the narrative turn.
+                out.append(record(thread, e["successor"], e, old, new, seq, None, "thread",
+                                  [old[-1].get("session") if old else None, first], None, session_start))
+    out.sort(key=lambda r: r["at"] or "")
+    return out
+
+
+def handoffs_payload(long_cut: str, max_seq: int) -> dict:
+    """handoffs.json, from two reads."""
+    fill = lambda sql: sql.replace("%(max_seq)s", str(max_seq)).replace(LONG_CUT_MARK, long_cut)
+    events = json.loads(psql(fill(HANDOFF_EVENTS_SQL)) or "[]")
+    calls = json.loads(psql(fill(HANDOFF_CALLS_SQL)) or "[]")
+    return {
+        "generated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "last_sequence": max_seq,
+        "window": HANDOFF_WINDOW,
+        "fields": list(THREAD_FIELDS),
+        "note": (
+            "One record per handoff. kind `session`: a successor session in the same thread "
+            "(SessionStarted continuity handoff); kind `thread`: a legacy successor thread "
+            "(SuccessorThreadSpawned), whose opening was not recorded. opening `narrative` is warm "
+            "(the old session wrote the handoff narrative), `brief` is cold (the engine wrote a brief, "
+            "so narrative is null). narrative, before and after are token rows in `fields` order keyed "
+            "producer|model[|effort]: the narrative turn, the old session's last `window` main-session "
+            "calls before it, and the new session's first `window`. Main-session calls only: Claude "
+            "Code or Codex, no sub-agent call, no cache keep-alive. checkpoint is the handoff "
+            "checkpoint it ran at, pays the verdict the handoff estimate gave there. threads maps "
+            "each thread id to its title."
+        ),
+        "handoffs": build_handoffs(events, calls),
+    }
+
+
 def dumps_by_day(doc: dict) -> str:
-    """Compact JSON with each top-level key, and each day under `days` and
-    `hours`, on its own line. Still one valid document. The engine commits
+    """Compact JSON with each top-level key, each day under `days` and
+    `hours`, and each session span under `sessions`, on its own line. Still one valid document. The engine commits
     every write to the workspace git, and on one 3 MB line an hourly run that
     touched only today rewrote the whole line; this way git stores a delta of
     the days that changed."""
     c = lambda v: json.dumps(v, separators=(",", ":"))
     parts = []
     for k, v in doc.items():
-        if k in ("days", "hours") and isinstance(v, dict):
+        if k in ("days", "hours", "sessions") and isinstance(v, dict):
             inner = ",\n".join(f"{c(d)}:{c(x)}" for d, x in v.items())
             parts.append(f"{c(k)}:{{\n{inner}\n}}")
         else:
@@ -1053,6 +1465,13 @@ def main() -> None:
     # day and the live tail, and counted twice until the next run.
     ceiling = lambda sql: sql.replace("%(days)s", day_array).replace("%(max_seq)s", str(max_seq))
     rows = json.loads(psql(ceiling(ROLLUP_SQL.replace(LONG_CUT_MARK, long_cut))))
+    # A failed read stops the run (psql exits): carrying on would file every
+    # agent call of the touched days as unknown, and an incremental run never
+    # revisits them.
+    summaries = json.loads(psql(ORIGIN_SQL) or "{}")
+    if not isinstance(summaries, dict):
+        sys.exit("not rolling up: thread_summaries did not read as an object")
+    origins = classify_origins(summaries)
 
     # Diagnostic only, and counted separately: the rollup query filters the
     # duplicates out inside the same subquery, so it cannot also count them.
@@ -1127,13 +1546,14 @@ def main() -> None:
     # disagree.
     for x in rows:
         kept += int(x["calls"])
-        key = row_key(x["producer"], x["model"], x.get("effort"))
         tid = x.get("thread") or ""
+        slot = thread_slot(tid, x.get("session"))
+        key = row_key(agent_producer(x["producer"], tid, origins), x["model"], x.get("effort"))
         hr = str(int(x["hour"]))
         fold(days[x["day"]].setdefault(key, blank()), x)
         fold(hours[x["day"]].setdefault(hr, {}).setdefault(key, blank()), x)
-        fold(t_days[x["day"]].setdefault(tid, {}).setdefault(key, blank()), x)
-        fold(t_hours[x["day"]].setdefault(hr, {}).setdefault(tid, {}).setdefault(key, blank()), x)
+        fold(t_days[x["day"]].setdefault(slot, {}).setdefault(key, blank()), x)
+        fold(t_hours[x["day"]].setdefault(hr, {}).setdefault(slot, {}).setdefault(key, blank()), x)
 
     # Voice seconds land in the same buckets, under their own field. A session
     # that started before midnight is filed on the day it ENDED, because that
@@ -1144,13 +1564,14 @@ def main() -> None:
     for x in secs:
         n = int(x["seconds"] or 0)
         total_secs += n
-        key = row_key(x["producer"], x["model"])
         tid = x.get("thread") or ""
+        slot = thread_slot(tid, x.get("session"))
+        key = row_key(agent_producer(x["producer"], tid, origins), x["model"])
         days[x["day"]].setdefault(key, blank())["seconds"] += n
         hr = str(int(x["hour"]))
         hours[x["day"]].setdefault(hr, {}).setdefault(key, blank())["seconds"] += n
-        t_days[x["day"]].setdefault(tid, {}).setdefault(key, blank())["seconds"] += n
-        t_hours[x["day"]].setdefault(hr, {}).setdefault(tid, {}).setdefault(key, blank())["seconds"] += n
+        t_days[x["day"]].setdefault(slot, {}).setdefault(key, blank())["seconds"] += n
+        t_hours[x["day"]].setdefault(hr, {}).setdefault(slot, {}).setdefault(key, blank())["seconds"] += n
 
     # Hourly detail only for the days a single-day selection can reach.
     keep_hours = set(sorted(days)[-HOURS_DAYS:])
@@ -1181,6 +1602,16 @@ def main() -> None:
     t_days = {d: as_rows(v) for d, v in t_days.items()}
     t_hours = {d: {hr: as_rows(v) for hr, v in by_hour.items()} for d, by_hour in t_hours.items()}
     tids = {t for v in t_days.values() for t in v}
+    handoffs = handoffs_payload(long_cut, max(max_seq, since))
+    handoff_tids = {t for h in handoffs["handoffs"] for t in (h["thread"], h["to_thread"]) if t}
+    meta = thread_meta(tids | handoff_tids)
+    # A rebuild starts the spans over from the first call, as it does the
+    # days. So does a thread file written before it carried spans.
+    old_spans = None if why or threads_state is None else threads_state.get("sessions")
+    spans = session_spans(old_spans, since if old_spans is not None else 0, max_seq)
+    # Titles only: the app names a handoff's thread without loading the
+    # thread file.
+    handoffs["threads"] = {t: meta[t][0] for t in sorted(handoff_tids) if t in meta}
 
     payload = {
         "generated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -1199,7 +1630,7 @@ def main() -> None:
             "200k elsewhere), for the long-context price tier. 'long_split' "
             "fingerprints those thresholds; a change rebuilds every day. "
             "A claude_code row whose usage tuple repeats the previous row in the same "
-            "thread is dropped as a re-delivered streaming frame, not counted as a "
+            "thread and agent session is dropped as a re-delivered streaming frame, not counted as a "
             "second call. Other producers are never collapsed. A claude_code call made "
             "by a cache keep-alive (its request_event_id names a PromptInjected with "
             "engine reason cache_keep_alive) is filed under the cache_keep_alive type. "
@@ -1210,7 +1641,12 @@ def main() -> None:
             "id that was asked for. A call that names its reasoning_effort is keyed "
             "producer|model|effort, else producer|model. An auxiliary call is filed "
             "under the producer id auxiliary:<purpose> (bare auxiliary when it has no "
-            "purpose), e.g. auxiliary:memory. "
+            "purpose), e.g. auxiliary:memory. A Lucidos Agent call is filed under "
+            "main_llm:<origin>, the origin of its thread's root in thread_summaries: "
+            "trigger (a trigger opened it), chat (a person started it) or other (the "
+            "system started it with no trigger); bare main_llm when that cannot be read. "
+            f"'thread_origins' lists, per origin, the threads active in the last "
+            f"{ORIGIN_WINDOW_DAYS} days, so a live call can be filed before the next run. "
             "'seconds' is voice "
             "session wall-clock time, for a model billed by the minute rather than by "
             "tokens, taken from VoiceSessionEnded.duration_secs. Days are bucketed in "
@@ -1223,6 +1659,9 @@ def main() -> None:
             "`requests` count. Tokens are the measured mean per decision call, so the "
             "count is exact and the token figure is an estimate; see JEV_TOKENS_PER_CALL."
         ),
+        "thread_origins": {
+            o: sorted(t for t, rec in summaries.items() if rec[4] and origins.get(t) == o) for o in ORIGINS
+        },
         "days": days,
         "hours": hours,
     }
@@ -1233,25 +1672,35 @@ def main() -> None:
         "rollup_version": ROLLUP_VERSION,
         "fields": list(THREAD_FIELDS),
         "note": (
-            "The rows of daily.json split by thread: days[day][thread][producer|model[|effort]] "
-            "and hours[day][hour][thread][producer|model[|effort]], each a list in `fields` "
+            "The rows of daily.json split by thread and agent session: "
+            "days[day][slot][producer|model[|effort]] and hours[day][hour][slot][producer|model[|effort]], "
+            "where slot is <thread>@<session> (the session ordinal ContextCaptured carries, from 1) or the "
+            "bare thread id for a call from before the engine stamped sessions. Each row is a list in `fields` "
             "order with trailing zeros dropped. Same dedupe, long split and Flex split "
             "as daily.json, from the same query, so the two always sum alike. "
-            "The producer is auxiliary:<purpose> for an auxiliary call, as in daily.json. "
-            "threads[id] is [title] or [title, parent id]; a sub-thread folds into "
-            "its root by walking parents. The empty thread id holds calls with no "
-            "thread (Jev)."
+            "The producer is auxiliary:<purpose> for an auxiliary call and main_llm:<origin> "
+            "for a Lucidos Agent call, as in daily.json. "
+            "threads[id] is [title], [title, parent id] or [title, parent id or null, "
+            "predecessor id]; a sub-thread folds into its root by walking parents, and a "
+            "legacy successor thread into the chain it continued by walking predecessors. "
+            "The empty thread id holds calls with no thread (Jev). The claude_code frame "
+            "dedupe compares a call only with the one before it in the same session. "
+            "sessions[<thread>@<session>] is [first call, last call] in ISO UTC, over every call the "
+            "session ever made, keep-alive pings included. Bare pre-session slots have none."
         ),
-        "threads": thread_meta(tids),
+        "threads": meta,
+        "sessions": spans,
         "days": t_days,
         "hours": t_hours,
     }
 
     # Write through the CLI so the engine stages, commits and announces the
     # file. daily.json first: if the thread file then fails, the next run sees
-    # the two cursors disagree and rebuilds both.
+    # the two cursors disagree and rebuilds both. The handoff file is rebuilt
+    # whole each run, so it needs no cursor of its own.
     for rel, text in (("artifacts/token-cost/daily.json", json.dumps(payload, separators=(",", ":"))),
-                      ("artifacts/token-cost/threads-daily.json", dumps_by_day(threads_payload))):
+                      ("artifacts/token-cost/threads-daily.json", dumps_by_day(threads_payload)),
+                      ("artifacts/token-cost/handoffs.json", json.dumps(handoffs, separators=(",", ":")))):
         w = subprocess.run(
             ["lucidos", "data", "write", rel, "--from", "-"],
             input=text, capture_output=True, text=True,
@@ -1262,7 +1711,7 @@ def main() -> None:
         f"rolled up {len(touched)} day(s) {touched[0]}..{touched[-1]}, "
         f"seq {since} -> {max_seq}, kept {kept} of {raw_rows} rows "
         f"({max(0, raw_rows - kept)} re-delivered frame(s) dropped), "
-        f"{total_secs}s of voice"
+        f"{total_secs}s of voice, {len(handoffs['handoffs'])} handoff(s)"
     )
 
 
