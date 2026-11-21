@@ -1,9 +1,9 @@
 id = "token-cost"
-version = "0.7.0"
+version = "0.8.0"
 name = "Token Cost"
-description = "Live token usage and cost for every model call in your workspace. Pick a date range and break spend down by model, effort, type or thread. Drill into a thread to see each agent session, keep-alive spend and handoffs. Cache views compare ping cost with evidenced savings. Includes the Thread cost widget."
+description = "Live token usage and cost by billing provider, model, type and thread. See Cost by trigger, compare cache spend and savings, and pin the Thread cost widget."
 source = "https://github.com/lucidos-dev/plugins/tree/main/token-cost"
-engine = ">=0.51.0"
+engine = ">=0.58.0"
 categories = ["developer-tools", "data"]
 icon = "media/icon.svg"
 setup_revision = 2

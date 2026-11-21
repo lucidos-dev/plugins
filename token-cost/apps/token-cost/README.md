@@ -183,7 +183,7 @@ env -u LUCIDOS_WORKSPACE apps/token-cost/tests/run.sh
 
 ## Requirements
 
-Lucidos 0.51.0 or later, for stamped agent sessions and same-thread handoff
+Lucidos 0.58.0 or later, for stamped agent sessions and same-thread handoff
 continuity. It also needs the price table: it serves `GET /api/v1/model-prices`,
 `lucidos.priceTable.get()` and the `lucidos model-prices` command. On an older
 engine the app shows every model as unpriced and the rollup stops with a clear

@@ -4,7 +4,8 @@ See what your workspace spends on AI, live. Every model call the workspace makes
 
 ## What you get
 
-- **The Token Cost app.** A dashboard with the running spend for the range you pick (presets from today to all time, or any two dates on a calendar), calls, tokens in and out, and the share served from cache. An analysis table, share donut and daily or weekly bars group the cost by any mix of model, type and thread. Thread drill-downs show each agent session, its time span, peak context and a separate keep-alive spend line. The phone date picker fits the screen. Split a model by reasoning effort, or a type into its parts: each auxiliary purpose (memory, titles, compaction...) and the cache keep-alive pings get a row of their own. Click a legend entry to filter to it. Below it you find a live list of calls as they arrive, a cost per day chart, and how large each prompt was.
+- **The Token Cost app.** A dashboard with the running spend for the range you pick (presets from today to all time, or any two dates on a calendar), calls, tokens in and out, and the share served from cache. An analysis table, share donut and daily or weekly bars group the cost by any mix of billing provider, model, type and thread. Thread drill-downs show each agent session, its time span, peak context and a separate keep-alive spend line. The phone date picker fits the screen. Split a model by reasoning effort, or a type into its parts: each auxiliary purpose (memory, titles, compaction...) and the cache keep-alive pings get a row of their own. Click a legend entry to filter to it. Below it you find a live list of calls as they arrive, a cost per day chart, and how large each prompt was.
+- **Cost by trigger.** See fire counts, spend and model mix for each trigger. Expand a row to see its fire threads and their costs.
 - **Honest prices.** Each model has a price history. Each day is priced at the rate in force that day, and each call at the model that actually served it. A price change never reprices the past. Prices come from Lucidos's own price table, and any rate you edit in Settings is saved as your workspace override.
 - **The Thread cost widget.** A small live card for the thread you have open. It shows what that thread costs, including sub-threads by default: the total, today's share, the model mix and the costliest sub-threads. Choose the thread alone or include sub-threads, and see per-session spend. A lightweight snapshot speeds first paint; threads it omits wait for the full snapshot. It fits a small, medium or large dashboard tile. One tap opens Token Cost.
 - **Handoffs.** Compare each checkpoint: the narrative turn’s cost, cost per call before and after, warm and cold openings, and whether the checkpoint’s verdict held. Older successor-thread handoffs are shown too.
@@ -12,7 +13,7 @@ See what your workspace spends on AI, live. Every model call the workspace makes
 
 ## What it needs
 
-- Lucidos 0.51.0 or later, with agent-session telemetry and same-thread handoffs.
+- Lucidos 0.58.0 or later. Analysis groups by model when the selected range has no billing provider evidence.
 - No API key and no account. The scripts read the workspace event store on your own machine.
 - Two schedules, which setup offers to create for you: an hourly rollup for the dashboard, and an hourly snapshot for the widget.
 - Prices come from Lucidos. The plugin ships none of its own. To keep them current, turn on **Keep prices current** in Settings > Intelligence.
@@ -21,7 +22,7 @@ All data stays in your workspace: usage under `artifacts/token-cost/`, and your 
 
 ## What to try first
 
-1. Open the app and look at **Analysis**, grouped by model. Which model costs you the most?
+1. Open the app and look at **Analysis**, grouped by billing provider and model when provider evidence is available. Which model costs you the most?
 2. Start a chat and watch **Live calls** fill as the agent answers.
 3. Ask Lucidos to show the Thread cost widget in a thread that runs sub-threads, and watch its total grow as they work.
 4. Open **Settings** to check a rate, or add a price change from the day it took effect.
