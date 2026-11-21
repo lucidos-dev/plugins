@@ -357,14 +357,17 @@ def run_main(head, ws=None, cache_head="0"):
         asked.append(sql)
         return iter(())
 
-    real = rollup.psql, rollup.psql_rows, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS
+    real = (rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.TRIGGERS_OUT,
+            rollup.WS, rollup.psql_rows)
     tmp = ws or pathlib.Path(tempfile.mkdtemp())
-    rollup.psql, rollup.psql_rows, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS = (
-        fake_psql, fake_rows, fake_run, tmp / "daily.json", tmp / "threads-daily.json", tmp)
+    rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.TRIGGERS_OUT, rollup.WS = (
+        fake_psql, fake_run, tmp / "daily.json", tmp / "threads-daily.json", tmp / "triggers.json", tmp)
+    rollup.psql_rows = fake_rows
     try:
         rollup.main()
     finally:
-        rollup.psql, rollup.psql_rows, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS = real
+        (rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.TRIGGERS_OUT,
+         rollup.WS, rollup.psql_rows) = real
     return asked, written
 
 
@@ -375,7 +378,10 @@ check("the rollup, the voice pass and the row count all ran", len(reads), 3)
 check("each stops at the cursor", all("sequence <= 4242" in q for q in reads), True)
 check("no placeholder is left in any query", any("%(" in q for q in asked), False)
 check("the cursor written is that same ceiling", written and written[0]["last_sequence"], 4242)
-check("daily, thread, handoff and cache evidence files are written", len(written), 4)
+check("daily, thread, handoff, trigger and cache evidence are written", len(written), 5)
+check("cache evidence carries its schema and missed-ping count",
+      (written[4]["version"], "missed_pings" in written[4]["fields"]), (rollup.CACHE_VERSION, True))
+check("the trigger file carries the same cursor", written[3]["last_sequence"], 4242)
 check("the thread file carries the same cursor", written[1]["last_sequence"], 4242)
 check("the handoff file carries the window, the fields and the thread titles",
       (written[2].get("window"), written[2].get("fields") == list(rollup.THREAD_FIELDS), "threads" in written[2]),
@@ -386,7 +392,7 @@ check("the handoff reads stop at the cursor too",
 idle_ws = pathlib.Path(tempfile.mkdtemp())
 asked_idle, written_idle = run_main("0|", idle_ws, cache_head="77")
 check("a rollup without new calls still rebuilds cache evidence", len(written_idle), 1)
-check("old snapshots gain a versioned cache file without a rebuild", written_idle[0].get("version"), 2)
+check("old snapshots gain a versioned cache file without a rebuild", written_idle[0].get("version"), rollup.CACHE_VERSION)
 streamed = [q for q in asked_idle if q.lstrip().startswith("SELECT row_to_json(t) FROM")]
 check("the cache events stream, one row per line, in sequence order",
       len(streamed) == 1 and "ORDER BY sequence" in streamed[0] and "json_agg" not in streamed[0], True)
@@ -656,17 +662,20 @@ def run_origin_main(rows, secs, summaries):
         written.append(json.loads(kw["input"]))
         return Done()
 
-    real = rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS
+    real = (rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.TRIGGERS_OUT,
+            rollup.WS, rollup.psql_rows)
     tmp = pathlib.Path(tempfile.mkdtemp())
-    rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS = (
-        fake_psql, fake_run, tmp / "daily.json", tmp / "threads-daily.json", tmp)
+    rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.TRIGGERS_OUT, rollup.WS = (
+        fake_psql, fake_run, tmp / "daily.json", tmp / "threads-daily.json", tmp / "triggers.json", tmp)
+    rollup.psql_rows = lambda sql: iter(())
     try:
         rollup.main()
         exited = None
     except SystemExit as e:
         exited = str(e)
     finally:
-        rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.WS = real
+        (rollup.psql, rollup.subprocess.run, rollup.OUT, rollup.THREADS_OUT, rollup.TRIGGERS_OUT,
+         rollup.WS, rollup.psql_rows) = real
     return asked, written, exited
 
 
@@ -872,6 +881,148 @@ spans, _ = spans_with(RuntimeError(), OLD)
 check("a failed read keeps the spans on file", spans, OLD)
 check("the thread file writes one span per line",
       sum(1 for line in rollup.dumps_by_day({"sessions": OLD}).splitlines() if line.startswith('"t@')), 2)
+
+# 25. Cost by trigger. A thread belongs to the trigger of its top root: the
+# root's own trigger_id, else the trigger whose script fire spawned it. A call
+# in no such thread that names a trigger itself (a script fire's proxied call)
+# is kept apart under `calls`. Fires come from TriggerExecuted, so a script
+# fire that opened no thread still counts.
+SUMMARIES = [
+    # thread, trigger_id, parent, successor_of, created
+    ["fire-1", "trig-a", None, None, "2026-10-27T08:00:00Z"],
+    ["fire-1-sub", None, "fire-1", None, "2026-10-27T08:01:00Z"],
+    ["fire-2", "trig-a", None, None, "2026-10-28T08:00:00Z"],
+    ["spawned", None, None, None, "2026-10-28T09:00:00Z"],
+    ["spawned-sub", None, "spawned", None, "2026-10-28T09:01:00Z"],
+    ["chat", None, None, None, "2026-10-28T10:00:00Z"],
+    ["home", None, None, None, "2026-10-01T00:00:00Z"],
+]
+SPAWNS = [["spawned", "trig-b", "2026-10-28T08:59:59Z"]]
+roots = rollup.fire_roots(SUMMARIES, SPAWNS)
+parents = rollup.thread_parents(SUMMARIES)
+check("a fire root names its trigger and start", roots.get("fire-1"), ["trig-a", "2026-10-27T08:00:00Z"])
+check("a script-spawned thread names the spawning trigger", roots.get("spawned"), ["trig-b", "2026-10-28T09:00:00Z"])
+check("sub-threads and chats are no fire roots", sorted(roots), ["fire-1", "fire-2", "spawned"])
+check("a spawn with no summary yet starts at its queue time",
+      rollup.fire_roots([], SPAWNS).get("spawned"), ["trig-b", "2026-10-28T08:59:59Z"])
+check("an own trigger_id wins over a spawn",
+      rollup.fire_roots(SUMMARIES, [["fire-1", "trig-b", "x"]])["fire-1"][0], "trig-a")
+
+owner = lambda tid, trig: rollup.call_trigger(tid, trig, roots, parents)
+check("a call in a fire's sub-thread stays with its thread", owner("fire-1-sub", "trig-a"), None)
+check("a stamped call in a spawned thread stays with its thread", owner("spawned-sub", "trig-b"), None)
+check("a stamped call on the home thread goes to its trigger", owner("home", "trig-c"), "trig-c")
+check("an unstamped call goes nowhere", owner("home", None), None)
+check("a stamped call with no thread goes to its trigger", owner("", "trig-c"), "trig-c")
+
+FIRES = [["trig-a", "2026-10-27", 1], ["trig-a", "2026-10-28", 1], ["trig-s", "2026-10-28", 3]]
+NAMES = [["trig-a", "Morning brief"], ["trig-s", "Inbox script"], ["trig-gone", "Never fired"]]
+CALLS = {"2026-10-28": {"trig-c": {"auxiliary:proxy|m": [2, 0, 100]}}}
+doc = rollup.build_triggers(SUMMARIES, SPAWNS, FIRES, NAMES, CALLS)
+check("fires per trigger per day", doc["triggers"]["trig-a"]["fires"], {"2026-10-27": 1, "2026-10-28": 1})
+check("a script trigger with no thread still has its fires",
+      doc["triggers"]["trig-s"], {"name": "Inbox script", "fires": {"2026-10-28": 3}})
+check("a trigger known only by its spawned thread or calls is listed",
+      (doc["triggers"]["trig-b"], doc["triggers"]["trig-c"]),
+      ({"name": None, "fires": {}}, {"name": None, "fires": {}}))
+check("a trigger with no fire, thread or call is left out", "trig-gone" in doc["triggers"], False)
+check("threads lists the fire roots", doc["threads"], roots)
+check("calls pass through", doc["calls"], CALLS)
+check("the rollup reads which trigger each call names",
+      "emitting_trigger_id AS trigger_id" in rollup.ROLLUP_SQL
+      and "GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10" in rollup.ROLLUP_SQL, True)
+check("the spawn read takes the queued request's trigger",
+      "'request'->>'spawning_trigger_id'" in rollup.SPAWNS_SQL, True)
+
+asked, written = run_main("4242|2026-10-10")
+check("an empty store still writes triggers.json",
+      (written[3].get("triggers"), written[3].get("calls"), written[3].get("last_sequence")),
+      ({}, {"2026-10-10": {}}, 4242))
+stamped = dict(qrow("home", "auxiliary:proxy", 2, 200), trigger_id="trig-c")
+asked, written, _ = run_origin_main([stamped, qrow("chat", "main_llm", 1, 10)], [], {})
+tcalls = written[3]["calls"]["2026-10-10"] if len(written) > 3 else {}
+check("a script fire's proxied call is filed under its trigger",
+      [(t, [r[0] for r in keys.values()]) for t, keys in tcalls.items()], [("trig-c", [2])])
+check("and still counts on its own thread in threads-daily.json",
+      sum(r[0] for r in written[1]["days"]["2026-10-10"].get("home", {}).values()) if len(written) > 1 else 0, 2)
+
+at = {"last_sequence": 7}
+check("files in step run incrementally", rollup.out_of_step(at, at, at), None)
+check("a missing triggers.json rebuilds every day", rollup.out_of_step(at, at, None) is not None, True)
+check("a triggers.json behind daily.json rebuilds every day",
+      rollup.out_of_step(at, at, {"last_sequence": 6}) is not None, True)
+check("a missing threads-daily.json still rebuilds", rollup.out_of_step(at, None, at) is not None, True)
+check("no daily.json yet is no rebuild", rollup.out_of_step(None, None, None), None)
+
+# A Postgres crash-recovery reset can terminate active connections. Retry once.
+CRASH = ("psql failed: WARNING:  terminating connection because of crash of another server process\n"
+         "COPY data transfer failed: server closed the connection unexpectedly\n"
+         "connection to server was lost")
+
+
+def flaky(errors):
+    calls = []
+
+    def run():
+        calls.append(1)
+        if len(calls) <= len(errors):
+            sys.exit(errors[len(calls) - 1])
+    return run, calls
+
+
+slept = []
+run, calls = flaky([CRASH])
+rollup.run_with_retry(run, sleep=slept.append)
+check("a lost connection is retried once and then succeeds", (len(calls), slept), (2, [10]))
+
+run, calls = flaky([CRASH, CRASH])
+try:
+    rollup.run_with_retry(run, sleep=lambda s: None)
+    code = None
+except SystemExit as e:
+    code = e.code
+check("a second lost connection fails loud with the error", (len(calls), code), (2, CRASH))
+
+for msg in ("psql failed: ERROR:  relation \"events\" does not exist", "not rolling up: no price table", 3):
+    run, calls = flaky([msg])
+    try:
+        rollup.run_with_retry(run, sleep=lambda s: None)
+        code = None
+    except SystemExit as e:
+        code = e.code
+    check(f"a real failure is not retried: {msg!r}", (len(calls), code), (1, msg))
+
+for msg in ("psql failed: FATAL:  the database system is in recovery mode",
+            "psql failed: connection to server at \"127.0.0.1\", port 5435 failed: Connection refused"):
+    run, calls = flaky([msg])
+    rollup.run_with_retry(run, sleep=lambda s: None)
+    check(f"a database still coming back is retried: {msg[:50]!r}", len(calls), 2)
+
+# Provider is independent of model and producer. Legacy keys remain readable.
+check("provider extends the key after effort", rollup.row_key("codex", "m", "high", provider="chatgpt-plan"),
+      "codex|m|high|provider=chatgpt-plan")
+check("provider reserves the effort slot", rollup.row_key("p", "m", provider="vertex"), "p|m||provider=vertex")
+check("unknown cache lifetime remains the last marker", rollup.row_key("p", "m", cache_unknown=True, provider="anthropic"),
+      "p|m||provider=anthropic|cache_ttl_unknown")
+check("provider cannot inject a key separator", rollup.row_key("p", "m", provider="a|b"), "p|m||provider=a%7Cb")
+provider_rows = [dict(qrow("chat", "main_llm", n, n * 100), provider=p)
+                 for p, n in (("vertex", 2), ("claude-gateway", 3), (None, 5))]
+_, exported, err = run_origin_main(provider_rows, [], {})
+check("provider rollup succeeds", err, None)
+pday = exported[0]["days"]["2026-10-10"]
+check("providers do not merge for the same model", len(pday), 3)
+check("provider calls conserved", sum(v["calls"] for v in pday.values()), 10)
+check("provider tokens conserved", sum(v["in"] for v in pday.values()), 1000)
+check("provider survives hourly aggregation", exported[0]["hours"]["2026-10-10"]["9"], pday)
+check("provider survives compact thread rows", sorted(exported[1]["days"]["2026-10-10"]["chat"]), sorted(pday))
+check("SQL reads the recorded provider", "nullif(btrim(payload->>'provider'), '') AS provider" in rollup.ROLLUP_SQL, True)
+check("SQL groups by provider as well", "GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11" in rollup.ROLLUP_SQL, True)
+_, voice_export, err = run_origin_main([dict(qrow("chat", "auxiliary:voice", 2, 0), provider="openai")],
+    [{"day":"2026-10-10", "hour":9, "producer":"auxiliary:voice", "model":"gpt-5.5",
+      "thread":"chat", "provider":"openai", "seconds":60}], {})
+check("voice duration follows the provider", voice_export[0]["days"]["2026-10-10"]["auxiliary:voice|gpt-5.5||provider=openai"]["seconds"], 60)
+
+check("provider forces a historical rebuild", rollup.needs_rebuild({"rollup_version": 15}, {}) is not None, True)
 
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

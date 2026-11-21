@@ -117,6 +117,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
+from urllib.parse import quote
 from cache_stats import VERSION as CACHE_VERSION, build_cache
 from cache_usage import WRITE_FIELDS, write_bundle, write_sql
 
@@ -150,8 +151,7 @@ LONG_CTX_THRESHOLD = 200000
 # name for thread events, which key `aggregate_id` on a thread uuid, and
 # rejects a hand-emitted one with 400.) Those events are the live source.
 #
-# The disk pass below is a BACKFILL for the ~57k calls made before that event
-# existed. It reads the exact `requests` count each drive already recorded and
+# The disk pass below is a BACKFILL for calls made before that event existed. It reads the exact `requests` count each drive already recorded and
 # multiplies by the measured mean tokens per call, so the count is exact and
 # the token figure is an estimate. A day that has real events is never
 # backfilled, so the estimate retires itself as fresh runs land.
@@ -718,7 +718,9 @@ COPY (
       effort,
       thread_id::text AS thread,
       session,
+      trigger_id,
       wk < cw AS cache_unknown,
+      provider,
       count(*) AS calls,
       count(*) FILTER (WHERE cr > 0) AS cached_calls,
       sum(in_tok) AS total_in,
@@ -750,6 +752,7 @@ COPY (
     + """ AS local_hour,
         thread_id,
         payload->>'session' AS session,
+        emitting_trigger_id AS trigger_id,
         """
     + producer_id_sql("payload")
     + """ AS producer,
@@ -760,6 +763,7 @@ COPY (
     + ASKED
     + """ AS asked,
         coalesce(payload->>'reasoning_effort', '') AS effort,
+        nullif(btrim(payload->>'provider'), '') AS provider,
         (payload->'usage'->>'input_tokens')::bigint AS in_tok,
         coalesce((payload->'usage'->>'cache_read_tokens')::bigint, 0) AS cr,
         coalesce((payload->'usage'->>'cache_creation_tokens')::bigint, 0) AS cw,
@@ -792,7 +796,7 @@ COPY (
     ) s
     WHERE NOT dup
       AND local_day = ANY (%(days)s)
-    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
   ) t
 ) TO STDOUT;
 """
@@ -848,7 +852,7 @@ COPY (
     + """ AS producer,
            """
     + ROW_MODEL
-    + """ AS model
+    + """ AS model, nullif(btrim(payload->>'provider'), '') AS provider
     FROM events
     WHERE event_type = 'ContextCaptured' AND payload->>'purpose' = 'voice'
   )
@@ -864,10 +868,12 @@ COPY (
       m.model,
       e.thread_id::text AS thread,
       m.session,
+      m.provider,
       sum((e.payload->>'duration_secs')::bigint) AS seconds
     FROM events e
     CROSS JOIN LATERAL (
       SELECT c.producer, c.model,
+             CASE WHEN c.thread_id = e.thread_id AND c.sequence <= e.sequence THEN c.provider END AS provider,
              CASE WHEN c.thread_id = e.thread_id THEN c.session END AS session
       FROM voice_calls c
       WHERE abs(extract(epoch FROM c.created - e.created)) < 86400
@@ -882,7 +888,7 @@ COPY (
       AND """
     + E_DAY
     + """ = ANY (%(days)s)
-    GROUP BY 1, 2, 3, 4, 5, 6
+    GROUP BY 1, 2, 3, 4, 5, 6, 7
   ) t
 ) TO STDOUT;
 """
@@ -926,7 +932,8 @@ COPY (
 #      session, and a thread's meta names the thread it succeeded
 #  15  evidenced 1-hour/12-hour write counts, per tier; unknown-lifetime
 #      calls stay separate so they cannot hide other calls' priced spend
-ROLLUP_VERSION = 15
+#  16  provider splits daily, hourly, thread and trigger buckets; absent stays unknown
+ROLLUP_VERSION = 16
 
 
 # A thread row is a flat list in this order, trailing zeros dropped. Most
@@ -940,13 +947,22 @@ THREAD_FIELDS = (
 )
 
 
-def row_key(producer: str, model: str, effort: str | None = None, cache_unknown=False) -> str:
-    """A bucket's key: producer|model, plus |effort when the call named one.
-    A reader that splits on `|` and takes the first two parts still gets the
-    producer and the model."""
+def row_key(producer: str, model: str, effort: str | None = None, cache_unknown=False, provider=None) -> str:
+    """Keep producer/model/effort positions readable by existing consumers.
+
+    Provider is an optional tagged fourth component, URL-encoded so arbitrary
+    values cannot split the key. Missing evidence retains the legacy key.
+    The cache-lifetime marker stays last for readers that check its suffix.
+    """
+    provider = provider.strip() if isinstance(provider, str) else ""
+    key = f"{producer}|{model}"
+    if effort or provider or cache_unknown:
+        key += f"|{effort or ''}"
+    if provider:
+        key += "|provider=" + quote(provider, safe="~()*!.'-")
     if cache_unknown:
-        return f"{producer}|{model}|{effort or ''}|cache_ttl_unknown"
-    return f"{producer}|{model}|{effort}" if effort else f"{producer}|{model}"
+        key += "|cache_ttl_unknown"
+    return key
 
 
 def thread_slot(tid: str, session) -> str:
@@ -1207,6 +1223,7 @@ SELECT coalesce(json_agg(row_to_json(t) ORDER BY t.seq), '[]'::json) FROM (
   SELECT c.thread_id::text AS thread, c.sequence AS seq,
          c.payload->>'session' AS session,
          c.payload->>'producer' AS producer,
+         nullif(btrim(c.payload->>'provider'), '') AS provider,
          """
     + row_model_sql("c.payload->>'model'", "c.payload->>'served_model'")
     + """ AS model,
@@ -1245,7 +1262,7 @@ def call_bundles(calls: list) -> dict:
         usage = c.get("usage") or {}
         ttl = write_bundle(usage)
         unknown = ttl["cache_write_known"] < int(c["cw"] or 0)
-        b = out.setdefault(row_key(c["producer"], c["model"], c.get("effort"), unknown), {
+        b = out.setdefault(row_key(c["producer"], c["model"], c.get("effort"), unknown, provider=c.get("provider")), {
             "calls": 0, "cached_calls": 0, "in": 0, "cache_read": 0, "cache_write": 0, "out": 0,
             "max_in": 0, "long": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, **dict.fromkeys(WRITE_FIELDS, 0)},
             "flex": {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, **dict.fromkeys(WRITE_FIELDS, 0)}})
@@ -1387,6 +1404,147 @@ def handoffs_payload(long_cut: str, max_seq: int) -> dict:
     }
 
 
+# TRIGGERS, IN A FOURTH FILE
+# --------------------------
+# artifacts/token-cost/triggers.json lets the app sum cost per trigger:
+#   triggers  trigger id -> {name, fires: {day: n}}. Fires come from
+#             TriggerExecuted, so a script fire that opened no thread counts.
+#   threads   fire root thread -> [trigger id, started]. The app folds every
+#             thread into its top root, as the Thread grouping does.
+#   calls     day -> trigger id -> {producer|model[|effort]: THREAD_FIELDS row}
+#             for calls in no fire thread that name a trigger themselves: a
+#             script fire's proxied model calls, which land on the home thread.
+# A fire root is a top-level thread a trigger opened (thread_summaries
+# trigger_id), or one a script fire spawned (its ThreadQueued request's
+# spawning_trigger_id). triggers and threads are rebuilt whole each run; calls
+# keeps untouched days, as the thread file does.
+TRIGGERS_OUT = WS / "data" / "artifacts" / "token-cost" / "triggers.json"
+
+ISO_UTC = "'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'"
+TRIGGER_THREADS_SQL = f"""
+SELECT coalesce(json_agg(json_build_array(thread_id::text, trigger_id, parent_thread_id::text,
+  successor_of::text, to_char(created_at AT TIME ZONE 'UTC', {ISO_UTC}))), '[]'::json)
+FROM thread_summaries;
+"""
+SPAWNS_SQL = f"""
+SELECT coalesce(json_agg(json_build_array(
+  coalesce(payload->'data'->>'thread_id', payload->'data'->'request'->>'thread_id'),
+  payload->'data'->'request'->>'spawning_trigger_id',
+  to_char(created AT TIME ZONE 'UTC', {ISO_UTC}))), '[]'::json)
+FROM events
+WHERE event_type = 'ThreadQueued' AND payload->'data'->'request'->>'spawning_trigger_id' IS NOT NULL;
+"""
+FIRES_SQL = f"""
+SELECT coalesce(json_agg(json_build_array(trigger_id, day, n)), '[]'::json) FROM (
+  SELECT payload->>'trigger_id' AS trigger_id, to_char({LOCAL_DAY}, 'YYYY-MM-DD') AS day, count(*) AS n
+  FROM events
+  WHERE event_type = 'TriggerExecuted' AND payload->>'trigger_id' IS NOT NULL
+  GROUP BY 1, 2
+) f;
+"""
+# A deleted trigger keeps its last name here. TriggerUpdated often carries
+# none, and TriggerCompleted nests it under data.trigger_name.
+TRIGGER_NAMES_SQL = """
+SELECT coalesce(json_agg(json_build_array(tid, name)), '[]'::json) FROM (
+  SELECT DISTINCT ON (tid) tid, name FROM (
+    SELECT coalesce(payload->>'trigger_id', payload->'data'->>'trigger_id') AS tid,
+           coalesce(payload->>'name', payload->>'trigger_name', payload->'data'->>'trigger_name') AS name, sequence
+    FROM events
+    WHERE event_type IN ('TriggerCreated', 'TriggerUpdated', 'TriggerDeleted', 'TriggerCompleted')
+  ) e
+  WHERE tid IS NOT NULL AND coalesce(name, '') <> ''
+  ORDER BY tid, sequence DESC
+) n;
+"""
+
+
+def thread_parents(summaries: list) -> dict:
+    """Thread id -> the thread it folds into: its parent, else the legacy
+    thread it succeeded. The app's parentOf() is the same rule."""
+    return {t: parent or before for t, _, parent, before, _ in summaries if parent or before}
+
+
+def root_of(tid: str, parents: dict) -> str:
+    """The top of a thread's tree, guarded against a cycle, as the app's rootOf()."""
+    seen = set()
+    while tid in parents and tid not in seen:
+        seen.add(tid)
+        tid = parents[tid]
+    return tid
+
+
+def fire_roots(summaries: list, spawns: list) -> dict:
+    """Fire root thread -> [trigger id, started], from TRIGGER_THREADS_SQL and
+    SPAWNS_SQL rows. A thread's own trigger_id wins over a spawn's trigger."""
+    parents = thread_parents(summaries)
+    out = {}
+    for tid, trigger, _, _, started in summaries:
+        if trigger and tid not in parents:
+            out[tid] = [trigger, started]
+    started_of = {row[0]: row[4] for row in summaries}
+    for tid, trigger, queued in spawns:
+        if tid and trigger and tid not in out and tid not in parents:
+            out[tid] = [trigger, started_of.get(tid) or queued]
+    return out
+
+
+def call_trigger(tid: str, trigger, roots: dict, parents: dict):
+    """The trigger a rolled-up call is filed under in triggers.json `calls`:
+    its own trigger, when its thread is in no fire's tree. None otherwise, as
+    the app already reaches a fire thread's calls through `threads`."""
+    if not trigger or root_of(tid, parents) in roots:
+        return None
+    return trigger
+
+
+def build_triggers(summaries: list, spawns: list, fires: list, names: list, calls: dict) -> dict:
+    """triggers.json's trigger, thread and call maps. A trigger is listed when
+    it fired, opened a thread or made a call; its name is the last one known."""
+    roots = fire_roots(summaries, spawns)
+    triggers: dict = {}
+    entry = lambda t: triggers.setdefault(t, {"name": None, "fires": {}})
+    for trigger, day, n in fires:
+        entry(trigger)["fires"][day] = int(n)
+    for trigger, _ in roots.values():
+        entry(trigger)
+    for by_trigger in calls.values():
+        for trigger in by_trigger:
+            entry(trigger)
+    for trigger, name in names:
+        if trigger in triggers:
+            triggers[trigger]["name"] = name
+    return {"triggers": triggers, "threads": roots, "calls": calls}
+
+
+def read_json_rows(sql: str) -> list:
+    """A JSON-array query's rows. A failed read stops the run (psql exits)."""
+    rows = json.loads(psql(sql) or "[]")
+    if not isinstance(rows, list):
+        sys.exit("not rolling up triggers: a query did not read as a list")
+    return rows
+
+
+def triggers_payload(summaries: list, spawns: list, calls: dict, last_sequence: int) -> dict:
+    """triggers.json, from the thread and spawn rows already read plus two reads."""
+    return {
+        "generated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "last_sequence": last_sequence,
+        "timezone": TZ,
+        "fields": list(THREAD_FIELDS),
+        "note": (
+            "Cost by trigger. triggers[id] is {name, fires}: the last name the trigger had, and "
+            "TriggerExecuted counts per local day, so a script fire with no thread counts. "
+            "threads[id] is [trigger id, started ISO UTC] for each fire root: a top-level thread a "
+            "trigger opened, or one a script fire spawned (spawning_trigger_id on its queued request). "
+            "Sub-threads fold into their root. calls[day][trigger][producer|model[|effort]] is a row "
+            "in `fields` order for calls in no fire thread that name a trigger (emitting_trigger_id): "
+            "a script fire's proxied model calls. Those calls also count on their own thread in "
+            "threads-daily.json; calls shares its cursor."
+        ),
+        **build_triggers(summaries, spawns, read_json_rows(FIRES_SQL), read_json_rows(TRIGGER_NAMES_SQL), calls),
+    }
+
+
 # A separate, prompt-free evidence file leaves all older rollups and the
 # Thread cost snapshot readable. A full ordered read retains TTL and session
 # evidence across the range boundary. Prices stay in the app's price table.
@@ -1475,15 +1633,15 @@ def write_cache_stats(long_cut: str, split: str) -> None:
 
 
 def dumps_by_day(doc: dict) -> str:
-    """Compact JSON with each top-level key, each day under `days` and
-    `hours`, and each session span under `sessions`, on its own line. Still one valid document. The engine commits
-    every write to the workspace git, and on one 3 MB line an hourly run that
+    """Compact JSON with each top-level key, each day under `days`, `hours`
+    and `calls`, and each session span under `sessions`, on its own line. Still one valid document. The engine commits
+    every write to the workspace git, and with the whole file on one line an hourly run that
     touched only today rewrote the whole line; this way git stores a delta of
     the days that changed."""
     c = lambda v: json.dumps(v, separators=(",", ":"))
     parts = []
     for k, v in doc.items():
-        if k in ("days", "hours", "sessions") and isinstance(v, dict):
+        if k in ("days", "hours", "sessions", "calls") and isinstance(v, dict):
             inner = ",\n".join(f"{c(d)}:{c(x)}" for d, x in v.items())
             parts.append(f"{c(k)}:{{\n{inner}\n}}")
         else:
@@ -1529,6 +1687,25 @@ def migrate_legacy_prices() -> None:
         print(line)
 
 
+def out_of_step(existing: dict | None, threads_state: dict | None, triggers_state: dict | None) -> str | None:
+    """Why the files cut from one pass disagree, or None. They share a cursor:
+    if one is missing or behind (its write failed, or it predates this
+    version), an incremental run would leave its untouched days empty."""
+    if existing is None:
+        return None
+    for name, state in (("threads-daily.json", threads_state), ("triggers.json", triggers_state)):
+        if state is None or state.get("last_sequence") != existing.get("last_sequence"):
+            return f"{name} is missing or out of step with daily.json"
+    return None
+
+
+def write_artifact(rel: str, text: str) -> None:
+    """Write through the CLI so the engine stages, commits and announces the file."""
+    w = subprocess.run(["lucidos", "data", "write", rel, "--from", "-"], input=text, capture_output=True, text=True)
+    if w.returncode != 0:
+        sys.exit(f"lucidos data write failed for {rel}: {w.stderr.strip()[:400]}")
+
+
 def main() -> None:
     migrate_legacy_prices()
     try:
@@ -1541,13 +1718,8 @@ def main() -> None:
     existing = json.loads(OUT.read_text()) if OUT.exists() else None
     why = needs_rebuild(existing, os.environ, split)
     threads_state = json.loads(THREADS_OUT.read_text()) if THREADS_OUT.exists() else None
-    # The two files are cut from one pass and share a cursor. If the thread
-    # file is missing or behind (its write failed, or it predates this
-    # version), an incremental run would leave its untouched days empty.
-    if not why and existing is not None and (
-        threads_state is None or threads_state.get("last_sequence") != existing.get("last_sequence")
-    ):
-        why = "threads-daily.json is missing or out of step with daily.json"
+    triggers_state = json.loads(TRIGGERS_OUT.read_text()) if TRIGGERS_OUT.exists() else None
+    why = why or out_of_step(existing, threads_state, triggers_state)
     if why:
         print(f"rebuilding every day: {why}")
 
@@ -1569,9 +1741,16 @@ def main() -> None:
     max_seq = int(max_seq_s or 0)
     touched = sorted(d for d in day_list.split(",") if d)
 
+    trigger_threads = read_json_rows(TRIGGER_THREADS_SQL)
+    spawns = read_json_rows(SPAWNS_SQL)
+
     if not touched:
         # Status-only changes and upgrades without new calls still refresh
-        # the cache views. Failed queries/writes stop loudly.
+        # the cache views, and new fires the trigger file. Failed
+        # queries/writes stop loudly.
+        if triggers_state is not None:
+            write_artifact("artifacts/token-cost/triggers.json", dumps_by_day(triggers_payload(
+                trigger_threads, spawns, triggers_state.get("calls", {}), since)))
         write_cache_stats(long_cut, split)
         print(f"no new ContextCaptured rows above sequence {since}")
         return
@@ -1590,6 +1769,8 @@ def main() -> None:
     if not isinstance(summaries, dict):
         sys.exit("not rolling up: thread_summaries did not read as an object")
     origins = classify_origins(summaries)
+    roots = fire_roots(trigger_threads, spawns)
+    parents = thread_parents(trigger_threads)
 
     # Diagnostic only, and counted separately: the rollup query filters the
     # duplicates out inside the same subquery, so it cannot also count them.
@@ -1657,11 +1838,13 @@ def main() -> None:
     # over from the thread file as they are, already in row form.
     t_days = {} if why or threads_state is None else dict(threads_state.get("days", {}))
     t_hours = {} if why or threads_state is None else dict(threads_state.get("hours", {}))
+    tr_calls = {} if why or triggers_state is None else dict(triggers_state.get("calls", {}))
     for d in touched:
         days[d] = {}
         hours[d] = {}
         t_days[d] = {}
         t_hours[d] = {}
+        tr_calls[d] = {}
     kept = 0
     # The query returns one row per (day, hour, producer, model, effort, thread). The
     # day totals are that summed over hours and threads, so no two views can
@@ -1670,12 +1853,15 @@ def main() -> None:
         kept += int(x["calls"])
         tid = x.get("thread") or ""
         slot = thread_slot(tid, x.get("session"))
-        key = row_key(agent_producer(x["producer"], tid, origins), x["model"], x.get("effort"), x.get("cache_unknown", False))
+        key = row_key(agent_producer(x["producer"], tid, origins), x["model"], x.get("effort"), x.get("cache_unknown", False), provider=x.get("provider"))
         hr = str(int(x["hour"]))
         fold(days[x["day"]].setdefault(key, blank()), x)
         fold(hours[x["day"]].setdefault(hr, {}).setdefault(key, blank()), x)
         fold(t_days[x["day"]].setdefault(slot, {}).setdefault(key, blank()), x)
         fold(t_hours[x["day"]].setdefault(hr, {}).setdefault(slot, {}).setdefault(key, blank()), x)
+        trigger = call_trigger(tid, x.get("trigger_id"), roots, parents)
+        if trigger:
+            fold(tr_calls[x["day"]].setdefault(trigger, {}).setdefault(key, blank()), x)
 
     # Voice seconds land in the same buckets, under their own field. A session
     # that started before midnight is filed on the day it ENDED, because that
@@ -1688,7 +1874,7 @@ def main() -> None:
         total_secs += n
         tid = x.get("thread") or ""
         slot = thread_slot(tid, x.get("session"))
-        key = row_key(agent_producer(x["producer"], tid, origins), x["model"])
+        key = row_key(agent_producer(x["producer"], tid, origins), x["model"], provider=x.get("provider"))
         days[x["day"]].setdefault(key, blank())["seconds"] += n
         hr = str(int(x["hour"]))
         hours[x["day"]].setdefault(hr, {}).setdefault(key, blank())["seconds"] += n
@@ -1723,6 +1909,7 @@ def main() -> None:
     }
     t_days = {d: as_rows(v) for d, v in t_days.items()}
     t_hours = {d: {hr: as_rows(v) for hr, v in by_hour.items()} for d, by_hour in t_hours.items()}
+    tr_calls = {d: as_rows(v) for d, v in sorted(tr_calls.items())}
     tids = {t for v in t_days.values() for t in v}
     handoffs = handoffs_payload(long_cut, max(max_seq, since))
     handoff_tids = {t for h in handoffs["handoffs"] for t in (h["thread"], h["to_thread"]) if t}
@@ -1746,7 +1933,7 @@ def main() -> None:
         "note": (
             "cache_write_known is the write subset with evidenced lifetimes; "
             "cache_write_1h and cache_write_12h are its premium subsets, per tier. "
-            "Unknown-lifetime calls use a separate fourth key component "
+            "Unknown-lifetime calls use a trailing key component "
             "cache_ttl_unknown so a missing price cannot hide other calls' spend. "
             "'in' is TOTAL prompt size (uncached + cache_read + cache_write). "
             "uncached = in - cache_read - cache_write. 'long' is the subset of rows "
@@ -1778,6 +1965,8 @@ def main() -> None:
             "tokens, taken from VoiceSessionEnded.duration_secs. Days are bucketed in "
             f"the local timezone ({TZ}). 'hours' holds the same shape keyed by local "
             f"hour, for the most recent {HOURS_DAYS} days only. "
+            "Provider is the recorded billing backend in a tagged |provider= URL-encoded key component; "
+            "absent means provider not recorded, never inferred from model or producer. "
             "jev_browser rows do NOT come from ContextCaptured: the jev-browser loop "
             "posts to TypeSafe through the `lucidos proxy` CLI from a subprocess, so "
             "the engine never sees the call and emits no event. Those rows are read "
@@ -1799,7 +1988,7 @@ def main() -> None:
         "fields": list(THREAD_FIELDS),
         "note": (
             "The rows of daily.json split by thread and agent session: "
-            "days[day][slot][producer|model[|effort]] and hours[day][hour][slot][producer|model[|effort]], "
+            "days[day][slot][producer|model[|effort][|provider=encoded]] and hours[day][hour] with the same keys, "
             "where slot is <thread>@<session> (the session ordinal ContextCaptured carries, from 1) or the "
             "bare thread id for a call from before the engine stamped sessions. Each row is a list in `fields` "
             "order with trailing zeros dropped. Same dedupe, long split and Flex split "
@@ -1820,27 +2009,48 @@ def main() -> None:
         "hours": t_hours,
     }
 
-    # Write through the CLI so the engine stages, commits and announces the
-    # file. daily.json first: if the thread file then fails, the next run sees
-    # the two cursors disagree and rebuilds both. The handoff file is rebuilt
+    triggers = triggers_payload(trigger_threads, spawns, tr_calls, payload["last_sequence"])
+
+    # daily.json first: if a later file then fails, the next run sees the
+    # cursors disagree and rebuilds them all. The handoff file is rebuilt
     # whole each run, so it needs no cursor of its own.
     for rel, text in (("artifacts/token-cost/daily.json", json.dumps(payload, separators=(",", ":"))),
                       ("artifacts/token-cost/threads-daily.json", dumps_by_day(threads_payload)),
-                      ("artifacts/token-cost/handoffs.json", json.dumps(handoffs, separators=(",", ":")))):
-        w = subprocess.run(
-            ["lucidos", "data", "write", rel, "--from", "-"],
-            input=text, capture_output=True, text=True,
-        )
-        if w.returncode != 0:
-            sys.exit(f"lucidos data write failed for {rel}: {w.stderr.strip()[:400]}")
+                      ("artifacts/token-cost/handoffs.json", json.dumps(handoffs, separators=(",", ":"))),
+                      ("artifacts/token-cost/triggers.json", dumps_by_day(triggers))):
+        write_artifact(rel, text)
     write_cache_stats(long_cut, split)
     print(
         f"rolled up {len(touched)} day(s) {touched[0]}..{touched[-1]}, "
         f"seq {since} -> {max_seq}, kept {kept} of {raw_rows} rows "
         f"({max(0, raw_rows - kept)} re-delivered frame(s) dropped), "
-        f"{total_secs}s of voice, {len(handoffs['handoffs'])} handoff(s)"
+        f"{total_secs}s of voice, {len(handoffs['handoffs'])} handoff(s), "
+        f"{len(triggers['triggers'])} trigger(s)"
     )
 
 
+# Errors from a database that went away mid-run or is still coming back: a
+# crash-recovery reset (another backend died, so the postmaster killed every
+# connection) or a restart. Other database errors surface immediately.
+TRANSIENT_DB = re.compile(
+    r"server closed the connection unexpectedly|connection to server was lost"
+    r"|crash of another server process|in recovery mode|is starting up|is shutting down"
+    r"|Connection refused")
+
+
+def run_with_retry(run, sleep=None, wait=10) -> None:
+    """Run `run` once more after `wait` seconds if it exits on a transient
+    database error. The rollup is idempotent: every file is written whole at
+    the end of a run, from the last sequence the previous good run recorded."""
+    try:
+        run()
+    except SystemExit as e:
+        if not (isinstance(e.code, str) and TRANSIENT_DB.search(e.code)):
+            raise
+        print(f"database connection lost, retrying in {wait}s: {e.code.splitlines()[-1]}", file=sys.stderr)
+        (sleep or __import__("time").sleep)(wait)
+        run()
+
+
 if __name__ == "__main__":
-    main()
+    run_with_retry(main)

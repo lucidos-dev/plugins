@@ -16,11 +16,11 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts" / "token-cost"))
 from cache_usage import TTLS, write_parts
 
-VERSION = 2
+VERSION = 4
 # One summed row per distinct key; `calls` onwards are sums.
 CALL_FIELDS = ("day", "thread", "producer", "model", "effort", "tier", "long", "ping", "cause",
                "ttl_known", "calls", "in", "cache_read", "cache_write", "out",
-               "cache_write_1h", "cache_write_12h")
+               "cache_write_1h", "cache_write_12h", "missed_pings")
 KEY_LEN = CALL_FIELDS.index("calls")
 # What a cache write was. Only `unknown` and the three named causes are cold
 # rewrites of a context that existed; `first` had none, and `partial` read
@@ -146,6 +146,7 @@ def scan(events, statuses=(), tz="UTC", on_call=None):
                "cause": cause, "ttl_known": parts is not None if signature[2] else True,
                "calls": 1, "in": signature[0], "cache_read": signature[1], "cache_write": signature[2],
                "out": signature[3],
+               "missed_pings": int(ping and not (signature[0] > 0 and signature[1] * 2 >= signature[0])),
                "cache_write_1h": (parts or {}).get("1h", 0), "cache_write_12h": (parts or {}).get("12h", 0)}
         if on_call:
             on_call(row)
@@ -171,9 +172,10 @@ def scan(events, statuses=(), tz="UTC", on_call=None):
         for run in own:
             s, wake, write = run["status"], run["wake"], run["write"]
             # The engine claims a saving only when the wake read a warm cache
-            # whose lifetime it knew. The plugin re-prices that rewrite of the
-            # run's context at the lifetime the engine read, never its dollars.
-            known = (s.get("state") == "ended" and s.get("saved_usd") is not None and s["saved_usd"] >= 0
+            # whose lifetime it knew. A zero says the last real request kept it
+            # warm without the pings. The plugin re-prices a positive claim's
+            # rewrite at the lifetime the engine read, never its dollars.
+            known = (s.get("state") == "ended" and s.get("saved_usd") is not None and s["saved_usd"] > 0
                      and s.get("context_tokens") and wake and write and write["parts"]
                      and wake["read"] > 0 and wake["model"] == write["model"]
                      and wake["session"] is not None and wake["session"] == write["session"])
@@ -183,7 +185,9 @@ def scan(events, statuses=(), tz="UTC", on_call=None):
                             "effort": model_row["effort"] if model_row else "",
                             "producer": "cache_keep_alive",
                             "tokens": s["context_tokens"] if known else None,
-                            "ttl": shortest(write["parts"]) if known else None})
+                            "ttl": shortest(write["parts"]) if known else None,
+                            "pre_tracking": s.get("state") == "ended" and s.get("context_tokens") is None,
+                            "zero_saving": s.get("state") == "ended" and s.get("saved_usd") == 0})
     return savings
 
 

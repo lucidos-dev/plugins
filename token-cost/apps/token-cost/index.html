@@ -253,6 +253,18 @@
       #producer-slot { width: 13rem; flex: none; }
       #currency-slot { width: 9rem; flex: none; }
       #producer-slot > *, #currency-slot > * { width: 100%; max-width: 100%; }
+      /* Phone: the dates take a full row, producer and currency share the
+         next one, and the metric toggle spans its own row under the chips.
+         Fixed widths left ragged rows with stray gaps at the right edge. */
+      @media (max-width: 40rem) {
+        .controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-sm); }
+        .date-span { grid-column: 1 / -1; }
+        .date-btn { width: 100%; }
+        #producer-slot, #currency-slot { width: auto; min-width: 0; }
+        .ccy-group { margin-left: 0; min-width: 0; }
+        .an-metric { margin-left: 0; flex: 1 1 100%; display: flex; }
+        .an-metric .segmented-btn { flex: 1 1 0; min-width: 0; }
+      }
 
       section.block { margin-bottom: var(--space-xl); }
       h2.sec {
@@ -420,6 +432,8 @@
       table.an-table td.an-barc { width: 9rem; min-width: 9rem; text-align: left; }
       .an-bar { display: inline-block; height: 0.5rem; border-radius: 2px; background: var(--accent); vertical-align: middle; }
       tr.an-row.deep .an-bar { opacity: 0.6; }
+      .tg-spark { display: block; width: 6rem; height: 1.25rem; }
+      .tg-spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
       /* The thread open in Lucidos right now, and the row that holds it. */
       tr.an-row.here td { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text-primary); }
       tr.an-row.here td:first-child { box-shadow: inset 0.1875rem 0 0 var(--accent); }
@@ -680,13 +694,36 @@
         </div>
       </section>
 
+      <!-- What each trigger's fires cost. Folded, and triggers.json and the
+           per-thread rollup are only read once it is opened. -->
+      <details class="block live-block" id="trigger-block">
+        <summary><h2 class="sec">Cost by trigger</h2></summary>
+        <p class="sec-note">Fire counts and script spend refresh with the rollup. Costs include the fire’s thread, its sub-threads and script calls attributed by Lucidos. Costs exclude unpriced calls and any provider calls Lucidos did not record. The range and type filter apply to the cost breakdown. Today, 7 days and 30 days always use those calendar windows.</p>
+        <p class="sec-note dirty-dot" id="tg-note" hidden></p>
+        <div class="card">
+          <div class="an-scroll">
+            <table class="an-table">
+              <thead>
+                <tr>
+                  <th>Trigger</th><th>Fires</th><th>Cost</th><th>Today</th><th>7 days</th><th>30 days</th>
+                  <th data-tooltip-title="Average per fire" data-tooltip="Cost over the range divided by the fires in it.">Avg / fire</th>
+                  <th>Model mix</th>
+                  <th data-tooltip-title="Last 30 days" data-tooltip="Daily cost over the last 30 days, oldest on the left.">Daily, 30 days</th>
+                </tr>
+              </thead>
+              <tbody id="tg-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+
       <details class="block live-block" id="cache-block">
         <summary><h2 class="sec">Cache and keep-alive</h2></summary>
         <p class="sec-note">Uses the range, type filter and Group by chips above. Rows always include the day and model. Cache evidence updates with the hourly rollup.</p>
         <p class="sec-note" id="cache-note" role="status"></p>
         <section aria-labelledby="cache-keep-title">
           <h3 class="sec" id="cache-keep-title">Keep-alive cost vs savings</h3>
-          <p class="sec-note">Ping spend includes cache reads, writes, fresh input and output. Avoided rewrite spend needs an ended run the engine confirmed: its wake read the warm cache in the same session and model, and the session's last write had a known lifetime. It is the run's context written afresh at that lifetime. Other runs have no estimated saving. Pings are dated when billed; savings are dated when the wait ends.</p>
+          <p class="sec-note">Ping spend includes cache reads, writes, fresh input and output. Avoided rewrite spend needs an ended run the engine confirmed: its wake read the warm cache in the same session and model, and the session's last write had a known lifetime. It is the run's context written afresh at that lifetime. Runs that ended before context size tracking are labeled Pre-tracking. Pings are dated when billed; savings are dated when the wait ends.</p>
           <div class="card" id="cache-keep"></div>
         </section>
         <section aria-labelledby="cache-spend-title">
@@ -1750,8 +1787,10 @@
        *  exactly as the rollup does it. */
       function foldCall(out, c) {
         // The rollup's key: producer|model, plus |effort when the call named one.
-        const key = `${c.producer}|${c.model}` + ((c.cache_write_known || 0) < c.cache_write
-          ? `|${c.effort || ''}|cache_ttl_unknown` : c.effort ? `|${c.effort}` : '');
+        const provider = typeof c.provider === 'string' ? c.provider.trim() : '';
+        const unknown = (c.cache_write_known || 0) < c.cache_write;
+        const key = `${c.producer}|${c.model}` + (c.effort || provider || unknown ? `|${c.effort || ''}` : '')
+          + (provider ? `|provider=${encodeURIComponent(provider)}` : '') + (unknown ? '|cache_ttl_unknown' : '');
         const b = out[key] || (out[key] = emptyU());
         const edges = daily.bucket_edges;
         let bi = 0;
@@ -1892,6 +1931,7 @@
         document.getElementById('s-cache').textContent = cachePct.toFixed(1) + '%';
 
         renderAnalysis(days, pf);
+        renderTriggers(days, pf);
         renderHandoffs(days);
         renderCacheStats(days, pf);
 
@@ -1924,6 +1964,7 @@
 
       const THREADS_DAILY = 'artifacts/token-cost/threads-daily.json';
       const DIMS = [
+        { id: 'provider', label: 'Provider' },
         { id: 'model', label: 'Model' },
         { id: 'model_effort', label: 'Model:effort' },
         { id: 'type', label: 'Type' },
@@ -1934,6 +1975,7 @@
       // one variant of a family can be on: Model and Model:effort together
       // would nest a model under itself.
       const FAMILIES = [
+        { id: 'provider', dims: ['provider'] },
         { id: 'model', dims: ['model', 'model_effort'] },
         { id: 'type', dims: ['type', 'subtype'] },
         { id: 'thread', dims: ['thread'] },
@@ -1965,7 +2007,7 @@
       const CHEVRON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>';
       // What the panel opens with the first time. After that the last pick is
       // remembered in ui-state.json.
-      const DEFAULT_GROUPS = ['type', 'model'];
+      const DEFAULT_GROUPS = ['provider', 'model'];
       const METRICS = ['cost', 'calls', 'cache'];
       // The top five groups of the first chip get a colour each; the rest
       // stack as one grey "Other".
@@ -1977,7 +2019,8 @@
       // all time has thousands, and nobody reads past the first screen.
       const LEVEL_ROWS = 20;
 
-      let groups = DEFAULT_GROUPS.slice();
+      let groups = DEFAULT_GROUPS;
+      let shownGroups = groups;
       let metric = 'cost';
       // The legend item clicked to filter the chart and table to one series,
       // or null for all. Cleared when that series is no longer on the chart.
@@ -2028,7 +2071,9 @@
           let found = false;
           for (const t of (await lucidos.threads.list({ limit: 200 })) || []) {
             if (!t?.thread_id || threadMeta.has(t.thread_id)) continue;
-            threadMeta.set(t.thread_id, { title: t.title || '', parent: t.parent_thread_id || null });
+            // The trigger and start time place a fire newer than triggers.json.
+            threadMeta.set(t.thread_id, { title: t.title || '', parent: t.parent_thread_id || null,
+                                          trigger: t.trigger_id || null, created: t.created_at || null });
             found = true;
           }
           if (found) render();
@@ -2111,7 +2156,7 @@
           let f = map.get(id);
           if (!f) {
             const [producer, model, effort = ''] = key.split('|');
-            f = { day, thread: tid, session, key, producer, model, effort, u: emptyU(), cost: null };
+            f = { day, thread: tid, session, key, producer, model, effort, provider: providerOfKey(key), u: emptyU(), cost: null };
             map.set(id, f);
           }
           addU(f.u, u);
@@ -2142,7 +2187,33 @@
         return out;
       }
 
+      // A tagged suffix preserves the producer/model/effort positions older
+      // readers use. No model or current settings can establish a past backend.
+      function providerOfKey(key) {
+        const tag = key.split('|').slice(3).find((v) => v.startsWith('provider='));
+        if (!tag) return '';
+        try { return recordedProvider(decodeURIComponent(tag.slice(9))); } catch { return recordedProvider(tag.slice(9)); }
+      }
+
+      // New captures can explicitly report unresolved billing evidence. Keep
+      // that sentinel in the same group as legacy captures with no provider.
+      function recordedProvider(id) { return id === 'unknown' ? '' : (id || ''); }
+
+      const PROVIDER_LABELS = {
+        'claude-gateway': 'Claude Gateway', vertex: 'Vertex AI', anthropic: 'Anthropic',
+        openai: 'OpenAI', openrouter: 'OpenRouter', xai: 'xAI', local: 'Local',
+        'opencode-free': 'OpenCode Free', 'chatgpt-plan': 'ChatGPT plan',
+        'anthropic-subscription': 'Anthropic subscription', 'claude-plan': 'Claude plan',
+        bedrock: 'Amazon Bedrock', foundry: 'Microsoft Foundry',
+      };
+      function providerLabel(id) {
+        id = recordedProvider(id);
+        return id ? (Object.hasOwn(PROVIDER_LABELS, id) ? PROVIDER_LABELS[id] : id) : 'Provider not recorded';
+      }
+      function planProvider(id) { return /(?:^|[-_])(plan|subscription)(?:$|[-_])/.test(id || ''); }
+
       function dimOf(dim, f) {
+        if (dim === 'provider') return f.provider || '';
         if (dim === 'type') return typeParent(f.producer);
         if (dim === 'subtype') return f.producer;
         if (dim === 'model') return f.model;
@@ -2164,6 +2235,7 @@
       }
 
       function dimLabel(dim, id) {
+        if (dim === 'provider') return providerLabel(id);
         if (dim === 'type') return producerLabel(id);
         if (dim === 'subtype') return OWN_SUBTYPE_LABEL[id] || producerLabel(id);
         if (dim === 'model') return modelName(id);
@@ -2352,7 +2424,6 @@
       }
 
       function renderAnalysis(days, pf) {
-        renderChips();
         const note = document.getElementById('an-note');
         note.hidden = true;
         let dims = groups.slice();
@@ -2377,6 +2448,16 @@
           dayFacts.set(day, factsFor(day, null, threadsOn).filter((f) => producerMatches(pf, f.producer)));
         }
         const all = [...dayFacts.values()].flat();
+        if (groups === DEFAULT_GROUPS && !all.some((f) => f.provider)) {
+          dims = ['model'];
+          if (all.length) {
+            note.hidden = false;
+            note.textContent = 'No billing provider is recorded for this range. Lucidos 0.59 and later record more billing providers.';
+          }
+        }
+        if (groups === DEFAULT_GROUPS && dims[0] !== shownGroups[0]) focusSeries = null;
+        shownGroups = groups === DEFAULT_GROUPS ? dims : groups;
+        renderChips();
         if (threadsOn && all.some((f) => f.thread && !threadMeta.has(f.thread))) lookupThreads();
 
         const top = groupLevel(all, dims, '');
@@ -2407,7 +2488,7 @@
         if (host.dataset.dims !== sig) {
           host.innerHTML = FAMILIES.map((f) => {
             const d0 = f.dims[0];
-            const face = `<button type="button" class="chip${f.dims.length > 1 ? ' chip-face' : ''}" data-dim="${d0}" aria-pressed="false"><span class="lbl">${dimLabelOf(d0)}</span></button>`;
+            const face = `<button type="button" class="chip${f.dims.length > 1 ? ' chip-face' : ''}" data-dim="${d0}"${d0 === 'provider' ? ' data-tooltip="The backend that served and billed the call. Lucidos 0.59 and later record more billing providers. Calls without evidence appear under Provider not recorded."' : ''} aria-pressed="false"><span class="lbl">${dimLabelOf(d0)}</span></button>`;
             if (f.dims.length === 1) return `<span class="chip-split" data-family="${f.id}">${face}</span>`;
             return `<span class="chip-split" data-family="${f.id}">${face}`
               + `<button type="button" class="chip chip-caret" data-caret="${f.id}" aria-haspopup="menu" aria-expanded="false" aria-label="${dimLabelOf(d0)} variants">${CHEVRON}</button>`
@@ -2418,8 +2499,8 @@
         }
         for (const w of host.querySelectorAll('[data-family]')) {
           const f = FAMILIES.find((x) => x.id === w.dataset.family);
-          const current = f.dims.find((d) => groups.includes(d)) || variants[f.id] || f.dims[0];
-          const i = groups.indexOf(current);
+          const current = f.dims.find((d) => shownGroups.includes(d)) || variants[f.id] || f.dims[0];
+          const i = shownGroups.indexOf(current);
           const on = i >= 0;
           const open = openFamily === f.id;
           w.classList.toggle('on', on);
@@ -2554,13 +2635,20 @@
         }
 
         const chart = document.getElementById('an-chart');
-        chart.innerHTML = '';
         const max = Math.max(0, ...cols.map((c) => c.total));
+        // Reuse the column nodes when the column count holds. Every live call
+        // re-renders, and a rebuilt column under a still pointer is a new
+        // tooltip target, so the SDK hid and re-showed the tooltip each time
+        // (a blink). Same node, same target: the tooltip stays up.
+        const prevCols = [...chart.children].filter((n) => n.classList.contains('an-col'));
+        const reuse = max && prevCols.length === cols.length && prevCols.length === chart.children.length;
+        if (!reuse) chart.innerHTML = '';
         if (!max) {
           chart.innerHTML = '<div class="empty-state">No calls in this range.</div>';
         }
-        for (const c of max ? cols : []) {
-          const col = document.createElement('div');
+        for (const [ci, c] of (max ? cols : []).entries()) {
+          const col = reuse ? prevCols[ci] : document.createElement('div');
+          if (reuse) col.replaceChildren();
           col.className = 'an-col' + (c.now ? ' now' : '');
           col.setAttribute('data-tooltip-title', c.title || c.label);
           const lines = series.filter(([id]) => c.values.get(id)).map(([id, label]) => `${label}: ${fmt(c.values.get(id))}`);
@@ -2576,7 +2664,7 @@
             seg.style.background = paint;
             col.appendChild(seg);
           }
-          chart.appendChild(col);
+          if (!reuse) chart.appendChild(col);
         }
         const shown = max ? cols : [];
         document.getElementById('ax-from').textContent = shown[0]?.label || '';
@@ -2770,6 +2858,8 @@
         // A session's first and last call, over its whole life, not just the
         // days picked: the cost is the range's, the span says when it ran.
         const span = n.dim === 'session' ? sessionSpan(n.id) : null;
+        const providerTag = n.dim === 'provider' && planProvider(n.id)
+          ? '<span class="an-sub" data-tooltip="Token cost at the model’s API rates; this is a priced equivalent, not an additional plan charge.">Priced equivalent</span>' : '';
         const spanTag = span
           ? `<span class="an-span" data-tooltip-title="First and last call" data-tooltip="Over the session's whole life, keep-alive pings included.">${esc(spanLabel(span))}</span>` : '';
         const swatch = paint ? `<span class="swatch" style="background:${paint}"></span>` : '';
@@ -2786,7 +2876,8 @@
           ? `<a class="an-link" href="#" data-thread="${escAttr(n.id)}">${esc(label)}</a>` : esc(label);
         // Thread titles run long and the cell truncates, so the full title is
         // a hover away.
-        const tip = n.dim === 'thread' || n.dim === 'session' ? ` data-tooltip="${escAttr(label)}"` : '';
+        const tip = n.dim === 'provider' ? ` data-tooltip="${escAttr(n.id ? label + ' · recorded billing backend' : 'Billing provider evidence is missing or unresolved. Lucidos 0.59 and later record more billing providers.')}"`
+          : n.dim === 'thread' || n.dim === 'session' ? ` data-tooltip="${escAttr(label)}"` : '';
         // An attribute value, so the attribute escape: a model id is whatever a
         // request body or a provider reply named, and a quote in it must not
         // close the attribute.
@@ -2797,7 +2888,7 @@
           : `<td class="money">${fmtMoney(n.cost)}</td>`;
         const w = scale.max > 0 ? ((scale.byCost ? (n.cost || 0) : n.u.calls) / scale.max) * 100 : 0;
         return `<td style="padding-left: calc(${level} * 1.25rem + var(--space-sm))"${tip}>` +
-            `<span class="tw">${twisty}</span>${swatch}${subTag}${name}${spanTag}${hereTag}${subCount}${routed}</td>` +
+            `<span class="tw">${twisty}</span>${swatch}${subTag}${name}${providerTag}${spanTag}${hereTag}${subCount}${routed}</td>` +
           costCell +
           `<td class="an-barc">${w > 0 ? `<span class="an-bar" style="width:${Math.max(w, 0.5).toFixed(2)}%"></span>` : ''}</td>` +
           numberCells(n.u, n.sessionPeaks);
@@ -2814,7 +2905,8 @@
         const b = pick || e.target.closest?.('[data-dim]');
         if (!b) return;
         const d = pick ? pick.dataset.pick : b.dataset.dim;
-        groups = pick ? chooseDim(groups, d) : pickDim(groups, d);
+        const current = groups === DEFAULT_GROUPS ? shownGroups : groups;
+        groups = pick ? chooseDim(current, d) : pickDim(current, d);
         variants[familyOf(d).id] = d;
         uiState.variants = variants;
         openFamily = null;
@@ -2937,7 +3029,7 @@
         cacheState = 'loading';
         try {
           const doc = JSON.parse(await lucidos.data.read(CACHE_STATS));
-          if (doc.version !== 2 || !Array.isArray(doc.fields) || !Array.isArray(doc.calls) || !Array.isArray(doc.savings)) throw new Error('Unsupported cache evidence');
+          if (![2, 3, 4].includes(doc.version) || !Array.isArray(doc.fields) || !Array.isArray(doc.calls) || !Array.isArray(doc.savings)) throw new Error('Unsupported cache evidence');
           // One summed row per day, thread, producer, model, effort, tier and
           // evidence class, as arrays in `fields` order.
           cacheDoc = { ...doc, calls: doc.calls.map((r) => Object.fromEntries(doc.fields.map((f, i) => [f, r[i]]))) };
@@ -2995,17 +3087,20 @@
       /** The engine's reread price: the run's context written afresh at the
        *  lifetime of the session's last write, its size picking the tier. */
       function priceCacheSaving(s) {
+        if (s.zero_saving) return 0;
         if (s.tokens == null || !s.ttl) return null;
         return cacheWriteCost(cacheRates(s.model, s.day, isLongCall(s.model, s.tokens, s.day), ''), s.tokens, { [s.ttl]: s.tokens });
       }
 
       function cacheRows(doc, days, pf) {
         const picked = new Set(days), by = new Map();
-        const dims = groups.some((d) => d === 'model' || d === 'model_effort') ? groups : groups.concat('model');
+        // Cache evidence does not carry billing provider.
+        const cacheGroups = groups.filter((d) => d !== 'provider');
+        const dims = cacheGroups.some((d) => d === 'model' || d === 'model_effort') ? cacheGroups : cacheGroups.concat('model');
         const row = (c) => {
           const labels = dims.map((d) => [d, dimOf(d, c)]);
           const id = JSON.stringify([c.day, labels]);
-          if (!by.has(id)) by.set(id, { day: c.day, labels, money: {}, unknown: {}, pings: 0, runs: 0, ttlUnknown: 0,
+          if (!by.has(id)) by.set(id, { day: c.day, labels, money: {}, unknown: {}, pings: 0, missedPings: 0, runs: 0, preTracking: 0, ttlUnknown: 0,
             causes: { ttl_expiry: 0, handoff: 0, model_switch: 0, unknown: 0, first: 0, partial: 0 } });
           return by.get(id);
         };
@@ -3015,12 +3110,14 @@
           const r = row(c), p = priceCacheCall(c);
           for (const k of ['write', 'read', 'fresh']) add(r, k, p[k], c.calls);
           if (!c.ttl_known && p.write !== null) r.ttlUnknown += c.calls;
-          if (c.ping) { r.pings += c.calls; add(r, 'ping', p.ping, c.calls); }
+          if (c.ping) { r.pings += c.calls; r.missedPings += c.missed_pings || 0; add(r, 'ping', p.ping, c.calls); }
           if (c.cause) r.causes[c.cause in r.causes ? c.cause : 'unknown'] += c.calls;
         }
         for (const s of doc.savings) {
           if (!picked.has(s.day) || !producerMatches(pf, s.producer)) continue;
-          const r = row(s); r.runs++; add(r, 'saved', priceCacheSaving(s));
+          const r = row(s); r.runs++;
+          if (s.pre_tracking || s.unscored) r.preTracking++;
+          else add(r, 'saved', priceCacheSaving(s));
         }
         return [...by.values()].sort((a, b) => a.day.localeCompare(b.day) || JSON.stringify(a.labels).localeCompare(JSON.stringify(b.labels)));
       }
@@ -3042,7 +3139,9 @@
         const money = (r, k, absentUnknown = false) => {
           const n = r.unknown[k] || 0;
           const known = r.money[k];
-          return (known == null ? (n || absentUnknown ? 'Unknown' : fmtMoney(0)) : fmtMoney(known)) + (n ? ` · ${fmtInt(n)} unknown` : '');
+          const amount = (known == null ? (n || absentUnknown ? 'Unknown' : fmtMoney(0)) : fmtMoney(known)) + (n ? ` · ${fmtInt(n)} unknown` : '');
+          if (k !== 'saved' || !r.preTracking) return amount;
+          return (known == null && !n ? 'Pre-tracking' : amount) + ` · ${fmtInt(r.preTracking)} before size tracking`;
         };
         const cells = (values) => '<dl class="cache-values">' + values.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('') + '</dl>';
         const fill = (id, list, values) => {
@@ -3050,6 +3149,7 @@
         };
         fill('cache-keep', rows.filter((r) => r.pings || r.runs), (r) => [
           ['Ping spend', money(r, 'ping')], ['Avoided rewrite spend', money(r, 'saved', !r.runs)],
+          ['Missed pings', cacheDoc.fields?.includes('missed_pings') ? fmtInt(r.missedPings) : 'Unknown'],
           ['Pings / runs observed', `${fmtInt(r.pings)} / ${fmtInt(r.runs)}`]]);
         const writes = (r) => money(r, 'write') +
           (r.ttlUnknown ? ` · ${fmtInt(r.ttlUnknown)} call${r.ttlUnknown === 1 ? '' : 's'} at the base rate, lifetime unknown` : '');
@@ -3061,6 +3161,247 @@
           ['First writes', fmtInt(r.causes.first)], ['Appends after a read', fmtInt(r.causes.partial)]]);
       }
       document.getElementById('cache-block').addEventListener('toggle', () => render());
+
+      // ---- Cost by trigger ----------------------------------------------------
+      // One row per trigger id, opening into its fires. A thread belongs to
+      // the trigger of its top root, so a fire carries its sub-threads. The
+      // rollup writes triggers.json whole each run: fires per day, the fire
+      // roots, and proxied calls that name a trigger but sit in no fire tree.
+      const TRIGGERS = 'artifacts/token-cost/triggers.json';
+      let triggersDoc = null;
+      let triggersState = 'idle';   // idle | loading | ready | missing
+      const triggerNames = new Map();   // trigger id -> its live name
+      const triggerOpen = new Set();    // trigger rows opened by a click
+      const triggerAllFires = new Set();   // trigger rows whose "+ N more" was clicked
+
+      async function loadTriggers() {
+        if (triggersState === 'loading') return;
+        triggersState = 'loading';
+        try {
+          triggersDoc = JSON.parse(await lucidos.data.read(TRIGGERS));
+          triggersState = 'ready';
+        } catch (e) {
+          console.info('token-cost: no trigger rollup yet', e && e.message);
+          triggersDoc = null;
+          triggersState = 'missing';
+        }
+        try {
+          for (const t of (await lucidos.triggers.list()) || []) if (t?.id) triggerNames.set(t.id, t.name || '');
+        } catch (e) {
+          // A deleted trigger has no live name either, so the file's name stands in.
+          console.warn('token-cost: could not list triggers', e);
+        }
+        render();
+      }
+
+      /** The `n` local days ending `today`, oldest first. */
+      function daysBack(today, n) {
+        const end = new Date(today + 'T12:00:00');
+        return Array.from({ length: n }, (_, i) => {
+          const d = new Date(end);
+          d.setDate(end.getDate() - (n - 1 - i));
+          return localDay(d);
+        });
+      }
+
+      /** The fire a thread belongs to, by its top root: from the rollup, else
+       *  from the thread list for a fire newer than the rollup. */
+      function fireOf(tid, doc) {
+        const root = rootOf(tid);
+        if (!root) return null;
+        const stored = doc.threads?.[root];
+        if (stored) return { root, trigger: stored[0], started: stored[1] };
+        const m = threadMeta.get(root);
+        return m?.trigger ? { root, trigger: m.trigger, started: m.created } : null;
+      }
+
+      /** One day's proxied trigger calls as facts, each naming its trigger. */
+      function triggerCallFacts(day) {
+        const fields = triggersDoc?.fields || [];
+        const out = [];
+        for (const [trigger, keys] of Object.entries(triggersDoc?.calls?.[day] || {})) {
+          for (const [key, r] of Object.entries(keys)) {
+            const [producer, model, effort = ''] = key.split('|');
+            const u = rowToU(r, fields);
+            out.push({ day, thread: '', trigger, session: '', key, producer, model, effort, provider: providerOfKey(key), u, cost: costOf(model, u, u.long, day) });
+          }
+        }
+        return out;
+      }
+
+      /** The panel's rows from per-day facts. `dayFacts` must cover the range
+       *  and the last 30 days. Unpriced spend is left out, as everywhere. */
+      function triggerRows(dayFacts, doc, days, today) {
+        const inRange = new Set(days);
+        const week = new Set(daysBack(today, 7));
+        const month = daysBack(today, 30);
+        const monthSet = new Set(month);
+        const by = new Map();
+        const rowFor = (id) => {
+          if (!by.has(id)) by.set(id, { id, fires: 0, cost: 0, scriptCost: null, today: 0, d7: 0, d30: 0, models: new Map(), daily: new Map(), fireMap: new Map() });
+          return by.get(id);
+        };
+        const fireFor = (r, fire) => {
+          if (!r.fireMap.has(fire.root)) r.fireMap.set(fire.root, { root: fire.root, started: fire.started || null, cost: 0, models: new Map() });
+          return r.fireMap.get(fire.root);
+        };
+        const bump = (m, k, v) => m.set(k, (m.get(k) || 0) + v);
+        for (const [day, facts] of dayFacts) {
+          for (const f of facts) {
+            if (f.cost === null) continue;
+            const fire = f.trigger ? null : f.thread && fireOf(f.thread, doc);
+            const id = f.trigger || fire?.trigger;
+            if (!id) continue;
+            const r = rowFor(id);
+            if (inRange.has(day)) {
+              r.cost += f.cost;
+              bump(r.models, f.model, f.cost);
+              if (fire) { const fr = fireFor(r, fire); fr.cost += f.cost; bump(fr.models, f.model, f.cost); }
+              else r.scriptCost = (r.scriptCost || 0) + f.cost;
+            }
+            if (day === today) r.today += f.cost;
+            if (week.has(day)) r.d7 += f.cost;
+            if (monthSet.has(day)) { r.d30 += f.cost; bump(r.daily, day, f.cost); }
+          }
+        }
+        // A fire that started in the range is listed even when it cost nothing.
+        const startedIn = (fr) => fr.started && inRange.has(localDay(new Date(fr.started)));
+        for (const [root, [trigger, started]] of Object.entries(doc.threads || {})) {
+          if (startedIn({ started })) fireFor(rowFor(trigger), { root, started });
+        }
+        for (const [id, t] of Object.entries(doc.triggers || {})) {
+          const n = days.reduce((s, d) => s + (t.fires?.[d] || 0), 0);
+          if (n) rowFor(id).fires = n;
+        }
+        const top = (m) => [...m].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+        return [...by.values()].map((r) => {
+          const fireList = [...r.fireMap.values()]
+            .map((fr) => ({ root: fr.root, started: fr.started, cost: fr.cost, model: top(fr.models) }))
+            .sort((a, b) => (b.started || '').localeCompare(a.started || ''));
+          const withThread = fireList.filter(startedIn).length;
+          return {
+            id: r.id, fires: r.fires, cost: r.cost, scriptCost: r.scriptCost, today: r.today, d7: r.d7, d30: r.d30,
+            avg: r.fires ? r.cost / r.fires : null,
+            mix: [...r.models].sort((a, b) => b[1] - a[1]),
+            daily: month.map((d) => r.daily.get(d) || 0),
+            fireList, noThread: Math.max(0, r.fires - withThread),
+          };
+        }).sort((a, b) => b.cost - a.cost || b.d30 - a.d30 || b.fires - a.fires);
+      }
+
+      function triggerName(id) {
+        return triggerNames.get(id) || triggersDoc?.triggers?.[id]?.name || 'Unnamed trigger';
+      }
+
+      /** "Opus 5.5 72% · GPT-5.5 20% +1": the two costliest models. */
+      function mixLabel(mix) {
+        const total = mix.reduce((t, [, c]) => t + c, 0);
+        if (!total) return '–';
+        const head = mix.slice(0, 2).map(([m, c]) => `${modelName(m)} ${Math.round((c / total) * 100)}%`).join(' · ');
+        return mix.length > 2 ? `${head} +${mix.length - 2}` : head;
+      }
+
+      function sparkline(values) {
+        const max = Math.max(...values);
+        const step = values.length > 1 ? 100 / (values.length - 1) : 0;
+        const pts = values.map((v, i) => `${(i * step).toFixed(2)},${(max ? 19 - (v / max) * 18 : 19).toFixed(2)}`).join(' ');
+        return `<svg class="tg-spark" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}"/></svg>`;
+      }
+
+      function fireLabel(started) {
+        if (!started) return 'Start not recorded';
+        const d = new Date(started);
+        return `${dayLabel(localDay(d))} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+      }
+
+      function renderTriggers(days, pf) {
+        const block = document.getElementById('trigger-block');
+        if (!block || !block.open) return;
+        const note = document.getElementById('tg-note');
+        const body = document.getElementById('tg-body');
+        if (triggersState === 'idle') loadTriggers();
+        if (threadsState === 'idle') loadThreadsDaily();
+        if (triggersState !== 'ready' || threadsState !== 'ready') {
+          const missing = triggersState === 'missing' ? 'trigger rollup' : threadsState === 'missing' ? 'per-thread rollup' : null;
+          note.hidden = false;
+          note.textContent = missing
+            ? `There is no ${missing} yet, so trigger costs cannot be shown. The next hourly rollup writes it.`
+            : 'Loading the trigger rollup…';
+          body.innerHTML = '';
+          return;
+        }
+        if (triggersDoc.last_sequence !== threadsDaily.last_sequence || threadsDaily.last_sequence < daily.last_sequence) {
+          note.hidden = false;
+          note.textContent = 'The trigger and per-thread rollups are out of sync. Costs will appear when both files match.';
+          body.innerHTML = '';
+          return;
+        }
+        note.hidden = true;
+        const today = localDay(new Date());
+        const dayFacts = new Map();
+        for (const day of new Set([...days, ...daysBack(today, 30)])) {
+          dayFacts.set(day, factsFor(day, null, true).concat(triggerCallFacts(day)).filter((f) => producerMatches(pf, f.producer)));
+        }
+        if ([...dayFacts.values()].some((fs) => fs.some((f) => f.thread && !threadMeta.has(f.thread)))) lookupThreads();
+        const rows = triggerRows(dayFacts, triggersDoc, days, today);
+        if (!rows.length) {
+          body.innerHTML = '<tr><td colspan="9"><div class="empty-state">No trigger fired or spent in this range or the last 30 days.</div></td></tr>';
+          return;
+        }
+        const esc = lucidos.utils.escapeHtml;
+        const cell = (x) => `<td class="num">${x}</td>`;
+        const indent = 'style="padding-left: calc(1.25rem + var(--space-sm))"';
+        let html = '';
+        for (const r of rows) {
+          const open = triggerOpen.has(r.id);
+          const kids = r.fireList.length || r.noThread || r.scriptCost !== null;
+          html += `<tr class="an-row${kids ? ' kids' : ''}" data-tg="${escAttr(r.id)}">` +
+            `<td><span class="tw">${kids ? (open ? '▾' : '▸') : ''}</span>${esc(triggerName(r.id))}</td>` +
+            cell(fmtInt(r.fires)) + cell(fmtMoney(r.cost)) + cell(fmtMoney(r.today)) + cell(fmtMoney(r.d7)) +
+            cell(fmtMoney(r.d30)) + cell(moneyOr(r.avg)) + `<td>${esc(mixLabel(r.mix))}</td>` +
+            `<td>${sparkline(r.daily)}</td></tr>`;
+          if (!open) continue;
+          const shown = triggerAllFires.has(r.id) ? r.fireList : r.fireList.slice(0, LEVEL_ROWS);
+          for (const f of shown) {
+            const title = threadTitle(f.root);
+            html += `<tr class="an-row deep"><td ${indent} data-tooltip="${escAttr(title)}">` +
+              `<a class="an-link" href="#" data-thread="${escAttr(f.root)}">${esc(fireLabel(f.started))}</a>` +
+              ` <span class="muted">${esc(title)}</span></td>` +
+              '<td></td>' + cell(fmtMoney(f.cost)) + '<td></td><td></td><td></td><td></td>' +
+              `<td>${esc(f.model ? modelName(f.model) : '–')}</td><td></td></tr>`;
+          }
+          if (shown.length < r.fireList.length) {
+            const more = r.fireList.length - shown.length;
+            html += `<tr class="an-row deep kids" data-tg-more="${escAttr(r.id)}"><td ${indent} colspan="9">+ ${fmtInt(more)} more fire${more === 1 ? '' : 's'}</td></tr>`;
+          }
+          if (r.noThread) {
+            html += `<tr class="an-row deep"><td ${indent}>${fmtInt(r.noThread)} fire${r.noThread === 1 ? '' : 's'} with no thread</td>` +
+              cell(fmtInt(r.noThread)) + '<td colspan="7"></td></tr>';
+          }
+          if (r.scriptCost !== null) {
+            html += `<tr class="an-row deep"><td ${indent}>Script calls outside fire threads</td><td></td>` +
+              cell(fmtMoney(r.scriptCost)) + '<td colspan="6"></td></tr>';
+          }
+        }
+        body.innerHTML = html;
+      }
+
+      document.getElementById('trigger-block').addEventListener('toggle', () => render());
+      document.getElementById('tg-body').addEventListener('click', (e) => {
+        const link = e.target.closest?.('[data-thread]');
+        if (link) {
+          e.preventDefault();
+          lucidos.ui.navigate('thread', { id: link.dataset.thread });
+          return;
+        }
+        const more = e.target.closest?.('[data-tg-more]');
+        if (more) { triggerAllFires.add(more.dataset.tgMore); render(); return; }
+        const tr = e.target.closest?.('[data-tg]');
+        if (!tr) return;
+        const id = tr.dataset.tg;
+        if (triggerOpen.has(id)) triggerOpen.delete(id); else triggerOpen.add(id);
+        render();
+      });
 
       // ---- Handoffs -----------------------------------------------------------
       // One row per handoff checkpoint, opening into its handoffs. The rollup
@@ -3299,6 +3640,7 @@
           // The id Lucidos asked for, kept only when another model answered.
           asked: pricedModel(asked, p.served_model) === asked ? null : asked,
           producer: producerId(p),
+          provider: typeof p.provider === 'string' ? p.provider.trim() : '',
           // The thinking level the call asked for (none, low, medium, high...).
           effort: p.reasoning_effort || '',
           // The turn's anchor, which says whether a keep-alive made the call.
@@ -5044,7 +5386,10 @@
         if (path.includes('token-cost/daily.json')) load();
         else if (path.includes('token-cost/threads-daily.json')) {
           // Re-read only if it was read at all; otherwise the next Thread pick does.
-          if (threadsState !== 'idle') { threadsState = 'idle'; if (groups.includes('thread')) loadThreadsDaily(); }
+          if (threadsState !== 'idle') { threadsState = 'idle'; render(); }
+        }
+        else if (path.includes(TRIGGERS)) {
+          if (triggersState !== 'idle') { triggersState = 'idle'; render(); }
         }
         else if (path.includes('token-cost/cache.json')) {
           if (cacheState !== 'idle') { cacheState = 'idle'; render(); }

@@ -46,7 +46,7 @@ global.Intl = Intl;
 const daily = { generated: new Date().toISOString(), last_sequence: 100,
   bucket_edges: [0, 32000, 64000, 128000, 200000, 400000], days: {}, hours: {} };
 // The price table as lucidos.priceTable.get() returns it: the cards Lucidos
-// shipped on 2026-10-16 merged with this workspace's migrated override.
+// shipped on 2026-10-16 merged with a legacy pricing fixture.
 const priceTableRaw = fs.readFileSync(new URL('./fixtures/price-table.json', import.meta.url),'utf8');
 
 const selects = [];
@@ -78,7 +78,7 @@ const harness = src + `
   seriesForDay, selectedDays, knownDays, localDay, costOf, longThreshold, isLongCall, rateFor, dayZoneLabel,
   cardOn, cardsOf, overrideModels, checkFrom, servedAsSent, pricedModel, rowModel, modelName, loadModelLabels,
   setDaily(d){ daily = d; }, setPricing(p){ pricing = p; },
-  setGroups(g){ groups = g; expanded.clear(); }, expand(p){ expanded.add(p); }, threadMeta,
+  setGroups(g = DEFAULT_GROUPS){ groups = g; expanded.clear(); }, expand(p){ expanded.add(p); }, threadMeta,
   setThreads(t){ threadsDaily = t; threadsState = t ? 'ready' : 'missing'; },
   setHandoffs(d){ handoffsDoc = d; handoffsState = d ? 'ready' : 'missing'; }, measureHandoff, handoffOpen,
   priceCacheCall, priceCacheSaving, cacheRows, renderCacheStats, loadCacheStats,
@@ -86,7 +86,7 @@ const harness = src + `
   setCache(d){ cacheDoc = d; cacheState = d ? 'ready' : 'missing'; }, get cacheDoc(){ return cacheDoc; },
   get daily(){ return daily; },
   get metaText(){ return document.getElementById('meta').textContent; },
-  noteKeepAliveAnchor, dimLabel, producerLabel, typeParent, dims: DIMS, producerMatches, syncProducerFilter, pickDim, chooseDim, oneOfEachFamily,
+  factsFor, dimOf, groupLevel, rowCells, foldCall, providerOfKey, noteKeepAliveAnchor, dimLabel, producerLabel, typeParent, dims: DIMS, producerMatches, syncProducerFilter, pickDim, chooseDim, oneOfEachFamily,
   noteThreadOrigins, originOfSummary, learnThreadOrigins, lookupOrigins, threadOrigins, resetOrigins(){ threadOrigins.clear(); originAsked.clear(); originLookupAt = 0; },
   resetLive(){ live=[]; seenSeq=new Set(); liveRevision++; }, get feedRows(){ return document.getElementById('feed').children.map(c=>c.dataset.at); }, renderFeed,
 };
@@ -1237,6 +1237,12 @@ document.getElementById('cache-block').open = true;
 tc.renderCacheStats([cacheDay], 'all');
 ok(/unknown/.test(document.getElementById('cache-keep').innerHTML) && /unknown/.test(document.getElementById('cache-spend').innerHTML),
   'rendered savings and spend expose unknown amounts');
+tc.setCache({ ...cacheDoc, calls:[], savings:[cacheSaving({ tokens:null, ttl:null, pre_tracking:true })] });
+tc.renderCacheStats([cacheDay], 'all');
+ok(getEl('cache-keep').innerHTML.includes('Pre-tracking · 1 before size tracking'),
+  'runs without recorded context size show the pre-tracking label');
+tc.setCache(cacheDoc);
+tc.renderCacheStats([cacheDay], 'all');
 const causesHtml = document.getElementById('cache-causes').innerHTML;
 ok(/TTL expiry/.test(causesHtml) && /Model switch/.test(causesHtml) && /Cause unknown/.test(causesHtml)
   && /First writes/.test(causesHtml) && /Appends after a read/.test(causesHtml),
@@ -1252,7 +1258,7 @@ const oldReadCache = lucidos.data.read;
 lucidos.data.read = async () => JSON.stringify({ generated:'old', days:{} });
 await tc.loadCacheStats();
 ok(/unavailable/.test(document.getElementById('cache-note').textContent), 'an older or unsupported cache file is rejected visibly');
-// 0.7.0's first cut wrote one row per call, about 500 MB in a real workspace.
+// 0.7.0's first cut wrote one row per call.
 lucidos.data.read = async () => JSON.stringify({ version:1, generated:'old', calls:[], savings:[] });
 await tc.loadCacheStats();
 ok(/unavailable/.test(document.getElementById('cache-note').textContent), 'a version 1 per-call file waits for the next rollup');
@@ -1337,6 +1343,72 @@ ok(/<b>Codex<\/b>, 2 calls: Codex reports one cache-write total, without the lif
 ok(/<b>Other calls<\/b>, 1 call: Recorded before Lucidos 0\.50\.0/.test(why), 'other calls name 0.50.0 or a route without the split');
 ok(/base cache write rate/.test(why), 'and the note says what rate their writes got');
 ok(document.getElementById('hero-unpriced').hidden === true, 'none of them is unpriced');
+
+// Lucidos 0.58 does not record a billing provider.
+tc.setGroups();
+tc.resetLive();
+tc.setDaily({ ...empty, days:{ [today]:{
+  'codex|gpt-5.5':{calls:3,in:1500,out:15},
+  'main_llm|cache-model':{calls:1,in:1000,out:10},
+} } });
+tc.render();
+ok(getEl('an-note').textContent.includes('Lucidos 0.59'), 'the analysis explains missing provider evidence');
+ok(rowsOf().join('').includes('gpt-5.5') && !rowsOf().join('').includes('Provider not recorded'),
+  'the default view groups legacy calls by model');
+tc.setGroups(['provider']);
+tc.render();
+ok(rowsOf().join('').includes('Provider not recorded'), 'explicit Provider grouping remains available');
+
+// Provider is a separate grouping, including legacy and live facts.
+tc.resetLive();
+tc.setDaily({last_sequence:0, bucket_edges:[0,32000,64000,128000,200000,400000], days:{[today]:{
+  'codex|gpt-5.5||provider=chatgpt-plan':{calls:2,in:1000,out:10},
+  'codex|gpt-5.5':{calls:3,in:1500,out:15},
+  'codex|gpt-5.5||provider=openai':{calls:4,in:2000,out:20},
+}}});
+let providerFacts = tc.factsFor(today, null, false);
+const providerTree = tc.groupLevel(providerFacts, ['provider','model'], '');
+ok(providerTree.length === 3, 'same model remains separate by billing provider');
+ok(providerTree.reduce((a,n)=>a+n.u.calls,0) === 9, 'provider groups conserve calls');
+ok(Math.abs(providerTree.reduce((a,n)=>a+(n.cost||0),0) - providerFacts.reduce((a,f)=>a+(f.cost||0),0)) < 1e-9,
+  'provider groups conserve priced spend');
+ok(tc.dimLabel('provider','') === 'Provider not recorded', 'legacy provider is explicitly unknown');
+ok(tc.dimLabel('provider','claude-gateway') === 'Claude Gateway', 'readable provider name');
+ok(tc.chooseDim(['provider'],'model').join(',') === 'provider,model', 'provider nests models');
+ok(tc.providerOfKey('p|m||provider=a%7Cb|cache_ttl_unknown') === 'a|b', 'provider key decoding preserves separators');
+const planNode = providerTree.find(n=>n.id==='chatgpt-plan');
+ok(tc.rowCells(planNode,0,null,1).includes('Priced equivalent'), 'plan cost is explicitly labelled');
+const liveProvider = {};
+tc.foldCall(liveProvider, {producer:'codex',model:'gpt-5.5',provider:'openai',in:1000,out:10,cache_read:0,cache_write:0,at:today+'T10:00:00Z'});
+ok(Object.keys(liveProvider)[0] === 'codex|gpt-5.5||provider=openai', 'live key matches rollup provider key');
+tc.setThreads({last_sequence:0, fields:['calls','in'],days:{[today]:{'t@1':{'codex|gpt-5.5||provider=openai':[2,1000]}}}});
+ok(tc.factsFor(today,null,true)[0].provider === 'openai', 'compact thread facts carry provider');
+
+const providerEvent = mk(100000001,today+'T10:00:00Z','codex','gpt-5.5',[1234,0,0,12]);
+providerEvent.event.provider='chatgpt-plan';
+tc.pushLive(providerEvent,{quiet:true});
+ok(tc.countedLive().find(c=>c.seq===100000001)?.provider === 'chatgpt-plan', 'SSE ingestion retains recorded billing provider');
+ok(tc.factsFor(today,null,false).some(f=>f.provider==='chatgpt-plan' && f.u.calls===3), 'live plan call merges with stored plan facts');
+
+// The source records unresolved attribution explicitly; it is not a backend.
+ok(tc.providerOfKey('codex|gpt-5.5||provider=unknown') === '', 'explicit unresolved provider maps to the missing-evidence group');
+ok(tc.dimLabel('provider','unknown') === 'Provider not recorded', 'unknown is not displayed as a real provider');
+ok(tc.dimLabel('provider','bedrock') === 'Amazon Bedrock', 'readable Bedrock label');
+ok(tc.dimLabel('provider','foundry') === 'Microsoft Foundry', 'readable Foundry label');
+tc.resetLive();
+tc.setDaily({last_sequence:0,bucket_edges:[0,32000,64000,128000,200000,400000],days:{[today]:{
+ 'codex|gpt-5.5':{calls:3,in:1500,out:15},
+ 'codex|gpt-5.5||provider=unknown':{calls:6,in:3000,out:30},
+ 'claude_code|gpt-5.5||provider=anthropic-subscription':{calls:2,in:1000,out:10},
+}}});
+const unresolvedFacts=tc.factsFor(today,null,false);
+const unresolvedTree=tc.groupLevel(unresolvedFacts,['provider','model'],'');
+ok(unresolvedTree.length===2 && unresolvedTree.find(n=>n.id==='')?.u.calls===9,
+ 'absent and explicitly unresolved captures share one evidence-gap group without dropping usage');
+ok(Math.abs(unresolvedTree.reduce((a,n)=>a+(n.cost||0),0)-unresolvedFacts.reduce((a,f)=>a+(f.cost||0),0))<1e-9,
+ 'normalizing unresolved evidence preserves priced totals');
+ok(tc.rowCells(unresolvedTree.find(n=>n.id==='anthropic-subscription'),0,null,{max:1}).includes('Priced equivalent'),
+ 'Anthropic subscription retains the priced-equivalent marker');
 
 console.log('\n'+pass+' passed, '+fail+' failed');
 process.exit(fail?1:0);

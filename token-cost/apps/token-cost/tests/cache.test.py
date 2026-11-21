@@ -68,15 +68,16 @@ class CacheEvidence(unittest.TestCase):
         sql = sql.replace("= ANY (%(days)s)", "IN ('2026-10-20')").replace("%(max_seq)s", "100").replace(rollup.LONG_CUT_MARK, "200000")
         sql = re.sub(r"::(?:bigint|int|text|uuid|date)\b", "", sql)
         db = sqlite3.connect(":memory:"); db.row_factory = sqlite3.Row
+        db.create_function("btrim", 1, lambda value: value.strip() if value is not None else None)
         db.create_function("to_char", 2, lambda value, fmt: value)
         db.create_function("regexp_replace", 3, lambda value, pattern, repl: re.sub(pattern, repl, value) if value else value)
         db.create_function("regexp_replace", 4, lambda value, pattern, repl, flags: re.sub(pattern, repl, value) if value else value)
-        db.execute("CREATE TABLE events(id, thread_id, sequence, event_type, created, payload)")
+        db.execute("CREATE TABLE events(id, thread_id, sequence, event_type, created, payload, emitting_trigger_id)")
         for seq, extra in enumerate(({}, {"input_tokens": 250000}, {"service_tier": "flex"}, {"cache_creation_1h_tokens": None}), 1):
             u = {"input_tokens": 100000, "cache_read_tokens": 30000, "cache_creation_tokens": 50000, "output_tokens": 1000,
                  "cache_creation_1h_tokens": 30000, **extra}
             p = {"model": "cache-model", "producer": "main_llm", "session": 1, "usage": u}
-            db.execute("INSERT INTO events VALUES (?,?,?,?,?,?)", (str(seq), "thread", seq, "ContextCaptured", "2026-10-20T12:00:00Z", json.dumps(p)))
+            db.execute("INSERT INTO events VALUES (?,?,?,?,?,?,NULL)", (str(seq), "thread", seq, "ContextCaptured", "2026-10-20T12:00:00Z", json.dumps(p)))
         rows = [dict(r) for r in db.execute(sql)]
         self.assertEqual(len(rows), 2)
         known = next(r for r in rows if not r["cache_unknown"])
@@ -170,7 +171,9 @@ class CacheEvidence(unittest.TestCase):
         self.assertNotIn("saved_usd", s)
         self.assertEqual(s["day"], "2026-10-20")
         es = warm_run(); es[-1]["status"]["saved_usd"] = 0
-        self.assertEqual(build_cache(es)["savings"][0]["tokens"], 1000)
+        zero = build_cache(es)["savings"][0]
+        self.assertIsNone(zero["tokens"])
+        self.assertTrue(zero["zero_saving"])
 
     def test_missing_saving_or_ttl_stays_unknown(self):
         for change in (lambda es: es[-1]["status"].pop("saved_usd"),
@@ -237,11 +240,11 @@ class CacheEvidence(unittest.TestCase):
         db = sqlite3.connect(":memory:"); db.row_factory = sqlite3.Row
         db.create_function("to_char", 2, lambda value, fmt: value)
         db.create_function("regexp_replace", 3, lambda value, pattern, replacement: re.sub(pattern, replacement, value) if value else value)
-        db.execute("CREATE TABLE events(id, thread_id, sequence, event_type, created, payload)")
+        db.execute("CREATE TABLE events(id, thread_id, sequence, event_type, created, payload, emitting_trigger_id)")
         payload = dict(model="sent", served_model="served", producer="claude_code", session=2,
                        usage={"input_tokens": 100, "cache_creation_tokens": 100, "cache_creation_1h_tokens": 0},
                        sections=[{"content": "PRIVATE PROMPT"}], duration_ms=123)
-        db.execute("INSERT INTO events VALUES (?,?,?,?,?,?)", ("call", "thread", 1, "ContextCaptured", "2026-10-20T00:00:00Z", json.dumps(payload)))
+        db.execute("INSERT INTO events VALUES (?,?,?,?,?,?,NULL)", ("call", "thread", 1, "ContextCaptured", "2026-10-20T00:00:00Z", json.dumps(payload)))
         row = dict(db.execute(sql).fetchone())
         self.assertEqual((row["model"], row["session"], row["duration_ms"], row["long"]), ("served", 2, 123, 1))
         self.assertEqual(json.loads(row["usage"]), payload["usage"])
@@ -264,7 +267,7 @@ class CacheEvidence(unittest.TestCase):
         es = [call(1, write=1000), call(2, 2, read=1000), call(3, 3, read=1000)]
         es[2]["session"] = "2"
         doc = build_cache(es)
-        self.assertEqual(doc["version"], 2)
+        self.assertEqual(doc["version"], rollup.CACHE_VERSION)
         self.assertEqual(doc["fields"], list(CALL_FIELDS))
         rows = call_rows(doc)
         self.assertEqual(len(rows), 2)

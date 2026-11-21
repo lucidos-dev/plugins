@@ -12,6 +12,9 @@
 #   accounting  a call is priced exactly once whichever path delivered it,
 #               the total does not depend on delivery order, and each day is
 #               priced at the card in force that day
+#   triggers    the Cost by trigger panel groups by trigger id, counts a
+#               fire with no thread at $0, prices fire threads as the Thread
+#               grouping does, and says so when triggers.json is missing
 #   freshness   a dead stream, a hole behind it, and a failing reconcile are
 #               all recovered from and reported
 #   save        a price edit lands in the override (config/model-prices.json),
@@ -45,7 +48,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 export TZ="${TZ:-Europe/Oslo}"
 fail=0
-for t in accounting.test.mjs freshness.test.mjs save.test.mjs defaults.test.mjs markup.test.mjs upgrade.test.mjs thread-cost.test.mjs; do
+for t in accounting.test.mjs triggers.test.mjs freshness.test.mjs save.test.mjs defaults.test.mjs markup.test.mjs upgrade.test.mjs thread-cost.test.mjs; do
   echo "== $t"
   if ! node "$t"; then fail=1; echo "   ^ $t FAILED"; fi
 done
