@@ -134,7 +134,7 @@
       if (sec) {
         els.sectionPill.hidden = false;
         els.sectionPill.textContent = sec.title;
-        els.sectionPill.style.setProperty('--pill-color', `var(--${sec.color || 'accent'})`);
+        els.sectionPill.className = `${SS.categoryLabel(sec.color)} remote-section`;
       } else {
         els.sectionPill.hidden = true;
       }
@@ -324,7 +324,7 @@
 
   function setStatus(text, ok) {
     els.connStatus.textContent = text;
-    els.connStatus.dataset.ok = ok ? '1' : '0';
+    els.connStatus.className = ok ? 'label label-success' : 'label label-neutral';
   }
 
   async function applyPresenterState(data) {

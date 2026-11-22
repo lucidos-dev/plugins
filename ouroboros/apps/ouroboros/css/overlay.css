@@ -189,7 +189,7 @@
 }
 
 @media (hover: hover) {
-.player-chip:hover {
+  .player-chip:hover {
     background: rgba(74, 222, 128, 0.12);
     border-color: rgba(74, 222, 128, 0.35);
     color: #4ade80;

@@ -141,10 +141,16 @@ SS._editable = (text, path, prop) => {
 
 // ── Tags ──
 
+SS.categoryLabel = color => {
+  if (color === 'green') return 'label label-success';
+  if (color === 'amber' || color === 'orange') return 'label label-warning';
+  return 'label';
+};
+
 SS.tag = (text, color, path) => {
   const editAttr = path ? ` data-ss-path="${path}" data-ss-prop="text"` : '';
   const editCls = path ? ' ss-editable' : '';
-  return `<span class="tag tag-${color}${editCls}"${editAttr}>${text}</span>`;
+  return `<span class="${SS.categoryLabel(color)} slide-tag${editCls}"${editAttr}>${text}</span>`;
 };
 
 // ── Slide header (tag + h2 + subtitle) ──
@@ -213,10 +219,10 @@ SS.list = (items, path) => {
 SS.skillChips = (chips, path) => {
   if (path) {
     return `<div class="skill-chips">${chips.map((c, i) =>
-      `<span class="skill-chip ss-editable" data-ss-path="${path}" data-ss-prop="chips[${i}]">${c}</span>`
+      `<span class="label label-neutral ss-editable" data-ss-path="${path}" data-ss-prop="chips[${i}]">${c}</span>`
     ).join('')}</div>`;
   }
-  return `<div class="skill-chips">${chips.map(c => `<span class="skill-chip">${c}</span>`).join('')}</div>`;
+  return `<div class="skill-chips">${chips.map(c => `<span class="label label-neutral">${c}</span>`).join('')}</div>`;
 };
 
 // ── Pipeline ──
@@ -265,9 +271,9 @@ SS.tree = (content) =>
 
 // ── Team badge ──
 
-SS.teamBadge = (text, path) => {
-  const inner = SS._editable(text, path, 'text');
-  return `<div class="team-badge"><div class="dot"></div><span>${inner}</span></div>`;
+SS.teamBadge = (text, path, prop = 'text') => {
+  const inner = SS._editable(text, path, prop);
+  return `<div class="team-badge"><span class="label">${inner}</span></div>`;
 };
 
 // ── VS label ──

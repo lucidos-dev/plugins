@@ -254,7 +254,7 @@ SS.initEngine = function() {
           }).join('')}
         </div>
         ${ts.asterisk ? '<div class="floating-asterisk" id="ssFloatingAsterisk">*</div>' : ''}
-        <div class="team-badge"><div class="dot"></div><span class="ss-editable" data-ss-path="titleScroller" data-ss-prop="badge">${ts.badge}</span></div>
+        ${SS.teamBadge(ts.badge, 'titleScroller', 'badge')}
       </div>`;
       if (ts.disclaimer) {
         html += `<p class="results-may-vary ss-editable" id="ssDisclaimer" data-ss-path="titleScroller" data-ss-prop="disclaimer">${ts.disclaimer}</p>`;

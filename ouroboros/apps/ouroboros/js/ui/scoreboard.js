@@ -26,7 +26,7 @@
     const isHl = Scores.isSameEntry(hs, highlight);
     const isReplaying = !!replaying && replaying.list === listName && replaying.index === i;
     const rankHtml = rank <= 3
-      ? `<span class="hs-medal hs-medal-${rank}">${rank}</span>`
+      ? `<span class="hs-rank label${rank === 1 ? '' : ' label-neutral'}">${rank}</span>`
       : `<span class="hs-rank">${rank}</span>`;
     const replayBtn = hs.replay
       ? `<button class="hs-replay${isReplaying ? ' hs-stop' : ''}" data-idx="${i}" data-tooltip="${isReplaying ? 'Stop' : 'Watch replay'}" aria-label="${isReplaying ? 'Stop replay' : 'Watch replay'}">${isReplaying ? '■' : '▶'}</button>`
