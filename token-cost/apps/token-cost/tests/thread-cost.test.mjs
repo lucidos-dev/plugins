@@ -31,7 +31,8 @@ function mkEl(id) {
     set innerHTML(v) { this._html = String(v); }, get innerHTML() { return this._html; },
     get firstElementChild() { return this._first || (this._first = mkEl(id + '>span')); },
     get lastElementChild() { return this.children[this.children.length - 1] || null; },
-    appendChild(c) { c._parent = this; this.children.push(c); }, addEventListener() {}, setAttribute() {}, removeAttribute() {},
+    appendChild(c) { c._parent = this; this.children.push(c); },
+    addEventListener(type, fn) { (this.listeners ||= {})[type] = fn; }, setAttribute() {}, removeAttribute() {},
     querySelectorAll() { return []; }, getClientRects() { return [1]; },
     remove() { if (this._parent) this._parent.children.splice(this._parent.children.indexOf(this), 1); },
   };
@@ -44,7 +45,7 @@ global.document = {
   documentElement: { dataset: {}, classList: { contains: () => false, add() {} } },
 };
 global.window = { addEventListener() {} };
-global.localStorage = { getItem: () => null, setItem() {} };
+
 global.setInterval = () => 0;
 global.clearInterval = () => {};
 
@@ -66,11 +67,19 @@ function snapshot({ unpriced = 0, restUnpriced = 0 } = {}) {
   };
 }
 
-async function boot(table, snap, focus = 't1', read = async () => JSON.stringify(snap)) {
+async function boot(table, snap, focus = 't1', read = async () => JSON.stringify(snap),
+                    storage = new Map(), ready = Promise.resolve()) {
   els = new Map();
   global.lucidos = {
     ui: { applyPreferences() {}, watchPreferences() {}, navigate() {}, ready() {},
           focusedThread: async () => focus, onFocusedThreadChange() {} },
+    storage: {
+      ready, valueMax: 8192, quota: 16384,
+      local: {
+        getItem(key) { return storage.get(key) ?? null; },
+        setItem(key, value) { storage.set(key, value); },
+      },
+    },
     threads: { list: async () => [] },
     data: { read },
     priceTable: { get: async () => JSON.parse(JSON.stringify(table)) },
@@ -78,9 +87,36 @@ async function boot(table, snap, focus = 't1', read = async () => JSON.stringify
     sse: { connect() {}, on(name, fn) { (globalThis.__sse ||= {})[name] = fn; } },
     params: () => ({}),
   };
-  new Function(src + ';globalThis.__w = { fold, render, threadCost, find, sessionRows, priceCall, ratesFromTable };')();
+  new Function(src + ';globalThis.__w = { fold, render, threadCost, find, sessionRows, priceCall, ratesFromTable, remember, adoptCached, scope: () => incl, children: () => [...subIds] };')();
   await settle();
   return globalThis.__w;
+}
+
+console.log('\nDevice storage hydrates before startup and survives a widget reload');
+{
+  const storage = new Map([['thread-cost.include-subs', '0']]);
+  let hydrate;
+  const ready = new Promise(resolve => { hydrate = resolve; });
+  let reads = 0;
+  const snap = snapshot();
+  const booted = boot(shippedTable, snap, 't1', async () => {
+    reads++;
+    return JSON.stringify(snap);
+  }, storage, ready);
+  await settle();
+  ok(reads === 0, 'snapshot loading waits for device storage');
+  hydrate();
+  const w = await booted;
+  ok(!w.scope(), 'startup restores the thread-only scope');
+  getEl('scope').listeners.click({
+    stopPropagation() {},
+    target: { closest: () => ({ dataset: { incl: '1' } }) },
+  });
+  w.remember('cached-root', new Set(['cached-child']));
+  const reopened = await boot(shippedTable, snap, 't1', undefined, storage);
+  reopened.adoptCached('cached-root');
+  ok(reopened.scope(), 'the selected scope survives reload');
+  ok(reopened.children().join() === 'cached-child', 'cached descendants survive reload');
 }
 
 const gemini = { model: 'gemini-3-flash-preview', producer: 'auxiliary:memory',

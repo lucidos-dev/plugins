@@ -1,6 +1,6 @@
 {
   "name": "Thread cost",
-  "description": "What the open thread costs: total, today, model mix, session rows and costliest sub-threads. Include sub-threads or view the thread alone. Live on top of the hourly snapshot, with a lightweight first paint. Tap opens Token Cost.",
+  "description": "Thread cost for the open thread: total, today’s spend, model mix, session rows and costliest sub-threads. Switch between this thread alone and the full tree. The widget starts with a lightweight hourly snapshot, then adds live usage as calls arrive. Available in small, medium and large. Tap to open the Token Cost dashboard.",
   "icon": "assets/icon.svg",
   "reveal": "on-ready",
   "kind": "widget",

@@ -99,7 +99,6 @@
         font: inherit; font-size: var(--font-size-xs); cursor: pointer; white-space: nowrap;
       }
       @media (hover: hover) { .unpriced-btn:hover { background: color-mix(in srgb, var(--accent-yellow) 15%, transparent); } }
-      .feed-cost.unpriced { color: var(--accent-yellow); }
       .routed-note { color: var(--accent-yellow); }
       .pulse {
         display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%;
@@ -3734,7 +3733,7 @@
               `</div>` +
             `<div class="feed-tok">${fmtTok(fresh)} fresh · ${fmtTok(call.cache_read)} cached · ${fmtTok(call.out)} out</div>` +
             (cost === null
-              ? '<div class="feed-cost unpriced">unpriced</div>'
+              ? '<div class="feed-cost"><span class="label label-warning">unpriced</span></div>'
               : `<div class="feed-cost">${fmtMoney(cost)}</div>`);
           feed.appendChild(row);
         }

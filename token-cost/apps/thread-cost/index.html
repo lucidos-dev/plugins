@@ -160,18 +160,7 @@ const open = () => lucidos.ui.navigate('app', { app_id: 'token-cost' });
 document.body.addEventListener('click', open);
 document.body.addEventListener('keydown', e => { if (e.target !== document.body) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
 
-// Include sub-threads: one saved choice, default on. Tapping the pill never opens Token Cost.
-const INCL_KEY = 'thread-cost.include-subs';
-let incl = (() => { try { return localStorage.getItem(INCL_KEY) !== '0'; } catch (e) { return true; } })();
-document.getElementById('scope').addEventListener('click', e => {
-  e.stopPropagation();
-  const b = e.target.closest('button[data-incl]');
-  if (!b) return;
-  incl = b.dataset.incl === '1';
-  try { localStorage.setItem(INCL_KEY, incl ? '1' : '0'); } catch (err) {}
-  render();
-});
-document.getElementById('scope').addEventListener('keydown', e => e.stopPropagation());
+let incl = true, store;
 
 // ---- Snapshot lookup -----------------------------------------------------
 // Whether a snapshot holds the focused thread's whole sub-thread tree: only
@@ -372,20 +361,32 @@ async function loadSubs() {
   }
   if (focus === root) {
     subIds = found; subsFor = root;
-    remember(root, found);
     render(); // paint now, not on the next 1 s tick
+    remember(root, found);
   }
 }
 
 // Last known sub-thread tree per thread, so a thread you open again paints
 // its full scope at once and the walk only corrects it.
+const INCL_KEY = 'thread-cost.include-subs';
 const SUBS_KEY = 'thread-cost.subs';
-const subCache = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem(SUBS_KEY) || '{}'))); } catch (e) { return new Map(); } })();
+const subCache = new Map();
+let savedSubs;
 function remember(root, ids) {
   const list = [...ids].map(id => [id, titles.get(id) || '']);
   subCache.delete(root); subCache.set(root, list);
   while (subCache.size > 40) subCache.delete(subCache.keys().next().value);
-  try { localStorage.setItem(SUBS_KEY, JSON.stringify(Object.fromEntries(subCache))); } catch (e) {}
+  const limit = Math.min(lucidos.storage.valueMax, lucidos.storage.quota - SUBS_KEY.length - INCL_KEY.length - 1);
+  let value = JSON.stringify(Object.fromEntries(subCache));
+  for (const [id] of subCache) {
+    if (value.length <= limit) break;
+    subCache.delete(id);
+    value = JSON.stringify(Object.fromEntries(subCache));
+  }
+  if (value !== savedSubs) {
+    store.setItem(SUBS_KEY, value);
+    savedSubs = value;
+  }
 }
 function adoptCached(root) {
   const c = root && subCache.get(root);
@@ -589,38 +590,59 @@ function startTimers() {
   ticks.push(setInterval(loadSubs, 15000)); // new sub-threads spawn while you watch
 }
 function stopTimers() { ticks.forEach(clearInterval); ticks = []; }
-if (lucidos.widget && lucidos.widget.onVisibility) lucidos.widget.onVisibility(v => {
-  visible = v; if (v) { loadSubs(); startTimers(); render(); } else stopTimers();
-});
-if (lucidos.widget && lucidos.widget.onSize) lucidos.widget.onSize(() => render());
-
-const PREVIEW = (() => { try { const v = (lucidos.params() || {}).preview; return ['small','medium','large'].includes(v) ? v : null; } catch (e) { return null; } })();
-function pinPreview() {
-  if (!PREVIEW) return;
-  const el = document.documentElement;
-  if (!el.classList.contains('preview')) el.classList.add('preview');
-  if (el.dataset.widgetSize !== PREVIEW) el.dataset.widgetSize = PREVIEW;
-}
-pinPreview();
-if (PREVIEW) new MutationObserver(pinPreview).observe(document.documentElement, { attributes: true, attributeFilter: ['data-widget-size', 'class'] });
-
 (async () => {
+  await lucidos.storage.ready;
+  store = lucidos.storage.local;
+  savedSubs = store.getItem(SUBS_KEY);
+  for (const [root, children] of Object.entries(JSON.parse(savedSubs || '{}'))) {
+    subCache.set(root, children);
+  }
+
+  // Include sub-threads: one saved choice, default on. Tapping the pill never opens Token Cost.
+  incl = store.getItem(INCL_KEY) !== '0';
+  document.getElementById('scope').addEventListener('click', e => {
+    e.stopPropagation();
+    const b = e.target.closest('button[data-incl]');
+    if (!b) return;
+    incl = b.dataset.incl === '1';
+    store.setItem(INCL_KEY, incl ? '1' : '0');
+    render();
+  });
+  document.getElementById('scope').addEventListener('keydown', e => e.stopPropagation());
+
   try { focus = await lucidos.ui.focusedThread(); } catch (e) { focus = null; }
   adoptCached(focus);
   try { lucidos.ui.onFocusedThreadChange(id => { focus = id; adoptCached(id); drawn = false; render(); loadSubs(); }); } catch (e) {}
-  // Snapshot read and sub-thread walk run side by side, not one after the other.
+
+  if (lucidos.widget && lucidos.widget.onVisibility) lucidos.widget.onVisibility(v => {
+    visible = v; if (v) { loadSubs(); startTimers(); render(); } else stopTimers();
+  });
+  if (lucidos.widget && lucidos.widget.onSize) lucidos.widget.onSize(() => render());
+
+  const PREVIEW = (() => { try { const v = (lucidos.params() || {}).preview; return ['small','medium','large'].includes(v) ? v : null; } catch (e) { return null; } })();
+  function pinPreview() {
+    if (!PREVIEW) return;
+    const el = document.documentElement;
+    if (!el.classList.contains('preview')) el.classList.add('preview');
+    if (el.dataset.widgetSize !== PREVIEW) el.dataset.widgetSize = PREVIEW;
+  }
+  pinPreview();
+  if (PREVIEW) new MutationObserver(pinPreview).observe(document.documentElement, { attributes: true, attributeFilter: ['data-widget-size', 'class'] });
+
+  lucidos.sse.connect();
+  lucidos.sse.on('ContextCaptured', ev => {
+    const p = ev && (ev.event || ev.payload || ev);
+    fold(ev && (ev.seq ?? ev.sequence), ev && ev.thread_id, p);
+  });
+  lucidos.sse.on('ArtifactUpdated', p => { if (p && p.artifact_path === 'token-cost/threads-cost.json') load(); });
+  lucidos.sse.on('ArtifactCreated', p => { if (p && p.artifact_path === 'token-cost/threads-cost.json') load(); });
+  // A price edit or the price check rewrites the override; take its prices.
+  lucidos.sse.on('DataFileWritten', d => { if (String((d && (d.path || (d.event && d.event.path))) || '').endsWith('config/model-prices.json')) loadRates(); });
+
+  // Snapshot read and sub-thread walk run side by side.
   await Promise.all([load(), loadSubs()]);
-  startTimers();
+  if (visible) startTimers();
 })();
-lucidos.sse.connect();
-lucidos.sse.on('ContextCaptured', ev => {
-  const p = ev && (ev.event || ev.payload || ev);
-  fold(ev && (ev.seq ?? ev.sequence), ev && ev.thread_id, p);
-});
-lucidos.sse.on('ArtifactUpdated', p => { if (p && p.artifact_path === 'token-cost/threads-cost.json') load(); });
-lucidos.sse.on('ArtifactCreated', p => { if (p && p.artifact_path === 'token-cost/threads-cost.json') load(); });
-// A price edit or the price check rewrites the override; take its prices.
-lucidos.sse.on('DataFileWritten', d => { if (String((d && (d.path || (d.event && d.event.path))) || '').endsWith('config/model-prices.json')) loadRates(); });
 </script>
 </body>
 </html>

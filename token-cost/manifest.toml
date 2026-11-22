@@ -1,5 +1,5 @@
 id = "token-cost"
-version = "0.8.0"
+version = "0.8.1"
 name = "Token Cost"
 description = "Live token usage and cost by billing provider, model, type and thread. See Cost by trigger, compare cache spend and savings, and pin the Thread cost widget."
 source = "https://github.com/lucidos-dev/plugins/tree/main/token-cost"
